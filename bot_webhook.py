@@ -25,11 +25,16 @@ router = Router()
 @router.startup()
 async def on_startup(bot: Bot, webhook_url: str, dm: DatabaseManager):
     await bot.set_webhook(webhook_url)
+
     await dm.establish_connections()
-    await dm.update_all_data()
+    await dm.frequent_jobs()
+    await dm.infrequent_jobs()
+
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(dm.update_all_data, 'interval', seconds=60)
+    scheduler.add_job(dm.frequent_jobs, 'cron', minute='5,10,15,20,25,30,35,40,45,50,55')
+    scheduler.add_job(dm.infrequent_jobs, 'cron', minute='0')
     scheduler.start()
+
     await commands.set_cwl_commands(bot)
 
 
@@ -42,11 +47,14 @@ def main():
     bot = Bot(token=config.telegram_bot_api_token.get_secret_value())
     dispatcher = Dispatcher()
     dispatcher['webhook_url'] = WEBHOOK_URL
+
     dm = DatabaseManager()
+
     dispatcher['dm'] = dm
     dispatcher.message.middleware(MessageMiddleware())
     dispatcher.callback_query.middleware(CallbackQueryMiddleware())
     dispatcher.include_routers(router, cw.router, raids.router, cwl.router, members.router, admin.router)
+
     app = Application()
     SimpleRequestHandler(dispatcher=dispatcher, bot=bot).register(app, path=WEBHOOK_PATH)
     setup_application(app, dispatcher, bot=bot)

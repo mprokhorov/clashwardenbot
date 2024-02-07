@@ -143,7 +143,7 @@ class DatabaseManager:
         await self.req_connection.execute('''
             INSERT INTO public.telegram_user
             VALUES ($1, $2, $3, $4, TRUE, CURRENT_TIMESTAMP(0), CURRENT_TIMESTAMP(0))
-        ''', user.id, user.username, user.first_name, user.full_name)
+        ''', user.id, user.username, user.first_name, user.last_name)
 
     async def update_user_in_db(self, user: User) -> None:
         await self.req_connection.execute('''
@@ -151,7 +151,7 @@ class DatabaseManager:
             SET (username, first_name, last_name, in_chat, last_seen) =
                 ($2, $3, $4, TRUE, CURRENT_TIMESTAMP(0))
             WHERE id = $1
-        ''', user.id, user.username, user.first_name, user.full_name)
+        ''', user.id, user.username, user.first_name, user.last_name)
 
     async def remove_user_from_db(self, user: User) -> None:
         await self.req_connection.execute('''
@@ -159,7 +159,7 @@ class DatabaseManager:
             SET (username, first_name, last_name, in_chat, last_seen) =
                 ($2, $3, $4, FALSE, CURRENT_TIMESTAMP(0))
             WHERE id = $1
-        ''', user.id, user.username, user.first_name, user.full_name)
+        ''', user.id, user.username, user.first_name, user.last_name)
 
     async def write_clan_members_to_db(self, clan_member_data_list: list[Optional[dict]]) -> None:
         clan_member_inserted_data = []

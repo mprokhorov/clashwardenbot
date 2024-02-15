@@ -181,8 +181,8 @@ async def link_select_tg_user(dm: DatabaseManager,
         InlineKeyboardButton(text='⬅️ Назад',
                              callback_data=AdminCallbackFactory(
                                  state=Action.link,
-                                 link=Link.select_chat,
-                                 player_tag=callback_data.player_tag
+                                 link=Link.select_player_from_unknown,
+                                 chat_id=callback_data.chat_id
                              ).pack()),
         InlineKeyboardButton(text='🔄 Обновить',
                              callback_data=AdminCallbackFactory(

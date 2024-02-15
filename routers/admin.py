@@ -258,7 +258,9 @@ async def change_cw_status(dm: DatabaseManager,
             town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
         FROM dev.player
         WHERE clan_tag = $1 AND is_player_in_clan
-        ORDER BY player_name
+        ORDER BY
+            town_hall_level DESC,
+            (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC
     ''', dm.clan_tag)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(

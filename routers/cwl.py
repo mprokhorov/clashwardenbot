@@ -281,6 +281,10 @@ async def cwl_map(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineK
     if cwl_wars is None:
         text += 'Информация о ЛВК отсутствует'
         return text, ParseMode.HTML, None
+    cwl_season, _ = await dm.load_clan_war_league()
+    cwl_day, _ = await dm.load_clan_war_league_own_war()
+    text += (f'Сезон: {dm.of.season(cwl_season)}, день {cwl_day + 1}\n'
+             f'\n')
     cwl_clans = []
     for cwl_war in cwl_wars:
         cwl_clans.append(cwl_war['clan'])

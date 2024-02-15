@@ -1,3 +1,5 @@
+import argparse
+
 from pyrogram import Client
 from pyrogram.enums import ChatType
 
@@ -11,7 +13,6 @@ app = Client(name=config.telegram_api_client_name.get_secret_value(),
 
 async def main():
     await app.start()
-
     dialogs = app.get_dialogs()
     group_dialogs = []
     async for dialog in dialogs:
@@ -21,24 +22,30 @@ async def main():
         print(f'{i + 1}) {group_dialog.title}')
     chat_idx = input('Select group chat number: ')
     updated_dialog = group_dialogs[int(chat_idx) - 1]
-
-    dm = DatabaseManager()
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bot_number")
+    args = parser.parse_args()
+    bot_number = int(args.bot_number)
+    dm = DatabaseManager(clan_tag=config.clan_tags[bot_number].get_secret_value(),
+                         telegram_bot_api_token=config.telegram_bot_api_tokens[bot_number].get_secret_value(),
+                         telegram_bot_username=config.telegram_bot_usernames[bot_number].get_secret_value())
     await dm.establish_connections()
-    user_data = [(user.user.id, user.user.username, user.user.first_name, user.user.last_name)
+    user_data = [(updated_dialog.id, user.user.id, user.user.username, user.user.first_name, user.user.last_name)
                  async for user in app.get_chat_members(updated_dialog.id)
                  if not user.user.is_bot]
     await dm.req_connection.execute('''
-        UPDATE public.telegram_user
-        SET in_chat = FALSE
-    ''')
+        UPDATE dev.tg_user
+        SET is_user_in_chat = FALSE
+        WHERE chat_id = $1
+    ''', updated_dialog.id)
     await dm.req_connection.executemany('''
-        INSERT INTO public.telegram_user
-        VALUES ($1, $2, $3, $4, TRUE, CURRENT_TIMESTAMP(0), CURRENT_TIMESTAMP(0))
-        ON CONFLICT(id)
-        DO UPDATE SET (username, first_name, last_name, in_chat, last_seen) =
-                      ($2, $3, $4, TRUE, CURRENT_TIMESTAMP(0))
+        INSERT INTO
+            dev.tg_user (chat_id, user_id, username, first_name, last_name, is_user_in_chat, first_seen, last_seen)
+        VALUES ($1, $2, $3, $4, $5, TRUE, NULL, CURRENT_TIMESTAMP(0))
+        ON CONFLICT (chat_id, user_id)
+        DO UPDATE SET (username, first_name, last_name, is_user_in_chat, last_seen) = 
+                      ($3, $4, $5, TRUE, CURRENT_TIMESTAMP(0))
     ''', user_data)
-
     await app.stop()
 
 

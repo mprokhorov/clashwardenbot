@@ -1,10 +1,13 @@
 import asyncio
 import json
+from collections import namedtuple
 from datetime import datetime
-from typing import Optional, Union, Tuple
+from typing import Optional, Tuple
 
 import asyncpg
-from aiogram.types import User
+from aiogram.enums import ChatType
+from aiogram.types import Chat, User, Message
+from asyncpg import Record
 
 from async_client import AsyncClient
 from bot.config import config
@@ -12,16 +15,23 @@ from output_formatter import OutputFormatter
 
 
 class DatabaseManager:
-    def __init__(self):
+    def __init__(self,
+                 clan_tag: str,
+                 telegram_bot_api_token: str,
+                 telegram_bot_username: str):
         self.api_client = AsyncClient(email=config.clash_of_clans_api_login.get_secret_value(),
                                       password=config.clash_of_clans_api_password.get_secret_value(),
                                       key_name=config.clash_of_clans_api_key_name.get_secret_value(),
                                       key_description=config.clash_of_clans_api_key_description.get_secret_value())
         self.of = OutputFormatter()
-        self.clan_tag = config.clash_of_clans_clan_tag.get_secret_value()
 
         self.cron_connection = None
         self.req_connection = None
+
+        self.telegram_bot_username = telegram_bot_username
+        self.telegram_bot_api_token = telegram_bot_api_token
+        self.clan_name = None
+        self.clan_tag = clan_tag
 
         self.name = None
         self.name_and_tag = None
@@ -39,446 +49,482 @@ class DatabaseManager:
                                                     user=config.postgres_user.get_secret_value(),
                                                     password=config.postgres_password.get_secret_value())
 
-    async def frequent_jobs(self):
-        retrieved_clan_members = (await self.api_client.get_clan_members(clan_tag=self.clan_tag))['items']
+    async def frequent_jobs(self) -> None:
+        retrieved_clan_members = await self.api_client.get_clan_members(clan_tag=self.clan_tag)
         if retrieved_clan_members is not None:
-            dumped_clan_member_tag_list = await self.dump_clan_members()
-            retrieved_clan_member_tag_list = [clan_member['tag']
-                                              for clan_member
-                                              in retrieved_clan_members]
-            missing_clan_member_tag_list = [clan_member_tag
-                                            for clan_member_tag
-                                            in dumped_clan_member_tag_list
-                                            if clan_member_tag not in retrieved_clan_member_tag_list]
-            new_clan_member_tag_list = [clan_member_tag
-                                        for clan_member_tag
-                                        in retrieved_clan_member_tag_list
-                                        if clan_member_tag not in dumped_clan_member_tag_list]
-            if len(missing_clan_member_tag_list) > 0:
+            rows = await self.cron_connection.fetch('''
+                SELECT player_tag
+                FROM dev.player
+                WHERE player.clan_tag = $1 AND is_player_in_clan
+            ''', self.clan_tag)
+            loaded_clan_member_tags = [row['player_tag'] for row in rows]
+            retrieved_clan_member_tags = [clan_member['tag'] for clan_member in retrieved_clan_members['items']]
+            left_clan_member_tags = [clan_member_tag
+                                     for clan_member_tag
+                                     in loaded_clan_member_tags
+                                     if clan_member_tag not in retrieved_clan_member_tags]
+            joined_clan_member_tags = [clan_member_tag
+                                       for clan_member_tag
+                                       in retrieved_clan_member_tags
+                                       if clan_member_tag not in loaded_clan_member_tags]
+            if len(left_clan_member_tags) > 0:
                 pass
-            if len(new_clan_member_tag_list) > 0:
-                await self.update_clan_members_and_contributions()
+            if len(joined_clan_member_tags) > 0:
+                await self.dump_clan_members()
 
-        await self.update_clan_war()
+        await self.dump_clan_war()
+        await self.dump_raid_weekends()
+        await self.dump_clan_war_league()
+        await self.dump_clan_war_league_wars()
 
-        await self.update_raid_weekends()
+        rows = await self.cron_connection.fetch('''
+            SELECT player_tag, player_name
+            FROM dev.player
+            WHERE clan_tag = $1 AND is_player_in_clan
+        ''', self.clan_tag)
+        self.name = {row['player_tag']: row['player_name'] for row in rows}
+        self.name_and_tag = {row['player_tag']: f'{row['player_name']} ({row['player_tag']})' for row in rows}
 
-        await self.update_clan_war_league()
+        rows = await self.cron_connection.fetch('''
+            SELECT chat_id, user_id, username, first_name, last_name
+            FROM dev.tg_user
+        ''')
+        self.full_name = {(row['chat_id'], row['user_id']):
+                          row['first_name'] + (f' {row['last_name']}' if row['last_name'] else '')
+                          for row in rows}
+        self.full_name_and_username = {(row['chat_id'], row['user_id']):
+                                       (f'{row['first_name']}'
+                                        f' {row['last_name'] or ''}'
+                                        f'{(' (@' + row['username'] + ')') if row['username'] else ''}')
+                                       for row in rows}
 
-        await self.update_clan_war_league_wars()
-
-        await self.update_names()
-
-    async def infrequent_jobs(self):
+    async def infrequent_jobs(self) -> None:
         await self.frequent_jobs()
 
-        await self.update_clan_members_and_contributions()
+        old_contributions = await self.load_capital_contributions()
+        await self.dump_clan_members()
+        new_contributions = await self.load_capital_contributions()
+        for player_tag in old_contributions:
+            if new_contributions.get(player_tag) and new_contributions[player_tag] > old_contributions[player_tag]:
+                await self.cron_connection.execute('''
+                    INSERT INTO dev.capital_contribution (clan_tag, player_tag, gold_amount, contribution_timestamp)
+                    VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0))
+                ''', self.clan_tag, player_tag, new_contributions[player_tag] - old_contributions[player_tag])
 
-    async def write_clan_war_to_db(self, clan_war_data: Optional[dict]) -> None:
-        if clan_war_data is not None and clan_war_data.get('state') in ['preparation', 'inWar', 'warEnded']:
-            await self.cron_connection.execute('''
-                INSERT INTO public.clan_war
-                VALUES ($1, $2)
-                ON CONFLICT (start_time)
-                DO UPDATE
-                SET data = $2
-            ''', datetime.strptime(clan_war_data['startTime'], '%Y%m%dT%H%M%S.%fZ'),
-                 json.dumps(clan_war_data))
-
-    async def write_raid_weekends_to_db(self, raid_weekends_data: Optional[dict]) -> None:
-        if raid_weekends_data is not None:
-            await self.cron_connection.executemany('''
-                INSERT INTO public.raid_weekend
-                VALUES ($1, $2)
-                ON CONFLICT (start_time)
-                DO UPDATE
-                SET data = $2
-            ''', [(datetime.strptime(item['startTime'], '%Y%m%dT%H%M%S.%fZ'), json.dumps(item))
-                  for item in raid_weekends_data['items']])
-
-    async def write_clan_war_league_to_db(self, clan_war_league_data: Optional[dict]) -> None:
-        if clan_war_league_data is not None:
-            await self.cron_connection.execute('''
-                INSERT INTO public.clan_war_league
-                VALUES ($1, $2)
-                ON CONFLICT (season)
-                DO UPDATE
-                SET data = $2
-            ''', clan_war_league_data['season'], json.dumps(clan_war_league_data))
-
-    async def calculate_clan_war_league_war_day(self, dumped_war_tag: str) -> Optional[int]:
-        record = await self.cron_connection.fetchrow('''
-            SELECT data->'rounds' AS rounds
-            FROM public.clan_war_league
-            WHERE season = (SELECT MAX(season) FROM public.clan_war_league)
-        ''')
-        clan_war_league_rounds = json.loads(record['rounds'])
-        for day, clan_war_league_round in enumerate(clan_war_league_rounds):
-            for war_tag in clan_war_league_round['warTags']:
-                if war_tag == dumped_war_tag:
-                    return day
-        return None
-
-    async def write_clan_war_league_wars_to_db(self, war_tag_list: list[str],
-                                               season: str,
-                                               clan_war_league_war_data_list: list[Optional[dict]]) -> None:
-        war_tag_column = war_tag_list
-        season_column = [season] * len(war_tag_list)
-        round_number_column = [await self.calculate_clan_war_league_war_day(war_tag)
-                               for war_tag
-                               in war_tag_list]
-        data_columnn = map(json.dumps, clan_war_league_war_data_list)
-        retrieved_columns = list(zip(war_tag_column, season_column, round_number_column, data_columnn))
-        updated_columns = [(war_tag, season, round_number, data)
-                           for war_tag, season, round_number, data in retrieved_columns
-                           if (data is not None) and (war_tag != '#0')]
-        await self.cron_connection.executemany('''
-            INSERT INTO public.clan_war_league_war
-            VALUES ($1, $2, $3, $4)
-            ON CONFLICT (war_tag) DO
-            UPDATE SET data = $4          
-        ''', updated_columns)
-
-    async def insert_user_to_db(self, user: User) -> None:
-        await self.req_connection.execute('''
-            INSERT INTO public.telegram_user
-            VALUES ($1, $2, $3, $4, TRUE, CURRENT_TIMESTAMP(0), CURRENT_TIMESTAMP(0))
-        ''', user.id, user.username, user.first_name, user.full_name)
-
-    async def update_user_in_db(self, user: User) -> None:
-        await self.req_connection.execute('''
-            UPDATE public.telegram_user
-            SET (username, first_name, last_name, in_chat, last_seen) =
-                ($2, $3, $4, TRUE, CURRENT_TIMESTAMP(0))
-            WHERE id = $1
-        ''', user.id, user.username, user.first_name, user.full_name)
-
-    async def remove_user_from_db(self, user: User) -> None:
-        await self.req_connection.execute('''
-            UPDATE public.telegram_user
-            SET (username, first_name, last_name, in_chat, last_seen) =
-                ($2, $3, $4, FALSE, CURRENT_TIMESTAMP(0))
-            WHERE id = $1
-        ''', user.id, user.username, user.first_name, user.full_name)
-
-    async def write_clan_members_to_db(self, clan_member_data_list: list[Optional[dict]]) -> None:
-        clan_member_inserted_data = []
-        for player in clan_member_data_list:
-            member_heroes = player['heroes']
+    async def dump_clan_members(self) -> None:
+        retrieved_clan_members = await self.api_client.get_clan_members(clan_tag=self.clan_tag)
+        if retrieved_clan_members is None:
+            return
+        player_tasks = [self.api_client.get_player(player_tag=clan_member['tag'])
+                        for clan_member
+                        in retrieved_clan_members['items']]
+        retrieved_players = list(await asyncio.gather(*player_tasks))
+        rows = []
+        for player in retrieved_players:
+            player_heroes = player['heroes']
             barbarian_king_level = 0
             archer_queen_level = 0
             grand_warden_level = 0
             royal_champion_level = 0
-            for member_hero in member_heroes:
-                if member_hero['name'] == 'Barbarian King':
-                    barbarian_king_level = member_hero['level']
-                elif member_hero['name'] == 'Archer Queen':
-                    archer_queen_level = member_hero['level']
-                elif member_hero['name'] == 'Grand Warden':
-                    grand_warden_level = member_hero['level']
-                elif member_hero['name'] == 'Royal Champion':
-                    royal_champion_level = member_hero['level']
-            clan_member_inserted_data.append((player['tag'], player['name'],
-                                              player['townHallLevel'], player['trophies'],
-                                              barbarian_king_level, archer_queen_level,
-                                              grand_warden_level, royal_champion_level,
-                                              player['builderHallLevel'], player['builderBaseTrophies'],
-                                              player['role'], True, player['donations'], player['donationsReceived'],
-                                              player['clanCapitalContributions']))
+            for player_hero in player_heroes:
+                if player_hero['name'] == 'Barbarian King':
+                    barbarian_king_level = player_hero['level']
+                elif player_hero['name'] == 'Archer Queen':
+                    archer_queen_level = player_hero['level']
+                elif player_hero['name'] == 'Grand Warden':
+                    grand_warden_level = player_hero['level']
+                elif player_hero['name'] == 'Royal Champion':
+                    royal_champion_level = player_hero['level']
+            rows.append((self.clan_tag, player['tag'],
+                         player['name'], True, False,
+                         barbarian_king_level, archer_queen_level,
+                         grand_warden_level, royal_champion_level,
+                         player['townHallLevel'], player.get('builderHallLevel') or 0,
+                         player['trophies'], player.get('builderBaseTrophies') or 0,
+                         player['role'], player['clanCapitalContributions'],
+                         player['donations'], player['donationsReceived']))
 
         await self.cron_connection.execute('''
-            UPDATE public.clash_of_clans_account
-            SET in_clan = FALSE
+            UPDATE dev.player
+            SET is_player_in_clan = FALSE
         ''')
-
         await self.cron_connection.executemany('''
-            INSERT INTO public.clash_of_clans_account 
-                (tag, name, town_hall, trophies, barbarian_king, archer_queen, 
-                grand_warden, royal_champion, builder_hall, builder_base_trophies, role, in_clan, 
-                donations_given, donations_received, first_seen, last_seen, 
-                capital_contributions, participates_in_clan_wars)
+            INSERT INTO dev.player
+                (clan_tag, player_tag,
+                player_name, is_player_in_clan, is_player_set_for_clan_wars,
+                barbarian_king_level, archer_queen_level,
+                grand_warden_level, royal_champion_level,
+                town_hall_level, builder_hall_level,
+                home_village_trophies, builder_base_trophies,
+                player_role, capital_gold_contributed,
+                donations_given, donations_received,
+                first_seen, last_seen)
             VALUES
-                ($1, $2, $3, $4, $5, $6,
-                $7, $8, $9, $10, $11, $12,
-                $13, $14, CURRENT_TIMESTAMP(0), CURRENT_TIMESTAMP(0), 
-                $15, FALSE)
-            ON CONFLICT (tag) DO UPDATE SET
-                (name, town_hall, trophies, barbarian_king, archer_queen,
-                grand_warden, royal_champion, builder_hall, builder_base_trophies, role,
-                in_clan, donations_given, donations_received, last_seen, capital_contributions) =
-                ($2, $3, $4, $5, $6,
-                $7, $8, $9, $10, $11,
-                $12, $13, $14, CURRENT_TIMESTAMP(0), $15)
-        ''', clan_member_inserted_data)
+                ($1, $2,
+                $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                CURRENT_TIMESTAMP(0), CURRENT_TIMESTAMP(0))
+            ON CONFLICT (clan_tag, player_tag)
+            DO UPDATE SET
+                (player_name, is_player_in_clan,
+                barbarian_king_level, archer_queen_level,
+                grand_warden_level, royal_champion_level,
+                town_hall_level, builder_hall_level,
+                home_village_trophies, builder_base_trophies,
+                player_role, capital_gold_contributed,
+                donations_given, donations_received,
+                last_seen) =
+                ($3, $4, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                CURRENT_TIMESTAMP(0))
+        ''', rows)
 
-    async def write_contributions_to_db(self, old_contributions: dict, new_contributions: dict):
-        for tag in set.intersection(set(old_contributions.keys()), set(new_contributions.keys())):
-            old_contribution = old_contributions[tag]
-            new_contribution = new_contributions[tag]
-            if new_contribution > old_contribution:
-                await self.cron_connection.execute('''
-                    INSERT INTO public.clan_capital_contribution
-                    VALUES ($1, $2, CURRENT_TIMESTAMP(0))
-                ''', tag, new_contribution - old_contribution)
+    async def load_capital_contributions(self) -> dict:
+        rows = await self.cron_connection.fetch('''
+            SELECT player_tag, capital_gold_contributed
+            FROM dev.player
+            WHERE is_player_in_clan AND clan_tag = $1
+        ''', self.clan_tag)
+        return {row['player_tag']: row['capital_gold_contributed'] for row in rows}
 
-    async def clan_war_start_time(self, only_last: bool) -> Union[datetime, list[datetime]]:
-        if only_last:
-            query = await self.cron_connection.fetch('''
-                SELECT start_time
-                FROM public.clan_war
-                ORDER BY start_time DESC
-                LIMIT 1
-            ''')
-            record = query[0]
-            return record['start_time']
-        else:
-            query = await self.cron_connection.fetch('''
-                SELECT start_time
-                FROM public.clan_war
-                ORDER BY start_time DESC
-            ''')
-            return [record['start_time'] for record in query]
-
-    async def raid_weekend_start_time(self, only_last: bool) -> Union[datetime, list[datetime]]:
-        if only_last:
-            query = await self.cron_connection.fetch('''
-                SELECT start_time
-                FROM public.raid_weekend
-                ORDER BY start_time DESC
-                LIMIT 1
-            ''')
-            record = query[0]
-            return record['start_time']
-        else:
-            query = await self.cron_connection.fetch('''
-                SELECT start_time
-                FROM public.raid_weekend
-                ORDER BY start_time DESC
-            ''')
-            return [record['start_time'] for record in query]
-
-    async def clan_war_league_season(self, only_last: bool) -> Union[str, list[str]]:
-        if only_last:
-            query = await self.cron_connection.fetch('''
-                SELECT season
-                FROM public.clan_war_league
-                ORDER BY season DESC
-                LIMIT 1
-            ''')
-            record = query[0]
-            return record['season']
-        else:
-            query = await self.cron_connection.fetch('''
-                SELECT season
-                FROM public.clan_war_league
-                ORDER BY season DESC
-            ''')
-            return [record['season'] for record in query]
-
-    async def clan_war_league_war_tag_list_to_retrieve(self) -> list[str]:
-        query = await self.cron_connection.fetch('''
-            SELECT war_tag
-            FROM public.clan_war_league_war
-            WHERE data->>'state' != 'warEnded'
-        ''')
-        return [record['war_tag'] for record in query]
-
-    async def clan_war_league_war_tag(self) -> list[str]:
-        last_clan_war_league_season = await self.clan_war_league_season(only_last=True)
-        last_clan_war_league = await self.get_clan_war_league(clan_war_league_season=last_clan_war_league_season)
-        war_tag_list = [war_tag
-                        for clan_war_league_round in last_clan_war_league['rounds']
-                        for war_tag in clan_war_league_round['warTags']]
-        return war_tag_list
-
-    async def get_clan_war(self, clan_war_start_time: datetime) -> dict:
-        query = await self.cron_connection.fetch('''
-            SELECT data
-            FROM public.clan_war
-            WHERE start_time = $1
-        ''', clan_war_start_time)
-        record = query[0]
-        return json.loads(record['data'])
-
-    async def get_raid_weekend(self, raid_weekend_start_time: datetime) -> dict:
-        query = await self.cron_connection.fetch('''
-            SELECT data
-            FROM public.raid_weekend
-            WHERE start_time = $1
-        ''', raid_weekend_start_time)
-        record = query[0]
-        return json.loads(record['data'])
-
-    async def get_clan_war_league(self, clan_war_league_season: str) -> dict:
-        query = await self.cron_connection.fetch('''
-            SELECT data
-            FROM public.clan_war_league
-            WHERE season = $1
-        ''', clan_war_league_season)
-        record = query[0]
-        return json.loads(record['data'])
-
-    async def get_clan_war_league_clan_own_war_list(self, season: str,
-                                                    only_last: bool) -> Union[list[dict], Tuple[int, dict]]:
-        query = await self.cron_connection.fetch('''
-            SELECT data
-            FROM public.clan_war_league_war
-            WHERE season = $1 AND $2 IN (data->'clan'->>'tag', data->'opponent'->>'tag')
-            ORDER BY round_number
-        ''', season, self.clan_tag)
-        clan_war_league_war_list = []
-        for record in query:
-            clan_war_league_war = json.loads(record['data'])
-            if clan_war_league_war['opponent']['tag'] == self.clan_tag:
-                clan_war_league_war['clan'], clan_war_league_war['opponent'] = \
-                    clan_war_league_war['opponent'], clan_war_league_war['clan']
-            clan_war_league_war_list.append(clan_war_league_war)
-        if not only_last:
-            return clan_war_league_war_list
-        else:
-            enumerated_reversed_clan_war_league_war_list = (list(enumerate(clan_war_league_war_list)))[::-1]
-            for i, clan_war_league_war in enumerated_reversed_clan_war_league_war_list:
-                if clan_war_league_war['state'] == 'inWar':
-                    return i, clan_war_league_war
-            for i, clan_war_league_war in enumerated_reversed_clan_war_league_war_list:
-                if clan_war_league_war['state'] == 'preparation':
-                    return i, clan_war_league_war
-            for i, clan_war_league_war in enumerated_reversed_clan_war_league_war_list:
-                if clan_war_league_war['state'] == 'warEnded':
-                    return i, clan_war_league_war
-            for i, clan_war_league_war in enumerate(clan_war_league_war_list):
-                return i, clan_war_league_war
-
-    async def get_cwl_round_amount(self, season: str) -> int:
-        record = await self.cron_connection.fetchrow('''
-            SELECT COUNT(*) as amount
-            FROM public.clan_war_league_war
-            WHERE season = $1 AND $2 IN (data->'clan'->>'tag', data->'opponent'->>'tag')
-        ''', season, self.clan_tag)
-        return record['amount']
-
-    async def dump_contributions(self):
-        query = await self.cron_connection.fetch('''
-            SELECT tag, capital_contributions
-            FROM public.clash_of_clans_account
-        ''')
-        return {record['tag']: record['capital_contributions'] for record in query}
-
-    async def dump_clan_members(self):
-        query = await self.cron_connection.fetch('''
-            SELECT tag
-            FROM public.clash_of_clans_account
-            WHERE in_clan
-        ''')
-        return [record['tag'] for record in query]
-
-    def get_name_and_tag(self, player_tag: str):
-        return self.name_and_tag.get(player_tag)
-
-    def get_name(self, player_tag: str):
-        return self.name.get(player_tag)
-
-    def get_full_name_and_username(self, user_id: int):
-        return self.full_name_and_username.get(user_id)
-
-    def get_full_name(self, user_id: int):
-        return self.full_name.get(user_id)
-
-    async def get_names(self):
-        query = await self.cron_connection.fetch('''
-            SELECT tag, name
-            FROM public.clash_of_clans_account
-        ''')
-        name = {record['tag']: record['name'] for record in query}
-        name_and_tag = {record['tag']: f'{record['name']} ({record['tag']})' for record in query}
-        query = await self.cron_connection.fetch('''
-            SELECT id, username, first_name, last_name
-            FROM public.telegram_user
-        ''')
-        full_name = {record['id']: record['first_name'] + (f' {record['last_name']}' if record['last_name'] else '')
-                     for record in query}
-        full_name_and_username = {record['id']: (f'{record['first_name']}'
-                                                 f'{record['last_name'] or ''}'
-                                                 f'{(' (@' + record['username'] + ')') if record['username'] else ''}')
-                                  for record in query}
-        return name, name_and_tag, full_name, full_name_and_username
-
-    async def get_chat_member_id_list(self):
-        query = await self.cron_connection.fetch('''
-            SELECT id
-            FROM public.telegram_user
-            WHERE in_chat
-        ''')
-        return [record['id'] for record in query]
-
-    async def update_clan_war(self):
+    async def dump_clan_war(self) -> None:
         retrieved_clan_war = await self.api_client.get_clan_current_war(clan_tag=self.clan_tag)
-        await self.write_clan_war_to_db(clan_war_data=retrieved_clan_war)
+        if retrieved_clan_war is None or retrieved_clan_war.get('startTime') is None:
+            return
 
-    async def update_clan_war_league(self):
-        retrieved_clan_war_league = await self.api_client.get_clan_war_league_group(clan_tag=self.clan_tag)
-        await self.write_clan_war_league_to_db(clan_war_league_data=retrieved_clan_war_league)
-
-    async def update_raid_weekends(self):
-        retrieved_raid_weekends = await self.api_client.get_clan_capital_raid_seasons(clan_tag=self.clan_tag)
-        await self.write_raid_weekends_to_db(raid_weekends_data=retrieved_raid_weekends)
-
-    async def update_clan_war_league_wars(self):
-        clan_war_league_war_task_list = [self.api_client.get_clan_war_league_war(war_tag=war_tag)
-                                         for war_tag
-                                         in await self.clan_war_league_war_tag_list_to_retrieve()]
-        retrieved_clan_war_league_war_list = list(await asyncio.gather(*clan_war_league_war_task_list))
-        await self.write_clan_war_league_wars_to_db(await self.clan_war_league_war_tag_list_to_retrieve(),
-                                                    await self.clan_war_league_season(only_last=True),
-                                                    retrieved_clan_war_league_war_list)
-
-    async def update_clan_members_and_contributions(self):
-        clan_member_task_list = [self.api_client.get_player(player_tag=clan_member['tag'])
-                                 for clan_member
-                                 in (await self.api_client.get_clan_members(clan_tag=self.clan_tag))['items']]
-        retrieved_clan_members = list(await asyncio.gather(*clan_member_task_list))
-        old_contributions = await self.dump_contributions()
-        await self.write_clan_members_to_db(clan_member_data_list=retrieved_clan_members)
-        new_contributions = await self.dump_contributions()
-        await self.write_contributions_to_db(old_contributions, new_contributions)
-
-    async def update_names(self):
-        self.name, self.name_and_tag, self.full_name, self.full_name_and_username = await self.get_names()
-
-    async def register_message(self, chat_id: int, message_id: int, user_id: int):
-        await self.req_connection.execute('''
-            INSERT INTO public.message_user
+        await self.cron_connection.execute('''
+            INSERT INTO dev.clan_war (clan_tag, start_time, data)
             VALUES ($1, $2, $3)
-        ''', chat_id, message_id, user_id)
+            ON CONFLICT (clan_tag, start_time)
+            DO UPDATE SET data = $3
+        ''', self.clan_tag, datetime.strptime(retrieved_clan_war['startTime'], '%Y%m%dT%H%M%S.%fZ'), json.dumps(retrieved_clan_war))
 
-    async def check_message(self, chat_id: int, message_id: int, user_id: int):
-        query = await self.req_connection.fetch('''
+    async def load_clan_war(self) -> Optional[dict]:
+        row = await self.req_connection.fetchrow('''
+            SELECT data
+            FROM dev.clan_war
+            WHERE clan_tag = $1
+            ORDER BY start_time DESC
+        ''', self.clan_tag)
+        if row is None:
+            return None
+        return json.loads(row['data'])
+
+    async def dump_raid_weekends(self) -> None:
+        retrieved_raid_weekends = await self.api_client.get_clan_capital_raid_seasons(clan_tag=self.clan_tag)
+        if retrieved_raid_weekends is None:
+            return
+        await self.cron_connection.executemany('''
+            INSERT INTO dev.raid_weekend (clan_tag, start_time, data)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (clan_tag, start_time)
+            DO UPDATE SET data = $3
+        ''', [(self.clan_tag, datetime.strptime(item['startTime'], '%Y%m%dT%H%M%S.%fZ'), json.dumps(item))
+              for item
+              in retrieved_raid_weekends['items']])
+
+    async def load_raid_weekend(self) -> Optional[dict]:
+        row = await self.req_connection.fetchrow('''
+            SELECT data
+            FROM dev.raid_weekend
+            WHERE clan_tag = $1
+            ORDER BY start_time DESC
+        ''', self.clan_tag)
+        if row is None:
+            return None
+        return json.loads(row['data'])
+
+    async def dump_clan_war_league(self) -> None:
+        retrieved_clan_war_league = await self.api_client.get_clan_war_league_group(clan_tag=self.clan_tag)
+        if retrieved_clan_war_league is None:
+            return
+        await self.cron_connection.execute('''
+            INSERT INTO dev.clan_war_league (clan_tag, season, data)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (clan_tag, season)
+            DO UPDATE SET data = $3
+        ''', self.clan_tag, retrieved_clan_war_league['season'], json.dumps(retrieved_clan_war_league))
+
+    async def load_clan_war_league(self) -> Tuple[Optional[str], Optional[dict]]:
+        row = await self.req_connection.fetchrow('''
+            SELECT season, data
+            FROM dev.clan_war_league
+            WHERE clan_tag = $1
+            ORDER BY season DESC 
+        ''', self.clan_tag)
+        if row is None:
+            return None, None
+        return row['season'], json.loads(row['data'])
+
+    async def dump_clan_war_league_wars(self) -> None:
+        loaded_clan_war_league_season, loaded_clan_war_league = await self.load_clan_war_league()
+        if loaded_clan_war_league is None:
+            return
+        ClanWarLeagueWar = namedtuple('ClanWarLeagueWar', 'clan_tag war_tag season day')
+        clan_war_league_wars = [ClanWarLeagueWar(clan_tag=self.clan_tag,
+                                                 war_tag=war_tag,
+                                                 season=loaded_clan_war_league_season,
+                                                 day=day)
+                                for day, war_tags in enumerate(loaded_clan_war_league['rounds'])
+                                for war_tag in war_tags['warTags']]
+        clan_war_league_wars_to_retrieve = []
+        for clan_war_league_war in clan_war_league_wars:
+            row = await self.cron_connection.fetchrow('''
+                SELECT clan_tag, war_tag, data->>'state' AS state
+                FROM dev.clan_war_league_war
+                WHERE (clan_tag, war_tag) = ($1, $2) AND data->>'state' = 'warEnded'
+            ''', clan_war_league_war.clan_tag, clan_war_league_war.war_tag)
+            if row is None:
+                clan_war_league_wars_to_retrieve.append(clan_war_league_war)
+        clan_war_league_war_tasks = [self.api_client
+                                     .get_clan_war_league_war(war_tag=clan_war_league_war_to_retrieve.war_tag)
+                                     for clan_war_league_war_to_retrieve in clan_war_league_wars_to_retrieve]
+        retrieved_clan_war_league_wars = list(await asyncio.gather(*clan_war_league_war_tasks))
+        rows = zip([clan_war_league_war.clan_tag for clan_war_league_war in clan_war_league_wars_to_retrieve],
+                   [clan_war_league_war.war_tag for clan_war_league_war in clan_war_league_wars_to_retrieve],
+                   [clan_war_league_war.season for clan_war_league_war in clan_war_league_wars_to_retrieve],
+                   [clan_war_league_war.day for clan_war_league_war in clan_war_league_wars_to_retrieve],
+                   map(json.dumps, retrieved_clan_war_league_wars))
+        await self.cron_connection.executemany('''
+            INSERT INTO dev.clan_war_league_war (clan_tag, war_tag, season, day, data)
+            VALUES ($1, $2, $3, $4, $5)
+        ''', rows)
+
+    async def load_clan_war_league_own_war(self) -> Tuple[Optional[int], Optional[dict]]:
+        clan_war_league_wars = await self.load_clan_war_league_own_wars()
+        if clan_war_league_wars is None:
+            return None, None
+        for day, clan_war_league_war in (list(enumerate(clan_war_league_wars)))[::-1]:
+            if clan_war_league_war['state'] == 'inWar':
+                return day, clan_war_league_war
+        for day, clan_war_league_war in (list(enumerate(clan_war_league_wars)))[::-1]:
+            if clan_war_league_war['state'] == 'preparation':
+                return day, clan_war_league_war
+        for day, clan_war_league_war in (list(enumerate(clan_war_league_wars)))[::-1]:
+            if clan_war_league_war['state'] == 'warEnded':
+                return day, clan_war_league_war
+        for day, clan_war_league_war in enumerate(clan_war_league_wars):
+            return day, clan_war_league_war
+
+    async def load_clan_war_league_own_wars(self) -> Optional[list[dict]]:
+        season, _ = await self.load_clan_war_league()
+        if season is None:
+            return None
+        rows = await self.req_connection.fetch('''
+            SELECT data
+            FROM dev.clan_war_league_war
+            WHERE (clan_tag, season) = ($1, $2) AND $1 IN (data->'clan'->>'tag', data->'opponent'->>'tag')
+            ORDER BY day
+        ''', self.clan_tag, season)
+        if len(rows) == 0:
+            raise Exception
+        clan_war_league_wars = []
+        for row in rows:
+            clan_war_league_war = json.loads(row['data'])
+            if clan_war_league_war['opponent']['tag'] == self.clan_tag:
+                clan_war_league_war['clan'], clan_war_league_war['opponent'] = (
+                    clan_war_league_war['opponent'], clan_war_league_war['clan'])
+            clan_war_league_wars.append(clan_war_league_war)
+        return clan_war_league_wars
+
+    async def load_clan_war_league_last_day_wars(self) -> Optional[list[dict]]:
+        season, _ = await self.load_clan_war_league()
+        if season is None:
+            return None
+        rows = await self.req_connection.fetch('''
+            SELECT data
+            FROM dev.clan_war_league_war
+            WHERE
+                (clan_tag, season) = ($1, $2)
+                AND day IN (SELECT MAX(day) FROM dev.clan_war_league_war WHERE season = $2)
+        ''', self.clan_tag, season)
+        if len(rows) == 0:
+            raise Exception
+        return [json.loads(row['data']) for row in rows]
+
+    async def dump_tg_user(self, chat: Chat, user: User) -> None:
+        await self.req_connection.execute('''
+            INSERT INTO
+                dev.tg_user (chat_id, user_id, username, first_name, last_name, is_user_in_chat, first_seen, last_seen)
+            VALUES 
+                ($1, $2, $3, $4, $5, TRUE, CURRENT_TIMESTAMP(0), CURRENT_TIMESTAMP(0))
+            ON CONFLICT (chat_id, user_id) DO
+            UPDATE SET (username, first_name, last_name, is_user_in_chat, last_seen) = 
+                       ($3, $4, $5, TRUE, CURRENT_TIMESTAMP(0))
+        ''', chat.id, user.id, user.username, user.first_name, user.last_name)
+
+    async def undump_tg_user(self, chat: Chat, user: User) -> None:
+        await self.req_connection.execute('''
+            UPDATE dev.tg_user
+            SET (username, first_name, last_name, is_user_in_chat, last_seen) = 
+                ($3, $4, $5, FALSE, CURRENT_TIMESTAMP(0))
+            WHERE (chat_id, user_id) = ($1, $2)
+        ''', chat.id, user.id, user.username, user.first_name, user.last_name)
+
+    async def dump_group_chat(self, message: Message) -> None:
+        await self.req_connection.execute('''
+            INSERT INTO dev.chat (chat_id, chat_type, chat_title)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (chat_id) DO
+            UPDATE SET (chat_type, chat_title) = ($2, $3)
+        ''', message.chat.id, message.chat.type, message.chat.title)
+
+    async def dump_private_chat(self, message: Message) -> None:
+        await self.req_connection.execute('''
+            INSERT INTO dev.chat (chat_id, chat_type, chat_username, chat_first_name, chat_last_name)
+            VALUES ($1, $2, $3, $4, $5)
+            ON CONFLICT (chat_id) DO
+            UPDATE SET (chat_type, chat_username, chat_first_name, chat_last_name) = ($2, $3, $4, $5)
+        ''', message.chat.id, message.chat.type, message.chat.username, message.chat.first_name, message.chat.last_name)
+
+    def load_name(self, player_tag: str) -> str:
+        return self.name.get(player_tag, 'None')
+
+    def load_name_and_tag(self, player_tag: str) -> str:
+        return self.name_and_tag.get(player_tag, f'None {player_tag}')
+
+    def load_full_name(self, chat_id: int, user_id: int) -> str:
+        return self.full_name.get((chat_id, user_id), 'None')
+
+    def load_full_name_and_username(self, chat_id: int, user_id: int) -> str:
+        return self.full_name_and_username.get((chat_id, user_id), 'None')
+
+    async def dump_message_owner(self, message: Message, user: User) -> None:
+        await self.req_connection.execute('''
+            INSERT INTO dev.message_tg_user (chat_id, message_id, user_id)
+            VALUES ($1, $2, $3)
+        ''', message.chat.id, message.message_id, user.id)
+
+    async def is_user_message_owner(self, message: Message, user: User) -> bool:
+        row = await self.req_connection.fetchrow('''
             SELECT user_id
-            FROM public.message_user
-            WHERE chat_id = $1 AND message_id = $2
-        ''', chat_id, message_id)
-        if len(query) == 0:
-            return False
+            FROM dev.message_tg_user
+            WHERE (chat_id, message_id) = ($1, $2)
+        ''', message.chat.id, message.message_id)
+        return row.get('user_id') == user.id
+
+    async def is_user_admin_by_message(self, message: Message) -> bool:
+        if message.chat.type == ChatType.PRIVATE:
+            row = await self.req_connection.fetchrow('''
+                SELECT chat_id
+                FROM dev.clan_chat
+                WHERE clan_tag = $1 AND is_chat_main
+            ''', self.clan_tag)
+            chat_id = row['chat_id']
         else:
-            record = query[0]
-            return record['user_id'] == user_id
-
-    async def is_admin(self, user_id: int):
-        query = await self.req_connection.fetch('''
-            SELECT role
+            chat_id = message.chat.id
+        rows = await self.req_connection.fetch('''
+            SELECT player_tag
             FROM
-                public.tg_user_coc_account
-                JOIN public.clash_of_clans_account USING (tag)
-            WHERE id = $1
-        ''', user_id)
-        user_roles = [record['role'] for record in query]
-        return ('coLeader' in user_roles) or ('leader' in user_roles)
+                dev.player
+                JOIN dev.player_tg_user USING (clan_tag, player_tag)
+            WHERE (chat_id, user_id) = ($1, $2) AND player_role IN ('coLeader', 'leader')
+        ''', chat_id, message.from_user.id)
+        return len(rows) > 0
 
-    def get_map_positions(self, war_members_data: dict):
+    async def is_user_admin_by_chat(self, chat_id: int, user_id: int) -> bool:
+        rows = await self.req_connection.fetch('''
+            SELECT player_tag
+            FROM
+                dev.player
+                JOIN dev.player_tg_user USING (clan_tag, player_tag)
+            WHERE (chat_id, user_id) = ($1, $2) AND player_role IN ('coLeader', 'leader')
+        ''', chat_id, user_id)
+        return len(rows) > 0
+
+    async def load_chats_by_user_as_admin(self, user_id: int) -> list[Record]:
+        rows = await self.req_connection.fetch('''
+            SELECT DISTINCT chat.chat_id, chat.chat_title
+            FROM
+                dev.clan
+                JOIN dev.clan_chat ON clan.clan_tag = clan_chat.clan_tag AND clan.clan_tag = $1
+                JOIN dev.chat ON clan_chat.chat_id = chat.chat_id AND chat_type in ('group', 'supergroup')
+                JOIN dev.tg_user ON chat.chat_id = tg_user.chat_id AND is_user_in_chat AND user_id = $2
+                JOIN dev.player_tg_user
+                    ON tg_user.chat_id = player_tg_user.chat_id and tg_user.user_id = player_tg_user.user_id
+                JOIN dev.player
+                    ON player_tg_user.clan_tag = player.clan_tag and player_tg_user.player_tag = player.player_tag
+                    AND is_player_in_clan AND player_role IN ('coLeader', 'leader')
+        ''', self.clan_tag, user_id)
+        return rows
+
+    @staticmethod
+    def load_map_positions(war_clan_members: dict) -> dict:
         map_position = {}
-        for member in war_members_data:
+        for member in war_clan_members:
             map_position[member['tag']] = member['mapPosition']
         map_position = {item[0]: i + 1
                         for i, item
                         in enumerate(sorted(map_position.items(), key=lambda item: item[1]))}
         return map_position
+
+    async def print_skips(self,
+                          message: Message,
+                          members: list,
+                          ping: bool,
+                          attacks_limit: int) -> str:
+        if message.chat.type == ChatType.PRIVATE:
+            row = await self.req_connection.fetchrow('''
+                SELECT chat_id
+                FROM dev.clan_chat
+                WHERE clan_tag = $1 AND is_chat_main
+            ''', self.clan_tag)
+            chat_id = row['chat_id']
+        else:
+            chat_id = message.chat.id
+        rows = await self.req_connection.fetch('''
+            SELECT player_tag, user_id
+            FROM
+                dev.player_tg_user
+                JOIN dev.player USING (clan_tag, player_tag)
+                JOIN dev.tg_user USING (chat_id, user_id)
+            WHERE player.clan_tag = $1 AND tg_user.chat_id = $2
+        ''', self.clan_tag, chat_id)
+        members_by_tg_user_to_mention = {}
+        unlinked_members = []
+        tg_users_by_player = {player_tag: [] for player_tag in [row['player_tag'] for row in rows]}
+        for row in rows:
+            tg_users_by_player[row['player_tag']].append(row['user_id'])
+        for member in members:
+            if member.attacks_spent < attacks_limit:
+                for tg_user in tg_users_by_player.get(member.player_tag, []):
+                    if members_by_tg_user_to_mention.get(tg_user) is None:
+                        members_by_tg_user_to_mention[tg_user] = []
+                    members_by_tg_user_to_mention[tg_user].append(member)
+                if tg_users_by_player.get(member.player_tag) is None:
+                    unlinked_members.append(member)
+        text = ''
+        for tg_user, players in members_by_tg_user_to_mention.items():
+            if ping:
+                text += f'<a href="tg://user?id={tg_user}">{self.load_full_name(chat_id, tg_user)}</a> — '
+            else:
+                text += f'{self.load_full_name(chat_id, tg_user)} — '
+            text += (', '.join([f'{self.of.to_html(self.load_name(player.player_tag))}: '
+                                f'{player.attacks_spent} / {player.attacks_limit}'
+                                for player in players]) +
+                     '\n')
+        if len(members_by_tg_user_to_mention) > 0:
+            text += '\n'
+        for player in unlinked_members:
+            text += (f'{self.of.to_html(self.load_name(player.player_tag))}: '
+                     f'{player.attacks_spent} / {player.attacks_limit}\n')
+        if len(members_by_tg_user_to_mention) + len(unlinked_members) == 0:
+            text += f'Список пуст'
+        return text
+
+    @staticmethod
+    def attacks_count_to_text(attacks_count: int) -> str:
+        if attacks_count == 1:
+            return '1 атака'
+        if attacks_count == 2:
+            return '2 атаки'
+        if attacks_count == 3:
+            return '3 атаки'
+        if attacks_count == 4:
+            return '4 атаки'
+        if 5 <= attacks_count <= 20:
+            return f'{attacks_count} атак'
+        else:
+            return f'кол-во атак: {attacks_count}'
+
+    @staticmethod
+    def avg(lst: list) -> float:
+        return round(sum(lst) / len(lst), 2)

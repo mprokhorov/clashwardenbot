@@ -164,7 +164,7 @@ async def raids_analysis(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[
                              f'{'⭐' * attack['stars']} ({attack['destructionPercent']}%)\n')
             text += f'\n'
         if len(clan_attacks_by_district) == 0:
-            raid += f'Список пуст\n'
+            text += f'Список пуст\n'
     else:
         text += 'Информация о рейдах отсутствует\n'
     return text, ParseMode.HTML, None

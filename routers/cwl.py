@@ -1,9 +1,11 @@
 import enum
 from collections import namedtuple
+from contextlib import suppress
 from typing import Optional, Tuple
 
 from aiogram import Router
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
 from aiogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
@@ -329,8 +331,9 @@ async def callback_cwl_info_day(callback_query: CallbackQuery,
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_info(dm, callback_data.cwl_day)
-        await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-        await callback_query.answer()
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+    await callback_query.answer()
 
 
 @router.callback_query(CWLCallbackFactory.filter(F.action == Action.cwl_info_days_list))
@@ -342,8 +345,9 @@ async def callback_cwl_info_days_list(callback_query: CallbackQuery,
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_days_list(dm, callback_data.action)
-        await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-        await callback_query.answer()
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+    await callback_query.answer()
 
 
 @router.message(Command('cwl_attacks'))
@@ -362,8 +366,9 @@ async def callback_cwl_attacks_day(callback_query: CallbackQuery,
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_attacks(dm, callback_data.cwl_day)
-        await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-        await callback_query.answer()
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+    await callback_query.answer()
 
 
 @router.callback_query(CWLCallbackFactory.filter(F.action == Action.cwl_attacks_days_list))
@@ -375,8 +380,9 @@ async def callback_cwl_attacks_days_list(callback_query: CallbackQuery,
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_days_list(dm, callback_data.action)
-        await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-        await callback_query.answer()
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+    await callback_query.answer()
 
 
 @router.message(Command('cwl_skips'))

@@ -325,7 +325,7 @@ async def callback_cw_list(callback_query: CallbackQuery,
         text, parse_mode, reply_markup = await cw_list(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-            await callback_query.answer()
+        await callback_query.answer()
 
 
 @router.message(Command('cw_skips'))

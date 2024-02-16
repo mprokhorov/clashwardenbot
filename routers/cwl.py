@@ -127,7 +127,7 @@ async def cwl_attacks(dm: DatabaseManager, cwl_day: Optional[int] = None):
         rows = await dm.req_connection.fetch('''
             SELECT player_tag, player_name, town_hall_level,
                    barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
-            FROM dev.player
+            FROM player
             WHERE clan_tag = $1
         ''', dm.clan_tag)
         cwlw_member_info = {row['player_tag']: (f'{dm.of.to_html(row['player_name'])} — 🛖 {row['town_hall_level']}, '

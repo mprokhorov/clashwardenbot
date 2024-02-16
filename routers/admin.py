@@ -111,11 +111,11 @@ async def link_select_player(dm: DatabaseManager,
             f'Выберите игрока:')
     rows = await dm.req_connection.fetch('''
         SELECT player_tag, player_name
-        FROM dev.player
+        FROM player
         WHERE
             clan_tag = $1
             AND is_player_in_clan
-            AND ((clan_tag, player_tag) NOT IN (SELECT clan_tag, player_tag FROM dev.player_tg_user) 
+            AND ((clan_tag, player_tag) NOT IN (SELECT clan_tag, player_tag FROM player_bot_user) 
             OR $2)
         ORDER BY player_name, player_tag
     ''', dm.clan_tag, callback_data.link == Link.select_player_from_all)
@@ -158,15 +158,13 @@ async def link_select_tg_user(dm: DatabaseManager,
             f'Выберите пользователя:')
     rows = await dm.req_connection.fetch('''
         SELECT user_id, username, first_name, last_name
-        FROM dev.tg_user
+        FROM bot_user
         WHERE
-            chat_id = $1
-            AND is_user_in_chat
-            AND ((chat_id, user_id) NOT IN (SELECT chat_id, user_id
-                                            FROM dev.player_tg_user)
-            OR $2)
+            (clan_tag, chat_id) = ($1, $2) AND is_user_in_chat
+            AND ((clan_tag, chat_id, user_id) NOT IN (SELECT clan_tag, chat_id, user_id FROM player_bot_user)
+            OR $3)
         ORDER BY first_name, last_name, username
-    ''', callback_data.chat_id, callback_data.link == Link.select_tg_user_from_all)
+    ''', dm.clan_tag, callback_data.chat_id, callback_data.link == Link.select_tg_user_from_all)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=dm.load_full_name_and_username(callback_data.chat_id, row['user_id']),
                               callback_data=AdminCallbackFactory(
@@ -207,12 +205,12 @@ async def link_finish(dm: DatabaseManager,
                       callback_query: CallbackQuery) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     rows = await dm.req_connection.fetch('''
         SELECT clan_tag, player_tag, chat_id, user_id
-        FROM dev.player_tg_user
+        FROM player_bot_user
         WHERE (clan_tag, player_tag) = ($1, $2) AND (chat_id, user_id) = ($3, $4)
     ''', dm.clan_tag, callback_data.player_tag, callback_data.chat_id, callback_data.user_id)
     if len(rows) == 0:
         await dm.req_connection.execute('''
-            INSERT INTO dev.player_tg_user (clan_tag, player_tag, chat_id, user_id)
+            INSERT INTO player_bot_user (clan_tag, player_tag, chat_id, user_id)
             VALUES ($1, $2, $3, $4)
         ''', dm.clan_tag, callback_data.player_tag, callback_data.chat_id, callback_data.user_id)
         text = (f'<b>⚙️ Привязка аккаунта к пользователю</b>\n'
@@ -234,7 +232,7 @@ async def link_finish(dm: DatabaseManager,
                        f'to user {dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id)}')
 
     await dm.req_connection.execute('''
-        INSERT INTO dev.admin_action (chat_id, user_id, action_timestamp, action_description)
+        INSERT INTO admin_action (chat_id, user_id, action_timestamp, action_description)
         VALUES ($1, $2, CURRENT_TIMESTAMP(0), $3)
     ''', callback_query.message.chat.id, callback_query.from_user.id, description)
 
@@ -248,7 +246,7 @@ async def edit_cw_list(dm: DatabaseManager,
             f'\n')
     if callback_data is not None and callback_data.player_tag is not None:
         await dm.req_connection.execute('''
-            UPDATE dev.player
+            UPDATE player
             SET is_player_set_for_clan_wars = $1
             WHERE clan_tag = $2 and player_tag = $3
         ''', callback_data.is_player_set_for_clan_wars, dm.clan_tag, callback_data.player_tag)
@@ -256,7 +254,7 @@ async def edit_cw_list(dm: DatabaseManager,
         SELECT
             player_tag, is_player_set_for_clan_wars,
             town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
-        FROM dev.player
+        FROM player
         WHERE clan_tag = $1 AND is_player_in_clan
         ORDER BY
             town_hall_level DESC,
@@ -296,17 +294,17 @@ async def ping_all(dm: DatabaseManager,
         return text, ParseMode.HTML, None
     rows = await dm.req_connection.fetch('''
         SELECT chat_id, chat_title
-        FROM dev.chat
-        WHERE chat_type IN ('group', 'supergroup') AND chat_id IN (SELECT chat_id FROM dev.clan_chat)
+        FROM chat
+        WHERE chat_type IN ('group', 'supergroup') AND chat_id IN (SELECT chat_id FROM clan_chat)
     ''')
     chat_ids = [row['chat_id'] for row in rows]
     chat_titles = [row['chat_title'] for row in rows]
     for chat_id in chat_ids:
         rows = await dm.req_connection.fetch('''
             SELECT user_id, first_name
-            FROM dev.tg_user
-            WHERE chat_id = $1 AND is_user_in_chat
-        ''', chat_id)
+            FROM bot_user
+            WHERE (clan_tag, chat_id) = ($1, $2) AND is_user_in_chat
+        ''', dm.clan_tag, chat_id)
         user_ids = [row['user_id'] for row in rows]
         first_names = [row['first_name'] for row in rows]
         ping_text = f'\n\n'

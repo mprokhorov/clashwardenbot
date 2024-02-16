@@ -24,7 +24,7 @@ class MessageMiddleware(BaseMiddleware):
         dm: DatabaseManager = data['dm']
         row = await dm.req_connection.fetchrow('''
             SELECT clan_name
-            FROM dev.clan
+            FROM clan
             WHERE clan_tag = $1
         ''', dm.clan_tag)
         clan_name = row['clan_name']
@@ -39,7 +39,7 @@ class MessageMiddleware(BaseMiddleware):
 
             row = await dm.req_connection.fetch('''
                 SELECT chat_id
-                FROM dev.clan_chat
+                FROM clan_chat
                 WHERE clan_tag = $1
             ''', dm.clan_tag)
             if message.chat.id in [row['chat_id'] for row in row]:
@@ -61,9 +61,10 @@ class MessageMiddleware(BaseMiddleware):
             await dm.dump_tg_user(message.chat, message.from_user)
             row = await dm.req_connection.fetchrow('''
                 SELECT user_id
-                FROM dev.tg_user
+                FROM bot_user
                 WHERE
-                    chat_id in (SELECT chat_id FROM dev.clan_chat WHERE clan_tag = $1)
+                    clan_tag = $1
+                    AND chat_id in (SELECT chat_id FROM clan_chat WHERE clan_tag = $1)
                     AND is_user_in_chat AND user_id = $2
                     OR can_use_bot_without_clan_group
             ''', dm.clan_tag, message.from_user.id)

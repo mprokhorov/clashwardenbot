@@ -54,7 +54,7 @@ class DatabaseManager:
         if retrieved_clan_members is not None:
             rows = await self.cron_connection.fetch('''
                 SELECT player_tag
-                FROM dev.player
+                FROM master.player
                 WHERE player.clan_tag = $1 AND is_player_in_clan
             ''', self.clan_tag)
             loaded_clan_member_tags = [row['player_tag'] for row in rows]
@@ -79,7 +79,7 @@ class DatabaseManager:
 
         rows = await self.cron_connection.fetch('''
             SELECT player_tag, player_name
-            FROM dev.player
+            FROM master.player
             WHERE clan_tag = $1 AND is_player_in_clan
         ''', self.clan_tag)
         self.name = {row['player_tag']: row['player_name'] for row in rows}
@@ -87,7 +87,7 @@ class DatabaseManager:
 
         rows = await self.cron_connection.fetch('''
             SELECT chat_id, user_id, username, first_name, last_name
-            FROM dev.tg_user
+            FROM master.tg_user
         ''')
         self.full_name = {(row['chat_id'], row['user_id']):
                           row['first_name'] + (f' {row['last_name']}' if row['last_name'] else '')
@@ -107,7 +107,7 @@ class DatabaseManager:
         for player_tag in old_contributions:
             if new_contributions.get(player_tag) and new_contributions[player_tag] > old_contributions[player_tag]:
                 await self.cron_connection.execute('''
-                    INSERT INTO dev.capital_contribution (clan_tag, player_tag, gold_amount, contribution_timestamp)
+                    INSERT INTO master.capital_contribution (clan_tag, player_tag, gold_amount, contribution_timestamp)
                     VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0))
                 ''', self.clan_tag, player_tag, new_contributions[player_tag] - old_contributions[player_tag])
 
@@ -145,11 +145,11 @@ class DatabaseManager:
                          player['donations'], player['donationsReceived']))
 
         await self.cron_connection.execute('''
-            UPDATE dev.player
+            UPDATE master.player
             SET is_player_in_clan = FALSE
         ''')
         await self.cron_connection.executemany('''
-            INSERT INTO dev.player
+            INSERT INTO master.player
                 (clan_tag, player_tag,
                 player_name, is_player_in_clan, is_player_set_for_clan_wars,
                 barbarian_king_level, archer_queen_level,
@@ -180,7 +180,7 @@ class DatabaseManager:
     async def load_capital_contributions(self) -> dict:
         rows = await self.cron_connection.fetch('''
             SELECT player_tag, capital_gold_contributed
-            FROM dev.player
+            FROM master.player
             WHERE is_player_in_clan AND clan_tag = $1
         ''', self.clan_tag)
         return {row['player_tag']: row['capital_gold_contributed'] for row in rows}
@@ -191,7 +191,7 @@ class DatabaseManager:
             return
 
         await self.cron_connection.execute('''
-            INSERT INTO dev.clan_war (clan_tag, start_time, data)
+            INSERT INTO master.clan_war (clan_tag, start_time, data)
             VALUES ($1, $2, $3)
             ON CONFLICT (clan_tag, start_time)
             DO UPDATE SET data = $3
@@ -200,7 +200,7 @@ class DatabaseManager:
     async def load_clan_war(self) -> Optional[dict]:
         row = await self.req_connection.fetchrow('''
             SELECT data
-            FROM dev.clan_war
+            FROM master.clan_war
             WHERE clan_tag = $1
             ORDER BY start_time DESC
         ''', self.clan_tag)
@@ -213,7 +213,7 @@ class DatabaseManager:
         if retrieved_raid_weekends is None:
             return
         await self.cron_connection.executemany('''
-            INSERT INTO dev.raid_weekend (clan_tag, start_time, data)
+            INSERT INTO master.raid_weekend (clan_tag, start_time, data)
             VALUES ($1, $2, $3)
             ON CONFLICT (clan_tag, start_time)
             DO UPDATE SET data = $3
@@ -224,7 +224,7 @@ class DatabaseManager:
     async def load_raid_weekend(self) -> Optional[dict]:
         row = await self.req_connection.fetchrow('''
             SELECT data
-            FROM dev.raid_weekend
+            FROM master.raid_weekend
             WHERE clan_tag = $1
             ORDER BY start_time DESC
         ''', self.clan_tag)
@@ -237,7 +237,7 @@ class DatabaseManager:
         if retrieved_clan_war_league is None:
             return
         await self.cron_connection.execute('''
-            INSERT INTO dev.clan_war_league (clan_tag, season, data)
+            INSERT INTO master.clan_war_league (clan_tag, season, data)
             VALUES ($1, $2, $3)
             ON CONFLICT (clan_tag, season)
             DO UPDATE SET data = $3
@@ -246,7 +246,7 @@ class DatabaseManager:
     async def load_clan_war_league(self) -> Tuple[Optional[str], Optional[dict]]:
         row = await self.req_connection.fetchrow('''
             SELECT season, data
-            FROM dev.clan_war_league
+            FROM master.clan_war_league
             WHERE clan_tag = $1
             ORDER BY season DESC 
         ''', self.clan_tag)
@@ -269,7 +269,7 @@ class DatabaseManager:
         for clan_war_league_war in clan_war_league_wars:
             row = await self.cron_connection.fetchrow('''
                 SELECT clan_tag, war_tag, data->>'state' AS state
-                FROM dev.clan_war_league_war
+                FROM master.clan_war_league_war
                 WHERE (clan_tag, war_tag) = ($1, $2) AND data->>'state' = 'warEnded'
             ''', clan_war_league_war.clan_tag, clan_war_league_war.war_tag)
             if row is None:
@@ -284,7 +284,7 @@ class DatabaseManager:
                    [clan_war_league_war.day for clan_war_league_war in clan_war_league_wars_to_retrieve],
                    map(json.dumps, retrieved_clan_war_league_wars))
         await self.cron_connection.executemany('''
-            INSERT INTO dev.clan_war_league_war (clan_tag, war_tag, season, day, data)
+            INSERT INTO master.clan_war_league_war (clan_tag, war_tag, season, day, data)
             VALUES ($1, $2, $3, $4, $5)
         ''', rows)
 
@@ -310,7 +310,7 @@ class DatabaseManager:
             return None
         rows = await self.req_connection.fetch('''
             SELECT data
-            FROM dev.clan_war_league_war
+            FROM master.clan_war_league_war
             WHERE (clan_tag, season) = ($1, $2) AND $1 IN (data->'clan'->>'tag', data->'opponent'->>'tag')
             ORDER BY day
         ''', self.clan_tag, season)
@@ -331,10 +331,10 @@ class DatabaseManager:
             return None
         rows = await self.req_connection.fetch('''
             SELECT data
-            FROM dev.clan_war_league_war
+            FROM master.clan_war_league_war
             WHERE
                 (clan_tag, season) = ($1, $2)
-                AND day IN (SELECT MAX(day) FROM dev.clan_war_league_war WHERE season = $2)
+                AND day IN (SELECT MAX(day) FROM master.clan_war_league_war WHERE season = $2)
         ''', self.clan_tag, season)
         if len(rows) == 0:
             raise Exception
@@ -343,7 +343,7 @@ class DatabaseManager:
     async def dump_tg_user(self, chat: Chat, user: User) -> None:
         await self.req_connection.execute('''
             INSERT INTO
-                dev.tg_user (chat_id, user_id, username, first_name, last_name, is_user_in_chat, first_seen, last_seen)
+                master.tg_user (chat_id, user_id, username, first_name, last_name, is_user_in_chat, first_seen, last_seen)
             VALUES 
                 ($1, $2, $3, $4, $5, TRUE, CURRENT_TIMESTAMP(0), CURRENT_TIMESTAMP(0))
             ON CONFLICT (chat_id, user_id) DO
@@ -353,7 +353,7 @@ class DatabaseManager:
 
     async def undump_tg_user(self, chat: Chat, user: User) -> None:
         await self.req_connection.execute('''
-            UPDATE dev.tg_user
+            UPDATE master.tg_user
             SET (username, first_name, last_name, is_user_in_chat, last_seen) = 
                 ($3, $4, $5, FALSE, CURRENT_TIMESTAMP(0))
             WHERE (chat_id, user_id) = ($1, $2)
@@ -361,7 +361,7 @@ class DatabaseManager:
 
     async def dump_group_chat(self, message: Message) -> None:
         await self.req_connection.execute('''
-            INSERT INTO dev.chat (chat_id, chat_type, chat_title)
+            INSERT INTO master.chat (chat_id, chat_type, chat_title)
             VALUES ($1, $2, $3)
             ON CONFLICT (chat_id) DO
             UPDATE SET (chat_type, chat_title) = ($2, $3)
@@ -369,7 +369,7 @@ class DatabaseManager:
 
     async def dump_private_chat(self, message: Message) -> None:
         await self.req_connection.execute('''
-            INSERT INTO dev.chat (chat_id, chat_type, chat_username, chat_first_name, chat_last_name)
+            INSERT INTO master.chat (chat_id, chat_type, chat_username, chat_first_name, chat_last_name)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (chat_id) DO
             UPDATE SET (chat_type, chat_username, chat_first_name, chat_last_name) = ($2, $3, $4, $5)
@@ -389,14 +389,14 @@ class DatabaseManager:
 
     async def dump_message_owner(self, message: Message, user: User) -> None:
         await self.req_connection.execute('''
-            INSERT INTO dev.message_tg_user (chat_id, message_id, user_id)
+            INSERT INTO master.message_tg_user (chat_id, message_id, user_id)
             VALUES ($1, $2, $3)
         ''', message.chat.id, message.message_id, user.id)
 
     async def is_user_message_owner(self, message: Message, user: User) -> bool:
         row = await self.req_connection.fetchrow('''
             SELECT user_id
-            FROM dev.message_tg_user
+            FROM master.message_tg_user
             WHERE (chat_id, message_id) = ($1, $2)
         ''', message.chat.id, message.message_id)
         return row.get('user_id') == user.id
@@ -404,7 +404,7 @@ class DatabaseManager:
     async def can_user_ping_group_members(self, message: Message) -> bool:
         row = await self.req_connection.fetchrow('''
             SELECT can_ping_group_members
-            FROM dev.tg_user
+            FROM master.tg_user
             WHERE (chat_id, user_id) = ($1, $2)
         ''', message.chat.id, message.from_user.id)
         return row.get('can_ping_group_members', False)
@@ -413,8 +413,8 @@ class DatabaseManager:
         rows = await self.req_connection.fetch('''
             SELECT chat_id, chat_title
             FROM
-                dev.tg_user
-                JOIN dev.chat USING (chat_id)
+                master.tg_user
+                JOIN master.chat USING (chat_id)
             WHERE user_id = $1 AND can_link_group_members
         ''', user_id)
         return rows
@@ -423,8 +423,8 @@ class DatabaseManager:
         rows = await self.req_connection.fetch('''
             SELECT chat_id, chat_title
             FROM
-                dev.tg_user
-                JOIN dev.chat USING (chat_id)
+                master.tg_user
+                JOIN master.chat USING (chat_id)
             WHERE user_id = $1 AND can_edit_cw_list
         ''', user_id)
         return rows
@@ -447,7 +447,7 @@ class DatabaseManager:
         if message.chat.type == ChatType.PRIVATE:
             row = await self.req_connection.fetchrow('''
                 SELECT chat_id
-                FROM dev.clan_chat
+                FROM master.clan_chat
                 WHERE clan_tag = $1 AND is_chat_main
             ''', self.clan_tag)
             chat_id = row['chat_id']
@@ -456,9 +456,9 @@ class DatabaseManager:
         rows = await self.req_connection.fetch('''
             SELECT player_tag, user_id
             FROM
-                dev.player_tg_user
-                JOIN dev.player USING (clan_tag, player_tag)
-                JOIN dev.tg_user USING (chat_id, user_id)
+                master.player_tg_user
+                JOIN master.player USING (clan_tag, player_tag)
+                JOIN master.tg_user USING (chat_id, user_id)
             WHERE player.clan_tag = $1 AND tg_user.chat_id = $2
         ''', self.clan_tag, chat_id)
         members_by_tg_user_to_mention = {}

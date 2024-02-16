@@ -34,13 +34,13 @@ async def main():
                  async for user in app.get_chat_members(updated_dialog.id)
                  if not user.user.is_bot]
     await dm.req_connection.execute('''
-        UPDATE dev.tg_user
+        UPDATE master.tg_user
         SET is_user_in_chat = FALSE
         WHERE chat_id = $1
     ''', updated_dialog.id)
     await dm.req_connection.executemany('''
         INSERT INTO
-            dev.tg_user (chat_id, user_id, username, first_name, last_name, is_user_in_chat, first_seen, last_seen)
+            master.tg_user (chat_id, user_id, username, first_name, last_name, is_user_in_chat, first_seen, last_seen)
         VALUES ($1, $2, $3, $4, $5, TRUE, NULL, CURRENT_TIMESTAMP(0))
         ON CONFLICT (chat_id, user_id)
         DO UPDATE SET (username, first_name, last_name, is_user_in_chat, last_seen) = 

@@ -14,7 +14,7 @@ async def members(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineK
         SELECT
             player_name, town_hall_level,
             barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
-        FROM dev.player
+        FROM master.player
         WHERE clan_tag = $1 AND is_player_in_clan
         ORDER BY
             town_hall_level DESC,
@@ -35,7 +35,7 @@ async def members(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineK
 async def donations(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     rows = await dm.req_connection.fetch('''
         SELECT player_name, player_role, donations_given
-        FROM dev.player
+        FROM master.player
         WHERE clan_tag = $1 AND is_player_in_clan
         ORDER BY donations_given DESC
         LIMIT 20
@@ -48,10 +48,10 @@ async def donations(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inlin
     text += f'\n'
     rows = await dm.req_connection.fetch('''
         SELECT player_name, donations_given
-        FROM dev.player
+        FROM master.player
         WHERE clan_tag = $1 AND is_player_in_clan AND player_role = 'admin' AND player_tag NOT IN
             (SELECT player_tag
-            FROM dev.player
+            FROM master.player
             WHERE clan_tag = $1 AND is_player_in_clan AND player_role NOT IN ('coLeader', 'leader')
             ORDER BY donations_given DESC
             LIMIT 10)
@@ -64,10 +64,10 @@ async def donations(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inlin
                                                             f'\n')
     rows = await dm.req_connection.fetch('''
         SELECT player_name, donations_given
-        FROM dev.player
+        FROM master.player
         WHERE  clan_tag = $1 AND is_player_in_clan AND player_role = 'member' AND player_tag IN
             (SELECT player_tag
-            FROM dev.player
+            FROM master.player
             WHERE clan_tag = $1 AND is_player_in_clan AND player_role NOT IN ('coLeader', 'leader')
             ORDER BY donations_given DESC
             LIMIT 10)
@@ -83,7 +83,7 @@ async def donations(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inlin
 async def contributions(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     rows = await dm.req_connection.fetch('''
         SELECT player_tag, gold_amount, contribution_timestamp
-        FROM dev.capital_contribution
+        FROM master.capital_contribution
         ORDER BY contribution_timestamp DESC
         LIMIT 20
     ''')

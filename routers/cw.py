@@ -93,7 +93,7 @@ async def cw_attacks(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
         rows = await dm.req_connection.fetch('''
             SELECT player_tag, player_name, town_hall_level,
                    barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
-            FROM dev.player
+            FROM master.player
             WHERE clan_tag = $1
         ''', dm.clan_tag)
         cw_member_info = {row['player_tag']: (f'{dm.of.to_html(row['player_name'])} — 🛖 {row['town_hall_level']}, '
@@ -151,7 +151,7 @@ async def cw_status(dm: DatabaseManager,
             f'\n')
     if callback_data is not None and callback_data.player_tag is not None:
         await dm.req_connection.execute('''
-            UPDATE dev.player
+            UPDATE master.player
             SET is_player_set_for_clan_wars = $1
             WHERE clan_tag = $2 and player_tag = $3
         ''', callback_data.is_player_set_for_clan_wars, dm.clan_tag, callback_data.player_tag)
@@ -166,9 +166,9 @@ async def cw_status(dm: DatabaseManager,
             player_tag, player_name, is_player_set_for_clan_wars,
             town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
         FROM
-            dev.player
-            JOIN dev.player_tg_user USING (clan_tag, player_tag)
-            JOIN dev.tg_user USING (chat_id, user_id)
+            master.player
+            JOIN master.player_tg_user USING (clan_tag, player_tag)
+            JOIN master.tg_user USING (chat_id, user_id)
         WHERE clan_tag = $1 AND is_player_in_clan AND user_id = $2 AND is_user_in_chat
         ORDER BY player_name
     ''', dm.clan_tag, user_id)
@@ -204,7 +204,7 @@ async def cw_list(dm: DatabaseManager,
             SELECT
                 player_name, town_hall_level,
                 barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
-            FROM dev.player
+            FROM master.player
             WHERE clan_tag = $1 AND is_player_set_for_clan_wars
             ORDER BY home_village_trophies DESC
         ''', dm.clan_tag)
@@ -217,7 +217,7 @@ async def cw_list(dm: DatabaseManager,
             SELECT
                 player_name, town_hall_level,
                 barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
-            FROM dev.player
+            FROM master.player
             WHERE clan_tag = $1 AND is_player_set_for_clan_wars
             ORDER BY
                 town_hall_level DESC,

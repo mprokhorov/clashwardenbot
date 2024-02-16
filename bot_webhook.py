@@ -1,3 +1,4 @@
+import argparse
 import logging
 
 from aiogram import Dispatcher, Router, Bot
@@ -7,8 +8,8 @@ from aiohttp.web_app import Application
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.config import config
-from bot.middlewares import CallbackQueryMiddleware, MessageMiddleware
-from bot.commands import commands
+from bot.middlewares import MessageMiddleware
+from bot import commands
 from database_manager import DatabaseManager
 from routers import admin, cw, cwl, members, raids
 
@@ -44,15 +45,19 @@ async def on_shutdown(bot: Bot):
 
 
 def main():
-    bot = Bot(token=config.telegram_bot_api_token.get_secret_value())
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--bot_number")
+    args = parser.parse_args()
+    bot_number = int(args.bot_number)
+    dm = DatabaseManager(clan_tag=config.clan_tags[bot_number].get_secret_value(),
+                         telegram_bot_api_token=config.telegram_bot_api_tokens[bot_number].get_secret_value(),
+                         telegram_bot_username=config.telegram_bot_usernames[bot_number].get_secret_value())
+
+    bot = Bot(token=dm.telegram_bot_api_token)
     dispatcher = Dispatcher()
     dispatcher['webhook_url'] = WEBHOOK_URL
-
-    dm = DatabaseManager()
-
     dispatcher['dm'] = dm
     dispatcher.message.middleware(MessageMiddleware())
-    dispatcher.callback_query.middleware(CallbackQueryMiddleware())
     dispatcher.include_routers(router, cw.router, raids.router, cwl.router, members.router, admin.router)
 
     app = Application()

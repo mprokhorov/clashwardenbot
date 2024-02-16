@@ -3,16 +3,9 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    telegram_bot_api_token: SecretStr
-    telegram_bot_username: SecretStr
     telegram_api_client_name: SecretStr
     telegram_api_id: SecretStr
     telegram_api_hash: SecretStr
-
-    webhook_host: SecretStr
-    webhook_path: SecretStr
-    webapp_host: SecretStr
-    webapp_port: SecretStr
 
     clash_of_clans_api_login: SecretStr
     clash_of_clans_api_password: SecretStr
@@ -24,8 +17,15 @@ class Settings(BaseSettings):
     postgres_user: SecretStr
     postgres_password: SecretStr
 
-    telegram_chat_id: SecretStr
-    clash_of_clans_clan_tag: SecretStr
+    webhook_host: SecretStr
+    webhook_path: SecretStr
+    webapp_host: SecretStr
+    webapp_port: SecretStr
+
+    clan_tags: list[SecretStr]
+    telegram_bot_api_tokens: list[SecretStr]
+    telegram_bot_usernames: list[SecretStr]
+    bot_owner_user_id: SecretStr
 
     class Config:
         env_file = 'bot/.env'

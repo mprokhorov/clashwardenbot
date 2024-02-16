@@ -15,13 +15,16 @@ class OutputFormatter:
                  utc_to_local_hours: Optional[timedelta] = timedelta(hours=3)):
         self.utc_to_local_hours = utc_to_local_hours
 
-    def to_html(self, text: str) -> str:
+    @staticmethod
+    def to_html(text: str) -> str:
         return (text
                 .replace('&', '&amp;')
                 .replace('<', '&lt;')
-                .replace('>', '&gt;'))
+                .replace('>', '&gt;')
+                .replace('⭐', ''))
 
-    def season(self, season_data: str) -> str:
+    @staticmethod
+    def season(season_data: str) -> str:
         month_in_russian = {'01': 'январь',
                             '02': 'февраль',
                             '03': 'март',
@@ -37,14 +40,16 @@ class OutputFormatter:
         year, month = season_data.split('-')
         return f'{month_in_russian[month]} {year} г.'
 
-    def role(self, role_data: str) -> str:
+    @staticmethod
+    def role(role_data: str) -> str:
         role_in_russian = {'leader': 'глава',
                            'coLeader': 'соруководитель',
                            'admin': 'старейшина',
                            'member': 'участник'}
         return role_in_russian[role_data]
 
-    def district(self, district_data: str) -> str:
+    @staticmethod
+    def district(district_data: str) -> str:
         district_in_russian = {'Capital Peak': 'Столичный пик',
                                'Barbarian Camp': 'Лагерь варваров',
                                'Wizard Valley': 'Долина колдунов',

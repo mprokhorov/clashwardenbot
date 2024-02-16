@@ -65,7 +65,7 @@ async def donations(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inlin
     rows = await dm.req_connection.fetch('''
         SELECT player_name, donations_given
         FROM player
-        WHERE  clan_tag = $1 AND is_player_in_clan AND player_role = 'member' AND player_tag IN
+        WHERE clan_tag = $1 AND is_player_in_clan AND player_role = 'member' AND player_tag IN
             (SELECT player_tag
             FROM player
             WHERE clan_tag = $1 AND is_player_in_clan AND player_role NOT IN ('coLeader', 'leader')
@@ -84,9 +84,10 @@ async def contributions(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[I
     rows = await dm.req_connection.fetch('''
         SELECT player_tag, gold_amount, contribution_timestamp
         FROM capital_contribution
+        WHERE clan_tag = $1
         ORDER BY contribution_timestamp DESC
         LIMIT 20
-    ''')
+    ''', dm.clan_tag)
     text = (f'<b>🤝 Вклады в столице</b>\n'
             f'\n')
     for i, row in enumerate(rows):

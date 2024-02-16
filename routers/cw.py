@@ -94,7 +94,7 @@ async def cw_attacks(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
             SELECT player_tag, player_name, town_hall_level,
                    barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
             FROM player
-            WHERE clan_tag = $1
+            WHERE clan_tag = $1 -- AND is_player_in_clan
         ''', dm.clan_tag)
         cw_member_info = {row['player_tag']: (f'{dm.of.to_html(row['player_name'])} — 🛖 {row['town_hall_level']}, '
                                               f'👑 {row['barbarian_king_level']} / {row['archer_queen_level']} / '
@@ -205,7 +205,7 @@ async def cw_list(dm: DatabaseManager,
                 player_name, town_hall_level,
                 barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
             FROM player
-            WHERE clan_tag = $1 AND is_player_set_for_clan_wars
+            WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_wars
             ORDER BY home_village_trophies DESC
         ''', dm.clan_tag)
         text = (f'<b>📋 Список участников КВ (⬇️ по трофеям)</b>\n'
@@ -218,7 +218,7 @@ async def cw_list(dm: DatabaseManager,
                 player_name, town_hall_level,
                 barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
             FROM player
-            WHERE clan_tag = $1 AND is_player_set_for_clan_wars
+            WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_wars
             ORDER BY
                 town_hall_level DESC,
                 (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC,

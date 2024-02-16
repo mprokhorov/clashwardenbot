@@ -24,7 +24,7 @@ router = Router()
 
 
 @router.startup()
-async def on_startup(bot: Bot, webhook_url: str, dm: DatabaseManager):
+async def on_startup(bot: Bot, webhook_url: str, dm: DatabaseManager, bot_number: int):
     await bot.set_webhook(webhook_url)
 
     await dm.establish_connections()
@@ -32,11 +32,14 @@ async def on_startup(bot: Bot, webhook_url: str, dm: DatabaseManager):
     await dm.infrequent_jobs()
 
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(dm.frequent_jobs, 'cron', minute='5,10,15,20,25,30,35,40,45,50,55')
-    scheduler.add_job(dm.infrequent_jobs, 'cron', minute='0')
+    job_frequency = 5
+    frequent_jobs_minute = ','.join(map(str, [m * job_frequency + bot_number for m in range(1, 60 // job_frequency)]))
+    scheduler.add_job(dm.frequent_jobs, 'cron', minute=frequent_jobs_minute)
+    infrequent_jobs_minute = str(bot_number)
+    scheduler.add_job(dm.infrequent_jobs, 'cron', minute=infrequent_jobs_minute)
     scheduler.start()
 
-    await commands.set_cwl_commands(bot)
+    await commands.set_commands(bot)
 
 
 @router.shutdown()
@@ -57,6 +60,7 @@ def main():
     dispatcher = Dispatcher()
     dispatcher['webhook_url'] = WEBHOOK_URL
     dispatcher['dm'] = dm
+    dispatcher['bot_number'] = bot_number
     dispatcher.message.middleware(MessageMiddleware())
     dispatcher.include_routers(router, cw.router, raids.router, cwl.router, members.router, admin.router)
 

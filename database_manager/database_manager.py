@@ -90,7 +90,7 @@ class DatabaseManager:
         rows = await self.cron_connection.fetch('''
             SELECT chat_id, user_id, username, first_name, last_name
             FROM bot_user
-            WHERE clan_tag = $1
+            WHERE clan_tag = $1 AND is_user_in_chat
         ''', self.clan_tag)
         self.full_name = {(row['chat_id'], row['user_id']):
                           row['first_name'] + (f' {row['last_name']}' if row['last_name'] else '')
@@ -150,7 +150,8 @@ class DatabaseManager:
         await self.cron_connection.execute('''
             UPDATE player
             SET is_player_in_clan = FALSE
-        ''')
+            WHERE clan_tag = $1
+        ''', self.clan_tag)
         await self.cron_connection.executemany('''
             INSERT INTO player
                 (clan_tag, player_tag,
@@ -422,6 +423,7 @@ class DatabaseManager:
                     bot_user.clan_tag = clan_chat.clan_tag
                     AND bot_user.chat_id = clan_chat.chat_id
                     AND bot_user.user_id = $2
+                    AND is_user_in_chat
                     AND can_link_group_members
         ''', self.clan_tag, user_id)
         return rows
@@ -436,6 +438,7 @@ class DatabaseManager:
                     bot_user.clan_tag = clan_chat.clan_tag
                     AND bot_user.chat_id = clan_chat.chat_id
                     AND bot_user.user_id = $2
+                    AND is_user_in_chat
                     AND can_edit_cw_list
         ''', self.clan_tag, user_id)
         return rows
@@ -465,11 +468,18 @@ class DatabaseManager:
         else:
             chat_id = message.chat.id
         rows = await self.req_connection.fetch('''
-            SELECT player_tag, user_id
+            SELECT DISTINCT player.player_tag, bot_user.user_id
             FROM
                 player_bot_user
-                JOIN player USING (clan_tag, player_tag)
-                JOIN bot_user USING (clan_tag, chat_id, user_id)
+                JOIN player ON
+                    player_bot_user.clan_tag = player.clan_tag
+                    AND player_bot_user.player_tag = player.player_tag
+                    AND is_player_in_clan
+                JOIN bot_user ON
+                    player_bot_user.clan_tag = bot_user.clan_tag
+                    AND player_bot_user.chat_id = bot_user.chat_id
+                    AND player_bot_user.user_id = bot_user.user_id
+                    AND is_user_in_chat
             WHERE player.clan_tag = $1 AND bot_user.chat_id = $2
         ''', self.clan_tag, chat_id)
         members_by_tg_user_to_mention = {}

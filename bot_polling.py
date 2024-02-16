@@ -31,8 +31,11 @@ async def main():
     dp.include_routers(cw.router, raids.router, cwl.router, members.router, admin.router)
 
     scheduler = AsyncIOScheduler()
-    scheduler.add_job(dm.frequent_jobs, 'cron', minute='5,10,15,20,25,30,35,40,45,50,55')
-    scheduler.add_job(dm.infrequent_jobs, 'cron', minute='0')
+    job_frequency = 5
+    frequent_jobs_minute = ','.join(map(str, [m * job_frequency + bot_number for m in range(1, 60 // job_frequency)]))
+    scheduler.add_job(dm.frequent_jobs, 'cron', minute=frequent_jobs_minute)
+    infrequent_jobs_minute = str(bot_number)
+    scheduler.add_job(dm.infrequent_jobs, 'cron', minute=infrequent_jobs_minute)
     scheduler.start()
 
     bot = Bot(token=dm.telegram_bot_api_token)

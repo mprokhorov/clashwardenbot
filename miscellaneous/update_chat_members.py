@@ -30,21 +30,21 @@ async def main():
                          telegram_bot_api_token=config.telegram_bot_api_tokens[bot_number].get_secret_value(),
                          telegram_bot_username=config.telegram_bot_usernames[bot_number].get_secret_value())
     await dm.establish_connections()
-    user_data = [(updated_dialog.id, user.user.id, user.user.username, user.user.first_name, user.user.last_name)
+    user_data = [(dm.clan_tag, updated_dialog.id, user.user.id, user.user.username, user.user.first_name, user.user.last_name)
                  async for user in app.get_chat_members(updated_dialog.id)
                  if not user.user.is_bot]
     await dm.req_connection.execute('''
-        UPDATE master.tg_user
+        UPDATE bot_user
         SET is_user_in_chat = FALSE
-        WHERE chat_id = $1
-    ''', updated_dialog.id)
+        WHERE (clan_tag, chat_id) = ($1, $2)
+    ''', dm.clan_tag, updated_dialog.id)
     await dm.req_connection.executemany('''
         INSERT INTO
-            master.tg_user (chat_id, user_id, username, first_name, last_name, is_user_in_chat, first_seen, last_seen)
-        VALUES ($1, $2, $3, $4, $5, TRUE, NULL, CURRENT_TIMESTAMP(0))
-        ON CONFLICT (chat_id, user_id)
+            bot_user (clan_tag, chat_id, user_id, username, first_name, last_name, is_user_in_chat, first_seen, last_seen)
+        VALUES ($1, $2, $3, $4, $5, $6, TRUE, NULL, CURRENT_TIMESTAMP(0))
+        ON CONFLICT (clan_tag, chat_id, user_id)
         DO UPDATE SET (username, first_name, last_name, is_user_in_chat, last_seen) = 
-                      ($3, $4, $5, TRUE, CURRENT_TIMESTAMP(0))
+                      ($4, $5, $6, TRUE, CURRENT_TIMESTAMP(0))
     ''', user_data)
     await app.stop()
 

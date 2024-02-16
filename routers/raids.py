@@ -54,7 +54,7 @@ async def raids_loot(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
         if raid['state'] in ['ended']:
             rows = await dm.req_connection.fetch('''
                 SELECT player_tag
-                FROM master.player
+                FROM player
                 WHERE clan_tag = $1 AND is_player_in_clan AND NOT (player_tag = any($2::varchar[]))
             ''', dm.clan_tag, [alleged_raid_member.player_tag for alleged_raid_member in raid_members])
             for row in rows:
@@ -97,7 +97,7 @@ async def raids_skips(dm: DatabaseManager,
                                   attacks_limit=raid_member['attackLimit'] + raid_member['bonusAttackLimit']))
         rows = await dm.req_connection.fetch('''
             SELECT player_tag
-            FROM master.player
+            FROM player
             WHERE clan_tag = $1 AND is_player_in_clan AND NOT (player_tag = any($2::varchar[]))
         ''', dm.clan_tag, [alleged_raid_member.player_tag for alleged_raid_member in alleged_raid_members])
         for row in rows:

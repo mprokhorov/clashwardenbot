@@ -10,6 +10,7 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, Message, CallbackQuery
 from magic_filter import F
 
+from bot.config import config
 from database_manager import DatabaseManager
 
 router = Router()
@@ -18,7 +19,7 @@ router = Router()
 class Action(enum.IntEnum):
     menu = 1
     link = 2
-    change_cw_status = 3
+    edit_cw_list = 3
 
 
 class Link(enum.IntEnum):
@@ -32,7 +33,6 @@ class Link(enum.IntEnum):
 
 class AdminCallbackFactory(CallbackData, prefix='admin'):
     state: Action
-    cw_status: Optional[bool] = None
     link: Optional[Link] = None
     chat_id: Optional[int] = None
     player_tag: Optional[str] = None
@@ -61,9 +61,9 @@ def opposite_folding_text(folding: Union[Link]) -> str:
 async def admin() -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = f'<b>⚙️ Панель управления</b>'
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text='Изменить статусы участия в КВ',
+        [InlineKeyboardButton(text='Изменить список участников КВ',
                               callback_data=AdminCallbackFactory(
-                                  state=Action.change_cw_status
+                                  state=Action.edit_cw_list
                               ).pack())],
         [InlineKeyboardButton(text='Привязать игрока к пользователю',
                               callback_data=AdminCallbackFactory(
@@ -80,7 +80,7 @@ async def link_select_chat(dm: DatabaseManager,
     text = (f'<b>⚙️ Привязка игрока к пользователю</b>\n'
             f'\n'
             f'Выберите чат:')
-    rows = await dm.load_chats_by_user_as_admin(user_id)
+    rows = await dm.load_groups_where_user_can_link_members(user_id)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text=f'{row['chat_title']}',
                               callback_data=AdminCallbackFactory(
@@ -241,10 +241,10 @@ async def link_finish(dm: DatabaseManager,
     return text, ParseMode.HTML, None
 
 
-async def change_cw_status(dm: DatabaseManager,
-                           callback_data: Optional[AdminCallbackFactory]
-                           ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (f'<b>✍🏻 Изменение статусов участия в КВ</b>\n'
+async def edit_cw_list(dm: DatabaseManager,
+                       callback_data: Optional[AdminCallbackFactory]
+                       ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    text = (f'<b>✍🏻 Изменение списка участников КВ</b>\n'
             f'\n')
     if callback_data is not None and callback_data.player_tag is not None:
         await dm.req_connection.execute('''
@@ -260,7 +260,8 @@ async def change_cw_status(dm: DatabaseManager,
         WHERE clan_tag = $1 AND is_player_in_clan
         ORDER BY
             town_hall_level DESC,
-            (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC
+            (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC,
+            player_name
     ''', dm.clan_tag)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
@@ -269,7 +270,7 @@ async def change_cw_status(dm: DatabaseManager,
                  f'👑 {row['barbarian_king_level']} / {row['archer_queen_level']} / '
                  f'{row['grand_warden_level']} / {row['royal_champion_level']}',
             callback_data=AdminCallbackFactory(
-                state=Action.change_cw_status,
+                state=Action.edit_cw_list,
                 player_tag=row['player_tag'],
                 is_player_set_for_clan_wars=not row['is_player_set_for_clan_wars']
             ).pack())]
@@ -280,7 +281,7 @@ async def change_cw_status(dm: DatabaseManager,
             callback_data=AdminCallbackFactory(state=Action.menu).pack()),
         InlineKeyboardButton(
             text='🔄 Обновить',
-            callback_data=AdminCallbackFactory(state=Action.change_cw_status).pack())
+            callback_data=AdminCallbackFactory(state=Action.edit_cw_list).pack())
     ]])
     return text, ParseMode.HTML, keyboard
 
@@ -302,14 +303,15 @@ async def ping_all(dm: DatabaseManager,
     chat_titles = [row['chat_title'] for row in rows]
     for chat_id in chat_ids:
         rows = await dm.req_connection.fetch('''
-            SELECT user_id
+            SELECT user_id, first_name
             FROM dev.tg_user
             WHERE chat_id = $1 AND is_user_in_chat
         ''', chat_id)
         user_ids = [row['user_id'] for row in rows]
-        ping_text = ''
-        for user_id in user_ids:
-            ping_text += f'<a href="tg://user?id={user_id}">⁬</a>'
+        first_names = [row['first_name'] for row in rows]
+        ping_text = f'\n\n'
+        for user_id, first_name in zip(user_ids, first_names):
+            ping_text += f'<a href="tg://user?id={user_id}">{first_name} </a>'  # ⁬
         await bot.send_message(chat_id=chat_id,
                                text=message.reply_to_message.text + ping_text,
                                parse_mode=ParseMode.HTML,
@@ -320,10 +322,12 @@ async def ping_all(dm: DatabaseManager,
 
 @router.message(Command('admin'))
 async def command_admin(message: Message, dm: DatabaseManager) -> None:
-    if len(await dm.load_chats_by_user_as_admin(message.from_user.id)) == 0:
-        await message.reply(text=f'Эту команду могут использовать только администраторы')
+    can_user_link_members = len(await dm.load_groups_where_user_can_link_members(message.from_user.id)) > 0
+    can_user_edit_cw_list = len(await dm.load_groups_where_user_can_edit_cw_list(message.from_user.id)) > 0
+    if not can_user_link_members and not can_user_edit_cw_list:
+        await message.reply(text=f'Эта команда не работает для вас')
     elif message.chat.type != ChatType.PRIVATE:
-        await message.reply(text=f'Эту команду можно использовать только в диалоге с ботом')
+        await message.reply(text=f'Эта команда работает только в диалоге с ботом')
     else:
         text, parse_mode, reply_markup = await admin()
         reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
@@ -332,10 +336,10 @@ async def command_admin(message: Message, dm: DatabaseManager) -> None:
 
 @router.message(Command('ping_all'))
 async def command_ping_all(message: Message, bot: Bot, dm: DatabaseManager) -> None:
-    if len(await dm.load_chats_by_user_as_admin(message.from_user.id)) == 0:
-        await message.reply(text=f'Эту команду могут использовать только администраторы')
+    if message.from_user.id != int(config.bot_owner_user_id.get_secret_value()):
+        await message.reply(text=f'Эта команда не работает для вас')
     elif message.chat.type != ChatType.PRIVATE:
-        await message.reply(text=f'Эту команду можно использовать только в диалоге с ботом')
+        await message.reply(text=f'Эта команда работает только в диалоге с ботом')
     else:
         text, parse_mode, reply_markup = await ping_all(dm, message, bot)
         reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
@@ -347,8 +351,9 @@ async def callback_admin(callback_query: CallbackQuery,
                          callback_data: AdminCallbackFactory,
                          dm: DatabaseManager) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    user_is_admin = len(await dm.load_chats_by_user_as_admin(callback_query.from_user.id)) >= 0
-    if not user_is_message_owner or not user_is_admin:
+    can_user_link_members = len(await dm.load_groups_where_user_can_link_members(callback_query.from_user.id)) > 0
+    can_user_edit_cw_list = len(await dm.load_groups_where_user_can_edit_cw_list(callback_query.from_user.id)) > 0
+    if not user_is_message_owner or (not can_user_link_members and not can_user_edit_cw_list):
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await admin()
@@ -362,8 +367,8 @@ async def callback_link_select_chat(callback_query: CallbackQuery,
                                     callback_data: AdminCallbackFactory,
                                     dm: DatabaseManager) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    user_is_admin = len(await dm.load_chats_by_user_as_admin(callback_query.from_user.id)) >= 0
-    if not user_is_message_owner or not user_is_admin:
+    can_user_link_members = len(await dm.load_groups_where_user_can_link_members(callback_query.from_user.id)) > 0
+    if not user_is_message_owner or not can_user_link_members:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await link_select_chat(dm, callback_data, callback_query.from_user.id)
@@ -380,8 +385,8 @@ async def callback_link_select_player(callback_query: CallbackQuery,
                                       callback_data: AdminCallbackFactory,
                                       dm: DatabaseManager) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    is_user_admin_in_chat = await dm.is_user_admin_by_chat(callback_data.chat_id, callback_query.from_user.id)
-    if not user_is_message_owner or not is_user_admin_in_chat:
+    can_user_link_members = len(await dm.load_groups_where_user_can_link_members(callback_query.from_user.id)) > 0
+    if not user_is_message_owner or not can_user_link_members:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await link_select_player(dm, callback_data)
@@ -398,8 +403,8 @@ async def callback_link_select_tg_user(callback_query: CallbackQuery,
                                        callback_data: AdminCallbackFactory,
                                        dm: DatabaseManager) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    is_user_admin_in_chat = await dm.is_user_admin_by_chat(callback_data.chat_id, callback_query.from_user.id)
-    if not user_is_message_owner or not is_user_admin_in_chat:
+    can_user_link_members = len(await dm.load_groups_where_user_can_link_members(callback_query.from_user.id)) > 0
+    if not user_is_message_owner or not can_user_link_members:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await link_select_tg_user(dm, callback_data)
@@ -413,8 +418,8 @@ async def callback_link_finish(callback_query: CallbackQuery,
                                callback_data: AdminCallbackFactory,
                                dm: DatabaseManager) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    is_user_admin_in_chat = await dm.is_user_admin_by_chat(callback_data.chat_id, callback_query.from_user.id)
-    if not user_is_message_owner or not is_user_admin_in_chat:
+    can_user_link_members = len(await dm.load_groups_where_user_can_link_members(callback_query.from_user.id)) > 0
+    if not user_is_message_owner or not can_user_link_members:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await link_finish(dm, callback_data, callback_query)
@@ -423,16 +428,16 @@ async def callback_link_finish(callback_query: CallbackQuery,
         await callback_query.answer()
 
 
-@router.callback_query(AdminCallbackFactory.filter(F.state == Action.change_cw_status))
-async def callback_change_cw_status(callback_query: CallbackQuery,
-                                    callback_data: AdminCallbackFactory,
-                                    dm: DatabaseManager) -> None:
+@router.callback_query(AdminCallbackFactory.filter(F.state == Action.edit_cw_list))
+async def callback_edit_cw_list(callback_query: CallbackQuery,
+                                callback_data: AdminCallbackFactory,
+                                dm: DatabaseManager) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    user_is_admin = len(await dm.load_chats_by_user_as_admin(callback_query.from_user.id)) >= 0
-    if not user_is_message_owner or not user_is_admin:
+    can_user_edit_cw_list = len(await dm.load_groups_where_user_can_edit_cw_list(callback_query.from_user.id)) > 0
+    if not user_is_message_owner or not can_user_edit_cw_list:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
-        text, parse_mode, reply_markup = await change_cw_status(dm, callback_data)
+        text, parse_mode, reply_markup = await edit_cw_list(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         await callback_query.answer()

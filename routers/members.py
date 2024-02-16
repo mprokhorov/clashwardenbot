@@ -18,7 +18,8 @@ async def members(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineK
         WHERE clan_tag = $1 AND is_player_in_clan
         ORDER BY
             town_hall_level DESC,
-            (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC
+            (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC,
+            player_name
     ''', dm.clan_tag)
     text = (f'<b>👥 Участники клана</b>\n'
             f'\n')

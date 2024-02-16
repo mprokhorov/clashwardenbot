@@ -65,6 +65,7 @@ class MessageMiddleware(BaseMiddleware):
                 WHERE
                     chat_id in (SELECT chat_id FROM dev.clan_chat WHERE clan_tag = $1)
                     AND is_user_in_chat AND user_id = $2
+                    OR can_use_bot_without_clan_group
             ''', dm.clan_tag, message.from_user.id)
             if row is not None:
                 logging.info(f'Message by {{{user_info}}} was propagated')

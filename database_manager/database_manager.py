@@ -401,49 +401,32 @@ class DatabaseManager:
         ''', message.chat.id, message.message_id)
         return row.get('user_id') == user.id
 
-    async def is_user_admin_by_message(self, message: Message) -> bool:
-        if message.chat.type == ChatType.PRIVATE:
-            row = await self.req_connection.fetchrow('''
-                SELECT chat_id
-                FROM dev.clan_chat
-                WHERE clan_tag = $1 AND is_chat_main
-            ''', self.clan_tag)
-            chat_id = row['chat_id']
-        else:
-            chat_id = message.chat.id
-        rows = await self.req_connection.fetch('''
-            SELECT player_tag
-            FROM
-                dev.player
-                JOIN dev.player_tg_user USING (clan_tag, player_tag)
-            WHERE (chat_id, user_id) = ($1, $2) AND player_role IN ('coLeader', 'leader')
-        ''', chat_id, message.from_user.id)
-        return len(rows) > 0
+    async def can_user_ping_group_members(self, message: Message) -> bool:
+        row = await self.req_connection.fetchrow('''
+            SELECT can_ping_group_members
+            FROM dev.tg_user
+            WHERE (chat_id, user_id) = ($1, $2)
+        ''', message.chat.id, message.from_user.id)
+        return row.get('can_ping_group_members', False)
 
-    async def is_user_admin_by_chat(self, chat_id: int, user_id: int) -> bool:
+    async def load_groups_where_user_can_link_members(self, user_id: int) -> list[Record]:
         rows = await self.req_connection.fetch('''
-            SELECT player_tag
+            SELECT chat_id, chat_title
             FROM
-                dev.player
-                JOIN dev.player_tg_user USING (clan_tag, player_tag)
-            WHERE (chat_id, user_id) = ($1, $2) AND player_role IN ('coLeader', 'leader')
-        ''', chat_id, user_id)
-        return len(rows) > 0
+                dev.tg_user
+                JOIN dev.chat USING (chat_id)
+            WHERE user_id = $1 AND can_link_group_members
+        ''', user_id)
+        return rows
 
-    async def load_chats_by_user_as_admin(self, user_id: int) -> list[Record]:
+    async def load_groups_where_user_can_edit_cw_list(self, user_id: int) -> list[Record]:
         rows = await self.req_connection.fetch('''
-            SELECT DISTINCT chat.chat_id, chat.chat_title
+            SELECT chat_id, chat_title
             FROM
-                dev.clan
-                JOIN dev.clan_chat ON clan.clan_tag = clan_chat.clan_tag AND clan.clan_tag = $1
-                JOIN dev.chat ON clan_chat.chat_id = chat.chat_id AND chat_type in ('group', 'supergroup')
-                JOIN dev.tg_user ON chat.chat_id = tg_user.chat_id AND is_user_in_chat AND user_id = $2
-                JOIN dev.player_tg_user
-                    ON tg_user.chat_id = player_tg_user.chat_id and tg_user.user_id = player_tg_user.user_id
-                JOIN dev.player
-                    ON player_tg_user.clan_tag = player.clan_tag and player_tg_user.player_tag = player.player_tag
-                    AND is_player_in_clan AND player_role IN ('coLeader', 'leader')
-        ''', self.clan_tag, user_id)
+                dev.tg_user
+                JOIN dev.chat USING (chat_id)
+            WHERE user_id = $1 AND can_edit_cw_list
+        ''', user_id)
         return rows
 
     @staticmethod

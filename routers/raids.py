@@ -190,8 +190,8 @@ async def command_raids_skips(message: Message, dm: DatabaseManager) -> None:
 
 @router.message(Command('raids_ping'))
 async def command_raids_ping(message: Message, dm: DatabaseManager) -> None:
-    if not await dm.is_user_admin_by_message(message):
-        await message.reply(text=f'Эту команду могут использовать только соруководители и глава')
+    if not await dm.can_user_ping_group_members(message):
+        await message.reply(text=f'Эта команда не работает для вас')
     else:
         text, parse_mode, keyboard = await raids_skips(dm, message, ping=True)
         await message.reply(text=text, parse_mode=parse_mode, keyboard=keyboard)

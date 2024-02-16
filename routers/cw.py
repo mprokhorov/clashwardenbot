@@ -221,7 +221,8 @@ async def cw_list(dm: DatabaseManager,
             WHERE clan_tag = $1 AND is_player_set_for_clan_wars
             ORDER BY
                 town_hall_level DESC,
-                (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC
+                (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC,
+                player_name
         ''', dm.clan_tag)
         text = (f'<b>📋 Список участников КВ (⬇️ по ТХ и героям)</b>\n'
                 f'\n')
@@ -336,8 +337,8 @@ async def command_cw_skips(message: Message, dm: DatabaseManager) -> None:
 
 @router.message(Command('cw_ping'))
 async def command_cw_ping(message: Message, dm: DatabaseManager) -> None:
-    if not await dm.is_user_admin_by_message(message):
-        await message.reply(text=f'Эту команду могут использовать только соруководители и глава!')
+    if not await dm.can_user_ping_group_members(message):
+        await message.reply(text=f'Эта команда не работает для вас')
     else:
         text, parse_mode, reply_markup = await cw_skips(dm, message, ping=True)
         await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)

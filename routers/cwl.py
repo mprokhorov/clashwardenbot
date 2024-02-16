@@ -301,7 +301,6 @@ async def cwl_map(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineK
             cwl_members.append(CWLMember(town_hall_level=cwl_clan_cwl_member['townhallLevel'],
                                          map_position=cwl_clan_cwl_member['mapPosition']))
         cwl_members.sort(key=lambda cwl_mp: cwl_mp.map_position)
-        # text += ', '.join([str(cwl_m.town_hall_level) for cwl_m in cwl_members]) + f'\n'
         cwl_clans_to_sort.append(
             CWLClan(clan_name=cwl_clan['name'],
                     town_halls=[cwl_m.town_hall_level for cwl_m in cwl_members],
@@ -393,8 +392,8 @@ async def command_cwl_skips(message: Message, dm: DatabaseManager) -> None:
 
 @router.message(Command('cwl_ping'))
 async def command_cwl_ping(message: Message, dm: DatabaseManager) -> None:
-    if not await dm.is_user_admin_by_message(message):
-        await message.reply(text=f'Эту команду могут использовать только соруководители и глава!')
+    if not await dm.can_user_ping_group_members(message):
+        await message.reply(text=f'Эта команда не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_skips(dm, message, ping=True)
         await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)

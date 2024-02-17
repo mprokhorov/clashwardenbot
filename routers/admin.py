@@ -219,7 +219,7 @@ async def link_finish(dm: DatabaseManager,
                 f'{dm.load_name_and_tag(callback_data.player_tag)} '
                 f'привязан к пользователю '
                 f'{dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id)}')
-        description = (f'Bind account {dm.load_name_and_tag(callback_data.player_tag)} '
+        description = (f'Link account {dm.load_name_and_tag(callback_data.player_tag)} '
                        f'to user {dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id)}')
     else:
         text = (f'<b>⚙️ Привязка аккаунта к пользователю</b>\n'
@@ -228,13 +228,13 @@ async def link_finish(dm: DatabaseManager,
                 f'{dm.load_name_and_tag(callback_data.player_tag)} '
                 f'уже был привязан к пользователю '
                 f'{dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id)}')
-        description = (f'Account {dm.load_name_and_tag(callback_data.player_tag)} was already bound '
+        description = (f'Account {dm.load_name_and_tag(callback_data.player_tag)} was already linked '
                        f'to user {dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id)}')
 
     await dm.req_connection.execute('''
-        INSERT INTO admin_action (chat_id, user_id, action_timestamp, action_description)
-        VALUES ($1, $2, CURRENT_TIMESTAMP(0), $3)
-    ''', callback_query.message.chat.id, callback_query.from_user.id, description)
+        INSERT INTO admin_action (clan_tag, chat_id, user_id, action_timestamp, action_description)
+        VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
+    ''', dm.clan_tag, callback_query.message.chat.id, callback_query.from_user.id, description)
 
     return text, ParseMode.HTML, None
 

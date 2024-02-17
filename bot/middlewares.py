@@ -20,7 +20,7 @@ class MessageMiddleware(BaseMiddleware):
                      f'user_id={message.from_user.id}, '
                      f'username = {message.from_user.username}, '
                      f'first_name = {message.from_user.first_name}, '
-                     f'last_name = {message.from_user.last_name},'
+                     f'last_name = {message.from_user.last_name}, '
                      f'text = {message.text}')
         dm: DatabaseManager = data['dm']
         row = await dm.req_connection.fetchrow('''

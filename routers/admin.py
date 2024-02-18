@@ -240,6 +240,7 @@ async def link_finish(dm: DatabaseManager,
 
 
 async def edit_cw_list(dm: DatabaseManager,
+                       callback_query: Optional[CallbackQuery],
                        callback_data: Optional[AdminCallbackFactory]
                        ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = (f'<b>✍🏻 Изменение списка участников КВ</b>\n'
@@ -250,6 +251,12 @@ async def edit_cw_list(dm: DatabaseManager,
             SET is_player_set_for_clan_wars = $1
             WHERE clan_tag = $2 and player_tag = $3
         ''', callback_data.is_player_set_for_clan_wars, dm.clan_tag, callback_data.player_tag)
+        description = (f'Account {dm.load_name_and_tag(callback_data.player_tag)} '
+                       f'CW status was set to {callback_data.is_player_set_for_clan_wars}')
+        await dm.req_connection.execute('''
+            INSERT INTO admin_action (clan_tag, chat_id, user_id, action_timestamp, action_description)
+            VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
+        ''', dm.clan_tag, callback_query.message.chat.id, callback_query.from_user.id, description)
     rows = await dm.req_connection.fetch('''
         SELECT
             player_tag, is_player_set_for_clan_wars,
@@ -435,7 +442,7 @@ async def callback_edit_cw_list(callback_query: CallbackQuery,
     if not user_is_message_owner or not can_user_edit_cw_list:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
-        text, parse_mode, reply_markup = await edit_cw_list(dm, callback_data)
+        text, parse_mode, reply_markup = await edit_cw_list(dm, callback_query, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         await callback_query.answer()

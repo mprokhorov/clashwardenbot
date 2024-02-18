@@ -164,7 +164,8 @@ async def cw_status(dm: DatabaseManager,
     rows = await dm.req_connection.fetch('''
         SELECT DISTINCT
             player_tag, player_name, is_player_set_for_clan_wars,
-            town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+            town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level,
+            (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level)
         FROM
             player
             JOIN player_bot_user USING (clan_tag, player_tag)

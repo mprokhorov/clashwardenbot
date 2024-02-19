@@ -45,7 +45,7 @@ async def donations(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inlin
     for i, row in enumerate(rows):
         text += (f'{i + 1}) {dm.of.to_html(row['player_name'])}, {dm.of.role(row['player_role'])} — '
                  f'🪖 {row['donations_given']}\n')
-    text += f'\n'
+
     rows = await dm.req_connection.fetch('''
         SELECT player_name, donations_given
         FROM player
@@ -57,11 +57,14 @@ async def donations(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inlin
             LIMIT 10)
         ORDER BY donations_given, player_name
     ''', dm.clan_tag)
-    text += (f'⬇️ Будут понижены: ' + (
-        ', '.join(
-            f'{dm.of.to_html(row['player_name'])} — 🪖 {row['donations_given']}'
-            for row in rows)) if len(rows) != 0 else '') + (f'\n'
-                                                            f'\n')
+    if len(rows) == 1:
+        text += (f'\n'
+                 f'⬇️ Будет понижен: {dm.of.to_html(rows[0]['player_name'])} — 🪖 {rows[0]['donations_given']}\n')
+    elif len(rows) > 1:
+        text += (f'\n'
+                 f'⬇️ Будут понижены: {', '.join(f'{dm.of.to_html(row['player_name'])} — 🪖 {row['donations_given']}'
+                                                 for row in rows)}\n')
+
     rows = await dm.req_connection.fetch('''
         SELECT player_name, donations_given
         FROM player
@@ -73,10 +76,13 @@ async def donations(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inlin
             LIMIT 10)
         ORDER BY donations_given, player_name
     ''', dm.clan_tag)
-    text += (f'⬆️ Будут повышены: ' + (
-        ', '.join(
-            f'{dm.of.to_html(row['player_name'])} — 🪖 {row['donations_given']}'
-            for row in rows)) if len(rows) != 0 else '') + f'\n'
+    if len(rows) == 1:
+        text += (f'\n'
+                 f'⬇️ Будет повышен: {dm.of.to_html(rows[0]['player_name'])} — 🪖 {rows[0]['donations_given']}\n')
+    elif len(rows) > 1:
+        text += (f'\n'
+                 f'⬇️ Будут повышены: {', '.join(f'{dm.of.to_html(row['player_name'])} — 🪖 {row['donations_given']}'
+                                                 for row in rows)}\n')
     return text, ParseMode.HTML, None
 
 

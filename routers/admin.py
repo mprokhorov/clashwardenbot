@@ -300,10 +300,13 @@ async def ping_all(dm: DatabaseManager,
         text += f'Сообщение для отправки не найдено\n'
         return text, ParseMode.HTML, None
     rows = await dm.req_connection.fetch('''
-        SELECT chat_id, chat_title
-        FROM chat
-        WHERE chat_type IN ('group', 'supergroup') AND chat_id IN (SELECT chat_id FROM clan_chat)
-    ''')
+        SELECT chat.chat_id, chat_title
+        FROM
+            chat
+            JOIN clan_chat
+                ON chat.chat_id = clan_chat.chat_id
+                AND clan_chat.clan_tag = $1
+    ''', dm.clan_tag)
     chat_ids = [row['chat_id'] for row in rows]
     chat_titles = [row['chat_title'] for row in rows]
     for chat_id in chat_ids:
@@ -312,16 +315,20 @@ async def ping_all(dm: DatabaseManager,
             FROM bot_user
             WHERE (clan_tag, chat_id) = ($1, $2) AND is_user_in_chat
         ''', dm.clan_tag, chat_id)
-        user_ids = [row['user_id'] for row in rows]
-        first_names = [row['first_name'] for row in rows]
-        ping_text = f'\n\n'
-        for user_id, first_name in zip(user_ids, first_names):
-            ping_text += f'<a href="tg://user?id={user_id}">{first_name} </a>'  # ⁬
+        ping_text = (f'\n'
+                     f'\n')
+        for row in rows:
+            ping_text += f'<a href="tg://user?id={row['user_id']}">{row['first_name']} </a>'  # ⁬
         await bot.send_message(chat_id=chat_id,
                                text=message.reply_to_message.text + ping_text,
                                parse_mode=ParseMode.HTML,
                                reply_markup=None)
-    text += f'Сообщение отправлено в группы: {', '.join(map(str, chat_titles))}\n'
+    if len(chat_titles) == 0:
+        text += f'Список пуст\n'
+    elif len(chat_titles) == 1:
+        text += f'Сообщение отправлено в группу {chat_titles[0]}\n'
+    else:
+        text += f'Сообщение отправлено в группы: {', '.join(chat_titles)}\n'
     return text, ParseMode.HTML, None
 
 

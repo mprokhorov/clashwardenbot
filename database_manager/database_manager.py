@@ -468,7 +468,7 @@ class DatabaseManager:
         else:
             chat_id = message.chat.id
         rows = await self.req_connection.fetch('''
-            SELECT DISTINCT player.player_tag, bot_user.user_id
+            SELECT player.player_tag, bot_user.user_id
             FROM
                 player_bot_user
                 JOIN player ON

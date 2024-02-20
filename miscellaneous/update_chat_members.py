@@ -1,11 +1,10 @@
 import argparse
 
-from aiogram import Bot
+import asyncpg
 from pyrogram import Client
 from pyrogram.enums import ChatType
 
 from bot.config import config
-from database_manager import DatabaseManager
 
 app = Client(name=config.telegram_api_client_name.get_secret_value(),
              api_id=int(config.telegram_api_id.get_secret_value()),
@@ -21,25 +20,28 @@ async def main():
             group_dialogs.append(dialog.chat)
     for i, group_dialog in enumerate(group_dialogs):
         print(f'{i + 1}) {group_dialog.title}')
-    chat_idx = input('Select group chat number: ')
+    chat_idx = input('Enter group chat number: ')
     updated_dialog = group_dialogs[int(chat_idx) - 1]
     parser = argparse.ArgumentParser()
     parser.add_argument("--bot_number")
     args = parser.parse_args()
     bot_number = int(args.bot_number)
-    bot = Bot(token=config.telegram_bot_api_tokens[bot_number].get_secret_value())  # todo
-    dm = DatabaseManager(clan_tag=config.clan_tags[bot_number].get_secret_value(), bot=bot)
-    await dm.establish_connections()
-    user_data = [(dm.clan_tag, updated_dialog.id, user.user.id,
+    connection = await asyncpg.connect(host=config.postgres_host.get_secret_value(),
+                                       database=config.postgres_database.get_secret_value(),
+                                       user=config.postgres_user.get_secret_value(),
+                                       password=config.postgres_password.get_secret_value(),
+                                       server_settings={'search_path': 'public'})
+    clan_tag = config.clan_tags[bot_number].get_secret_value()
+    user_data = [(clan_tag, updated_dialog.id, user.user.id,
                   user.user.username, user.user.first_name, user.user.last_name)
                  async for user in app.get_chat_members(updated_dialog.id)
                  if not user.user.is_bot]
-    await dm.req_connection.execute('''
+    await connection.execute('''
         UPDATE bot_user
         SET is_user_in_chat = FALSE
         WHERE (clan_tag, chat_id) = ($1, $2)
-    ''', dm.clan_tag, updated_dialog.id)
-    await dm.req_connection.executemany('''
+    ''', clan_tag, updated_dialog.id)
+    await connection.executemany('''
         INSERT INTO
             bot_user
                 (clan_tag, chat_id, user_id, username, first_name, last_name, is_user_in_chat, first_seen, last_seen)

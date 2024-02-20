@@ -51,7 +51,29 @@ class DatabaseManager:
                                                     server_settings={'search_path': 'public'})
 
     async def frequent_jobs(self) -> None:
-        await self.load_and_cache_names()  # todo переместить в более подходящее место
+        were_clan_members_dumped = await self.check_clan_members()
+        if not were_clan_members_dumped:
+            await self.load_and_cache_names()
+        await self.dump_clan_war()
+        await self.dump_raid_weekends()
+        await self.dump_clan_war_league()
+        await self.dump_clan_war_league_wars()
+
+    async def infrequent_jobs(self) -> None:
+        old_contributions = await self.load_capital_contributions()
+        were_clan_members_dumped = await self.check_clan_members()
+        if not were_clan_members_dumped:
+            await self.dump_clan_members()
+            await self.load_and_cache_names()
+        new_contributions = await self.load_capital_contributions()
+        await self.dump_capital_contributions(old_contributions, new_contributions)
+        await self.dump_clan_war()
+        await self.dump_raid_weekends()
+        await self.dump_clan_war_league()
+        await self.dump_clan_war_league_wars()
+
+    async def check_clan_members(self) -> bool:
+        were_clan_members_dumped = False
         retrieved_clan_members = await self.api_client.get_clan_members(clan_tag=self.clan_tag)
         if retrieved_clan_members is not None:
             rows = await self.cron_connection.fetch('''
@@ -69,65 +91,30 @@ class DatabaseManager:
                                        for clan_member_tag
                                        in retrieved_clan_member_tags
                                        if clan_member_tag not in loaded_clan_member_tags]
-            if len(left_clan_member_tags) > 0:
-                for left_clan_member_tag in left_clan_member_tags:
-                    # todo добавить имя пользователя/пользователей
-                    rows = await self.req_connection.fetch('''
-                        SELECT chat.chat_id, chat_title
-                        FROM
-                            chat
-                            JOIN clan_chat
-                                ON chat.chat_id = clan_chat.chat_id
-                                AND clan_chat.clan_tag = $1
-                    ''', self.clan_tag)
-                    for row in rows:
-                        await self.bot.send_message(chat_id=row['chat_id'],
-                                                    text=f'{self.load_name_and_tag(left_clan_member_tag)} '
-                                                         f'покинул клан или был изгнан\n',
-                                                    parse_mode=ParseMode.HTML,
-                                                    reply_markup=None)
-                        description = (f'{self.load_name_and_tag(left_clan_member_tag)} '
-                                       f'has left clan or was kicked out\n')
-                        await self.req_connection.execute('''
-                            INSERT INTO admin_action (clan_tag, chat_id, user_id, action_timestamp, action_description)
-                            VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
-                        ''', self.clan_tag, row['chat_id'], None, description)
+
+            if len(left_clan_member_tags) > 0 or len(joined_clan_member_tags) > 0:
+                were_clan_members_dumped = True
                 await self.dump_clan_members()
-            if len(joined_clan_member_tags) > 0:
-                for joined_clan_member_tag in joined_clan_member_tags:
-                    rows = await self.req_connection.fetch('''
-                        SELECT chat.chat_id, chat_title
-                        FROM
-                            chat
-                            JOIN clan_chat
-                                ON chat.chat_id = clan_chat.chat_id
-                                AND clan_chat.clan_tag = $1
-                    ''', self.clan_tag)
-                    for row in rows:
-                        await self.bot.send_message(chat_id=row['chat_id'],
-                                                    text=f'{self.load_name_and_tag(joined_clan_member_tag)} '
-                                                         f'вступил в клан\n',
-                                                    parse_mode=ParseMode.HTML,
-                                                    reply_markup=None)
-                        description = (f'{self.load_name_and_tag(joined_clan_member_tag)} '
-                                       f'has become a member of clan\n')
-                        await self.req_connection.execute('''
-                            INSERT INTO admin_action (clan_tag, chat_id, user_id, action_timestamp, action_description)
-                            VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
-                        ''', self.clan_tag, row['chat_id'], None, description)
-                await self.dump_clan_members()
+                await self.load_and_cache_names()
 
-        await self.dump_clan_war()
-        await self.dump_raid_weekends()
-        await self.dump_clan_war_league()
-        await self.dump_clan_war_league_wars()
+            for left_clan_member_tag in left_clan_member_tags:
+                await self.send_message_to_clan_groups(user_id=None,
+                                                       ping=False,
+                                                       message_text=f'{self.load_name_and_tag(left_clan_member_tag)} '
+                                                                    f'покинул клан или был изгнан\n',
+                                                       log_text=f'{self.load_name_and_tag(left_clan_member_tag)} '
+                                                                f'has left clan or was kicked out\n')
 
-    async def infrequent_jobs(self) -> None:
-        await self.frequent_jobs()
+            for joined_clan_member_tag in joined_clan_member_tags:
+                await self.send_message_to_clan_groups(user_id=None,
+                                                       ping=False,
+                                                       message_text=f'{self.load_name_and_tag(joined_clan_member_tag)} '
+                                                                    f'вступил в клан\n',
+                                                       log_text=f'{self.load_name_and_tag(joined_clan_member_tag)} '
+                                                                f'has become a member of clan\n')
+        return were_clan_members_dumped
 
-        old_contributions = await self.load_capital_contributions()
-        await self.dump_clan_members()
-        new_contributions = await self.load_capital_contributions()
+    async def dump_capital_contributions(self, old_contributions, new_contributions) -> None:
         for player_tag in old_contributions:
             if new_contributions.get(player_tag) and new_contributions[player_tag] > old_contributions[player_tag]:
                 await self.cron_connection.execute('''
@@ -576,3 +563,26 @@ class DatabaseManager:
     @staticmethod
     def avg(lst: list) -> float:
         return round(sum(lst) / len(lst), 2)
+
+    async def send_message_to_clan_groups(self,
+                                          user_id: Optional[int],
+                                          ping: bool,
+                                          message_text: str,
+                                          log_text: str) -> None:
+        rows = await self.req_connection.fetch('''
+            SELECT chat.chat_id, chat_title
+            FROM
+                chat
+                JOIN clan_chat
+                    ON chat.chat_id = clan_chat.chat_id
+                    AND clan_chat.clan_tag = $1
+        ''', self.clan_tag)
+        for row in rows:
+            await self.bot.send_message(chat_id=row['chat_id'],
+                                        text=message_text,
+                                        parse_mode=ParseMode.HTML,
+                                        reply_markup=None)
+            await self.req_connection.execute('''
+                INSERT INTO admin_action (clan_tag, chat_id, user_id, action_timestamp, action_description)
+                VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
+            ''', self.clan_tag, row['chat_id'], user_id, log_text)

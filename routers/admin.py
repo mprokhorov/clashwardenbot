@@ -2,7 +2,7 @@ import enum
 from contextlib import suppress
 from typing import Optional, Union, Tuple
 
-from aiogram import Router, Bot
+from aiogram import Router
 from aiogram.enums import ParseMode, ChatType
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
@@ -291,38 +291,18 @@ async def edit_cw_list(dm: DatabaseManager,
     return text, ParseMode.HTML, keyboard
 
 
-async def ping_all(dm: DatabaseManager,
-                   message: Message,
-                   bot: Bot) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+async def send_message(dm: DatabaseManager,
+                       message: Message,
+                       ping: bool) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = (f'<b>✍🏻 Упоминание всех пользователей в группах</b>\n'
             f'\n')
     if message.reply_to_message is None:
         text += f'Сообщение для отправки не найдено\n'
         return text, ParseMode.HTML, None
-    rows = await dm.req_connection.fetch('''
-        SELECT chat.chat_id, chat_title
-        FROM
-            chat
-            JOIN clan_chat
-                ON chat.chat_id = clan_chat.chat_id
-                AND clan_chat.clan_tag = $1
-    ''', dm.clan_tag)
-    chat_ids = [row['chat_id'] for row in rows]
-    chat_titles = [row['chat_title'] for row in rows]
-    for chat_id in chat_ids:
-        rows = await dm.req_connection.fetch('''
-            SELECT user_id, first_name
-            FROM bot_user
-            WHERE (clan_tag, chat_id) = ($1, $2) AND is_user_in_chat
-        ''', dm.clan_tag, chat_id)
-        ping_text = (f'\n'
-                     f'\n')
-        for row in rows:
-            ping_text += f'<a href="tg://user?id={row['user_id']}">{row['first_name']} </a>'  # ⁬
-        await bot.send_message(chat_id=chat_id,
-                               text=message.reply_to_message.text + ping_text,
-                               parse_mode=ParseMode.HTML,
-                               reply_markup=None)
+    chat_titles = await dm.send_message_to_clan_groups(user_id=message.from_user.id,
+                                                       ping=ping,
+                                                       message_text=message.reply_to_message.text,
+                                                       log_text=message.reply_to_message.text)
     if len(chat_titles) == 0:
         text += f'Список пуст\n'
     elif len(chat_titles) == 1:
@@ -346,14 +326,26 @@ async def command_admin(message: Message, dm: DatabaseManager) -> None:
         await dm.dump_message_owner(reply_from_bot, message.from_user)
 
 
-@router.message(Command('ping_all'))
-async def command_ping_all(message: Message, bot: Bot, dm: DatabaseManager) -> None:
+@router.message(Command('ping'))
+async def command_ping(message: Message, dm: DatabaseManager) -> None:
     if message.from_user.id != int(config.bot_owner_user_id.get_secret_value()):
         await message.reply(text=f'Эта команда не работает для вас')
     elif message.chat.type != ChatType.PRIVATE:
         await message.reply(text=f'Эта команда работает только в диалоге с ботом')
     else:
-        text, parse_mode, reply_markup = await ping_all(dm, message, bot)
+        text, parse_mode, reply_markup = await send_message(dm, message, True)
+        reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        await dm.dump_message_owner(reply_from_bot, message.from_user)
+
+
+@router.message(Command('alert'))
+async def command_alert(message: Message, dm: DatabaseManager) -> None:
+    if message.from_user.id != int(config.bot_owner_user_id.get_secret_value()):
+        await message.reply(text=f'Эта команда не работает для вас')
+    elif message.chat.type != ChatType.PRIVATE:
+        await message.reply(text=f'Эта команда работает только в диалоге с ботом')
+    else:
+        text, parse_mode, reply_markup = await send_message(dm, message, False)
         reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         await dm.dump_message_owner(reply_from_bot, message.from_user)
 

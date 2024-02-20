@@ -141,7 +141,7 @@ class DatabaseManager:
                           for row in rows}
         self.full_name_and_username = {(row['chat_id'], row['user_id']):
                                        (f'{row['first_name']}'
-                                        f' {row['last_name'] or ''}'
+                                        f'{(' ' + row['last_name']) if row['last_name'] else ''}'
                                         f'{(' (@' + row['username'] + ')') if row['username'] else ''}')
                                        for row in rows}
 
@@ -230,7 +230,8 @@ class DatabaseManager:
             VALUES ($1, $2, $3)
             ON CONFLICT (clan_tag, start_time)
             DO UPDATE SET data = $3
-        ''', self.clan_tag, datetime.strptime(retrieved_clan_war['startTime'], '%Y%m%dT%H%M%S.%fZ'), json.dumps(retrieved_clan_war))
+        ''', self.clan_tag, datetime.strptime(retrieved_clan_war['startTime'],
+                                              '%Y%m%dT%H%M%S.%fZ'), json.dumps(retrieved_clan_war))
 
     async def load_clan_war(self) -> Optional[dict]:
         row = await self.req_connection.fetchrow('''
@@ -378,7 +379,9 @@ class DatabaseManager:
     async def dump_tg_user(self, chat: Chat, user: User) -> None:
         await self.req_connection.execute('''
             INSERT INTO
-                bot_user (clan_tag, chat_id, user_id, username, first_name, last_name, is_user_in_chat, first_seen, last_seen)
+                bot_user
+                    (clan_tag, chat_id, user_id, username, first_name, last_name,
+                    is_user_in_chat, first_seen, last_seen)
             VALUES 
                 ($1, $2, $3, $4, $5, $6, TRUE, CURRENT_TIMESTAMP(0), CURRENT_TIMESTAMP(0))
             ON CONFLICT (clan_tag, chat_id, user_id) DO
@@ -411,16 +414,16 @@ class DatabaseManager:
         ''', message.chat.id, message.chat.type, message.chat.username, message.chat.first_name, message.chat.last_name)
 
     def load_name(self, player_tag: str) -> str:
-        return self.name.get(player_tag, 'None')
+        return self.name.get(player_tag, 'UNKNOWN')
 
     def load_name_and_tag(self, player_tag: str) -> str:
-        return self.name_and_tag.get(player_tag, f'None {player_tag}')
+        return self.name_and_tag.get(player_tag, f'UNKNOWN ({player_tag})')
 
     def load_full_name(self, chat_id: int, user_id: int) -> str:
-        return self.full_name.get((chat_id, user_id), 'None')
+        return self.full_name.get((chat_id, user_id), 'UNKNOWN')
 
     def load_full_name_and_username(self, chat_id: int, user_id: int) -> str:
-        return self.full_name_and_username.get((chat_id, user_id), 'None')
+        return self.full_name_and_username.get((chat_id, user_id), 'UNKNOWN')
 
     async def dump_message_owner(self, message: Message, user: User) -> None:
         await self.req_connection.execute('''
@@ -568,7 +571,7 @@ class DatabaseManager:
                                           user_id: Optional[int],
                                           ping: bool,
                                           message_text: str,
-                                          log_text: str) -> None:
+                                          log_text: str) -> list[str]:
         rows = await self.req_connection.fetch('''
             SELECT chat.chat_id, chat_title
             FROM
@@ -578,6 +581,20 @@ class DatabaseManager:
                     AND clan_chat.clan_tag = $1
         ''', self.clan_tag)
         for row in rows:
+            if ping:
+                rows_ = await self.req_connection.fetch('''
+                    SELECT user_id, first_name
+                    FROM bot_user
+                    WHERE (clan_tag, chat_id) = ($1, $2) AND is_user_in_chat
+                    ORDER BY first_name
+                ''', self.clan_tag, row['chat_id'])
+                ping_text = (f'\n'
+                             f'\n')
+                ping_text += ', '.join(f'<a href="tg://user?id={row_['user_id']}">{row_['first_name']}</a>'
+                                       for row_ in rows_)
+                message_text += ping_text
+                log_text += ping_text
+
             await self.bot.send_message(chat_id=row['chat_id'],
                                         text=message_text,
                                         parse_mode=ParseMode.HTML,
@@ -586,3 +603,4 @@ class DatabaseManager:
                 INSERT INTO admin_action (clan_tag, chat_id, user_id, action_timestamp, action_description)
                 VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
             ''', self.clan_tag, row['chat_id'], user_id, log_text)
+        return [row['chat_title'] for row in rows]

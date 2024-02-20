@@ -47,7 +47,9 @@ class MessageMiddleware(BaseMiddleware):
                 logging.info(f'Message by {{{user_info}}} was propagated')
                 return await handler(message, data)
             else:
-                if message.text and message.text.startswith('/') and message.text.endswith(f'@{dm.telegram_bot_username}'):
+                if (message.text
+                        and message.text.startswith('/')
+                        and message.text.endswith(f'@{(await dm.bot.me()).username}')):
                     await message.reply(
                         text=f'Группа не привязана к клану {clan_name}',
                         parse_mode=ParseMode.HTML)

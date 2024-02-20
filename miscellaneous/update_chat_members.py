@@ -1,5 +1,6 @@
 import argparse
 
+from aiogram import Bot
 from pyrogram import Client
 from pyrogram.enums import ChatType
 
@@ -26,11 +27,11 @@ async def main():
     parser.add_argument("--bot_number")
     args = parser.parse_args()
     bot_number = int(args.bot_number)
-    dm = DatabaseManager(clan_tag=config.clan_tags[bot_number].get_secret_value(),
-                         telegram_bot_api_token=config.telegram_bot_api_tokens[bot_number].get_secret_value(),
-                         telegram_bot_username=config.telegram_bot_usernames[bot_number].get_secret_value())
+    bot = Bot(token=config.telegram_bot_api_tokens[bot_number].get_secret_value())  # todo
+    dm = DatabaseManager(clan_tag=config.clan_tags[bot_number].get_secret_value(), bot=bot)
     await dm.establish_connections()
-    user_data = [(dm.clan_tag, updated_dialog.id, user.user.id, user.user.username, user.user.first_name, user.user.last_name)
+    user_data = [(dm.clan_tag, updated_dialog.id, user.user.id,
+                  user.user.username, user.user.first_name, user.user.last_name)
                  async for user in app.get_chat_members(updated_dialog.id)
                  if not user.user.is_bot]
     await dm.req_connection.execute('''
@@ -40,7 +41,8 @@ async def main():
     ''', dm.clan_tag, updated_dialog.id)
     await dm.req_connection.executemany('''
         INSERT INTO
-            bot_user (clan_tag, chat_id, user_id, username, first_name, last_name, is_user_in_chat, first_seen, last_seen)
+            bot_user
+                (clan_tag, chat_id, user_id, username, first_name, last_name, is_user_in_chat, first_seen, last_seen)
         VALUES ($1, $2, $3, $4, $5, $6, TRUE, NULL, CURRENT_TIMESTAMP(0))
         ON CONFLICT (clan_tag, chat_id, user_id)
         DO UPDATE SET (username, first_name, last_name, is_user_in_chat, last_seen) = 

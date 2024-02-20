@@ -318,7 +318,7 @@ async def ping_all(dm: DatabaseManager,
         ping_text = (f'\n'
                      f'\n')
         for row in rows:
-            ping_text += f'<a href="tg://user?id={row['user_id']}">{row['first_name']} </a>'  # ⁬
+            ping_text += f'<a href="tg://user?id={row['user_id']}">{row['first_name']} </a>'  # todo использовать символ ⁬
         await bot.send_message(chat_id=chat_id,
                                text=message.reply_to_message.text + ping_text,
                                parse_mode=ParseMode.HTML,

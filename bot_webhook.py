@@ -32,7 +32,7 @@ async def on_startup(bot: Bot, webhook_url: str, dm: DatabaseManager, bot_number
     await dm.infrequent_jobs()
 
     scheduler = AsyncIOScheduler()
-    job_frequency = 5
+    job_frequency = 3
     frequent_jobs_minute = ','.join(map(str, [m * job_frequency + bot_number for m in range(1, 60 // job_frequency)]))
     scheduler.add_job(dm.frequent_jobs, 'cron', minute=frequent_jobs_minute)
     infrequent_jobs_minute = str(bot_number)
@@ -52,11 +52,11 @@ def main():
     parser.add_argument("--bot_number")
     args = parser.parse_args()
     bot_number = int(args.bot_number)
-    dm = DatabaseManager(clan_tag=config.clan_tags[bot_number].get_secret_value(),
-                         telegram_bot_api_token=config.telegram_bot_api_tokens[bot_number].get_secret_value(),
-                         telegram_bot_username=config.telegram_bot_usernames[bot_number].get_secret_value())
 
-    bot = Bot(token=dm.telegram_bot_api_token)
+    bot = Bot(token=config.telegram_bot_api_tokens[bot_number].get_secret_value())
+
+    dm = DatabaseManager(clan_tag=config.clan_tags[bot_number].get_secret_value(), bot=bot)
+
     dispatcher = Dispatcher()
     dispatcher['webhook_url'] = WEBHOOK_URL
     dispatcher['dm'] = dm

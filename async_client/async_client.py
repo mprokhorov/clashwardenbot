@@ -35,16 +35,14 @@ class AsyncClient:
         if None not in (self.email, self.password):
             self.update_key()
 
-    def update_key(self):
+    def update_key(self) -> bool:
         if None in (self.email, self.password):
-            raise AttributeError('Email address and password of the Clash of Clans API account '
-                                 'are required to update the key')
-
+            return False
         session = requests.Session()
         login = session.post(url='https://developer.clashofclans.com/api/login',
                              json={'email': self.email, 'password': self.password})
-        current_ip = json.loads(base64.b64decode(login.json()['temporaryAPIToken'].split('.')[1] + '====').
-                                decode('utf-8'))['limits'][1]['cidrs'][0].split('/')[0]
+        current_ip = json.loads(base64.b64decode(login.json()['temporaryAPIToken'].split('.')[1] + '====')
+                                .decode('utf-8'))['limits'][1]['cidrs'][0].split('/')[0]
         retrieved_key_to_update = None
         retrieved_key_list = session.post(url=f"https://developer.clashofclans.com/api/apikey/list").json()['keys']
         for retrieved_key in retrieved_key_list:
@@ -58,7 +56,7 @@ class AsyncClient:
         else:
             if current_ip in retrieved_key_to_update['cidrRanges']:
                 self.key = retrieved_key_to_update['key']
-                return
+                return True
             else:
                 session.post(url='https://developer.clashofclans.com/api/apikey/revoke',
                              json={'id': retrieved_key_to_update['id']})
@@ -67,7 +65,6 @@ class AsyncClient:
                                    'description': self.key_description,
                                    'name': self.key_name,
                                    'scopes': ['clash']})
-
         updated_key_list = session.post(url='https://developer.clashofclans.com/api/apikey/list').json()['keys']
         session.post(url='https://developer.clashofclans.com/api/logout')
         self.key = None
@@ -75,9 +72,9 @@ class AsyncClient:
             if updated_key['name'] == self.key_name:
                 self.key = updated_key['key']
                 break
-
         if self.key is None:
-            raise AssertionError('Key was not retrieved')
+            return False
+        return True
 
     async def get_data(self, url: str):
         response = await self.http_client.get(url=url,
@@ -86,8 +83,7 @@ class AsyncClient:
                                                   'accept': 'application/json'
                                               },
                                               timeout=60)
-        if response.status_code == HTTPStatus.FORBIDDEN:
-            self.update_key()
+        if response.status_code == HTTPStatus.FORBIDDEN and self.update_key():
             response = await self.http_client.get(url=url,
                                                   headers={
                                                       'authorization': f'Bearer {self.key}',

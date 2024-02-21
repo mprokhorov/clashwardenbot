@@ -212,7 +212,8 @@ async def cwl_days_list(dm: DatabaseManager,
                 f'Выберите день:\n')
         button_action = Action.cwl_attacks_day
     else:
-        raise Exception
+        text = f'Произошла ошибка\n'
+        return text, ParseMode.HTML, None
     cwl_wars = await dm.load_clan_war_league_own_wars()
     cwl_day_titles = []
     for cwl_war in cwl_wars:

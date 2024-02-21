@@ -155,12 +155,7 @@ async def cw_status(dm: DatabaseManager,
             SET is_player_set_for_clan_wars = $1
             WHERE clan_tag = $2 and player_tag = $3
         ''', callback_data.is_player_set_for_clan_wars, dm.clan_tag, callback_data.player_tag)
-    if message is not None:
-        user_id = message.from_user.id
-    elif callback_query is not None:
-        user_id = callback_query.from_user.id
-    else:
-        raise Exception
+    update = message or callback_query
     rows = await dm.req_connection.fetch('''
         SELECT
             player_tag, player_name, is_player_set_for_clan_wars,
@@ -174,7 +169,7 @@ async def cw_status(dm: DatabaseManager,
             town_hall_level DESC,
             (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC,
             player_name
-    ''', dm.clan_tag, user_id)
+    ''', dm.clan_tag, update.from_user.id)
     if len(rows) == 0:
         text += f'В базе данных нет вашего аккаунта'
         return text, ParseMode.HTML, None
@@ -202,20 +197,7 @@ async def cw_list(dm: DatabaseManager,
                   callback_data: Optional[CWCallbackFactory]
                   ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     cw_list_ordering = getattr(callback_data, 'cw_list_ordering', CWListOrderding.by_trophies)
-    if cw_list_ordering == CWListOrderding.by_trophies:
-        rows = await dm.req_connection.fetch('''
-            SELECT
-                player_name, town_hall_level,
-                barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
-            FROM player
-            WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_wars
-            ORDER BY home_village_trophies DESC
-        ''', dm.clan_tag)
-        text = (f'<b>📋 Список участников КВ (⬇️ по трофеям)</b>\n'
-                f'\n')
-        opposite_ordering_button_text = '⬇️ по ТХ и героям'
-        opposite_ordering = CWListOrderding.by_town_hall_and_heroes
-    elif cw_list_ordering == CWListOrderding.by_town_hall_and_heroes:
+    if cw_list_ordering == CWListOrderding.by_town_hall_and_heroes:
         rows = await dm.req_connection.fetch('''
             SELECT
                 player_name, town_hall_level,
@@ -232,7 +214,18 @@ async def cw_list(dm: DatabaseManager,
         opposite_ordering_button_text = '⬇️ по трофеям'
         opposite_ordering = CWListOrderding.by_trophies
     else:
-        raise Exception
+        rows = await dm.req_connection.fetch('''
+            SELECT
+                player_name, town_hall_level,
+                barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+            FROM player
+            WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_wars
+            ORDER BY home_village_trophies DESC
+        ''', dm.clan_tag)
+        text = (f'<b>📋 Список участников КВ (⬇️ по трофеям)</b>\n'
+                f'\n')
+        opposite_ordering_button_text = '⬇️ по ТХ и героям'
+        opposite_ordering = CWListOrderding.by_town_hall_and_heroes
     keyboard = None
     if len(rows) > 0:
         for i, row in enumerate(rows):

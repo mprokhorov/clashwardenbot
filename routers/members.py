@@ -122,7 +122,10 @@ async def player_info(dm: DatabaseManager,
         chat_id = row['chat_id'] if row else None
         user_id = message.from_user.id
     else:
-        raise Exception
+        text = (f'<b>📋 Аккаунт пользователя в игре</b>\n'
+                f'\n'
+                f'Эта команда не работает для вас\n')
+        return text, ParseMode.HTML, None
     rows = await dm.req_connection.fetch('''
         SELECT
             player_name, player.player_tag, is_player_set_for_clan_wars,

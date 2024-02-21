@@ -29,7 +29,6 @@ class DatabaseManager:
         self.req_connection = None
 
         self.bot = bot
-        self.clan_name = None
         self.clan_tag = clan_tag
 
         self.name = None
@@ -350,8 +349,6 @@ class DatabaseManager:
             WHERE (clan_tag, season) = ($1, $2) AND $1 IN (data->'clan'->>'tag', data->'opponent'->>'tag')
             ORDER BY day
         ''', self.clan_tag, season)
-        if len(rows) == 0:
-            raise Exception
         clan_war_league_wars = []
         for row in rows:
             clan_war_league_war = json.loads(row['data'])
@@ -372,8 +369,6 @@ class DatabaseManager:
                 (clan_tag, season) = ($1, $2)
                 AND day IN (SELECT MAX(day) FROM clan_war_league_war WHERE season = $2)
         ''', self.clan_tag, season)
-        if len(rows) == 0:
-            raise Exception
         return [json.loads(row['data']) for row in rows]
 
     async def dump_tg_user(self, chat: Chat, user: User) -> None:
@@ -399,18 +394,18 @@ class DatabaseManager:
 
     async def dump_group_chat(self, message: Message) -> None:
         await self.req_connection.execute('''
-            INSERT INTO chat (chat_id, chat_type, chat_title)
+            INSERT INTO chat (chat_id, type, title)
             VALUES ($1, $2, $3)
             ON CONFLICT (chat_id) DO
-            UPDATE SET (chat_type, chat_title) = ($2, $3)
+            UPDATE SET (type, title) = ($2, $3)
         ''', message.chat.id, message.chat.type, message.chat.title)
 
     async def dump_private_chat(self, message: Message) -> None:
         await self.req_connection.execute('''
-            INSERT INTO chat (chat_id, chat_type, chat_username, chat_first_name, chat_last_name)
+            INSERT INTO chat (chat_id, type, username, first_name, last_name)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (chat_id) DO
-            UPDATE SET (chat_type, chat_username, chat_first_name, chat_last_name) = ($2, $3, $4, $5)
+            UPDATE SET (type, username, first_name, last_name) = ($2, $3, $4, $5)
         ''', message.chat.id, message.chat.type, message.chat.username, message.chat.first_name, message.chat.last_name)
 
     def load_name(self, player_tag: str) -> str:
@@ -449,7 +444,7 @@ class DatabaseManager:
 
     async def load_groups_where_user_can_link_members(self, user_id: int) -> list[Record]:
         rows = await self.req_connection.fetch('''
-            SELECT clan_chat.chat_id, chat_title
+            SELECT clan_chat.chat_id, title
             FROM
                 chat
                 JOIN clan_chat ON chat.chat_id = clan_chat.chat_id AND clan_tag = $1
@@ -464,7 +459,7 @@ class DatabaseManager:
 
     async def load_groups_where_user_can_edit_cw_list(self, user_id: int) -> list[Record]:
         rows = await self.req_connection.fetch('''
-            SELECT clan_chat.chat_id, chat_title
+            SELECT clan_chat.chat_id, title
             FROM
                 chat
                 JOIN clan_chat ON chat.chat_id = clan_chat.chat_id AND clan_tag = $1
@@ -573,7 +568,7 @@ class DatabaseManager:
                                           message_text: str,
                                           log_text: str) -> list[str]:
         rows = await self.req_connection.fetch('''
-            SELECT chat.chat_id, chat_title
+            SELECT chat.chat_id, title
             FROM
                 chat
                 JOIN clan_chat
@@ -603,4 +598,4 @@ class DatabaseManager:
                 INSERT INTO admin_action (clan_tag, chat_id, user_id, action_timestamp, action_description)
                 VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
             ''', self.clan_tag, row['chat_id'], user_id, log_text)
-        return [row['chat_title'] for row in rows]
+        return [row['title'] for row in rows]

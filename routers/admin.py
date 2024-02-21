@@ -82,7 +82,7 @@ async def link_select_chat(dm: DatabaseManager,
             f'Выберите чат:')
     rows = await dm.load_groups_where_user_can_link_members(user_id)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f'{row['chat_title']}',
+        [InlineKeyboardButton(text=f'{row['title']}',
                               callback_data=AdminCallbackFactory(
                                   state=Action.link,
                                   link=Link.select_player_from_unknown,

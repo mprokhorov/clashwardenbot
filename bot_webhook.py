@@ -8,7 +8,7 @@ from aiohttp.web_app import Application
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.config import config
-from bot.middlewares import MessageMiddleware
+from bot.middlewares import MessageMiddleware, CallbackQueryMiddleware
 from bot import commands
 from database_manager import DatabaseManager
 from routers import admin, cw, cwl, members, raids
@@ -62,6 +62,7 @@ def main():
     dispatcher['dm'] = dm
     dispatcher['bot_number'] = bot_number
     dispatcher.message.middleware(MessageMiddleware())
+    dispatcher.callback_query.outer_middleware(CallbackQueryMiddleware())
     dispatcher.include_routers(router, cw.router, raids.router, cwl.router, members.router, admin.router)
 
     app = Application()

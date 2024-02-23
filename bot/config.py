@@ -24,7 +24,6 @@ class Settings(BaseSettings):
 
     clan_tags: list[SecretStr]
     telegram_bot_api_tokens: list[SecretStr]
-    bot_owner_user_id: SecretStr
 
     class Config:
         env_file = 'bot/.env'

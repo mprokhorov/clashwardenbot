@@ -4,7 +4,7 @@ from contextlib import suppress
 from typing import Optional, Tuple
 
 from aiogram import Router
-from aiogram.enums import ParseMode
+from aiogram.enums import ParseMode, ChatType
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
@@ -94,7 +94,7 @@ async def cw_attacks(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
             SELECT player_tag, player_name, town_hall_level,
                    barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
             FROM player
-            WHERE clan_tag = $1 -- AND is_player_in_clan
+            WHERE clan_tag = $1
         ''', dm.clan_tag)
         cw_member_info = {row['player_tag']: (f'{dm.of.to_html(row['player_name'])} — 🛖 {row['town_hall_level']}, '
                                               f'👑 {row['barbarian_king_level']} / {row['archer_queen_level']} / '
@@ -155,7 +155,16 @@ async def cw_status(dm: DatabaseManager,
             SET is_player_set_for_clan_wars = $1
             WHERE clan_tag = $2 and player_tag = $3
         ''', callback_data.is_player_set_for_clan_wars, dm.clan_tag, callback_data.player_tag)
-    update = message or callback_query
+        description = (f'Player {dm.load_name_and_tag(callback_data.player_tag)} '
+                       f'CW status was set to {callback_data.is_player_set_for_clan_wars}')
+        await dm.req_connection.execute('''
+            INSERT INTO action (clan_tag, chat_id, user_id, action_timestamp, description)
+            VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
+        ''', dm.clan_tag, callback_query.message.chat.id, callback_query.from_user.id, description)
+    if (message or callback_query.message).chat.type == ChatType.PRIVATE:
+        chat_id = await dm.load_main_chat_id()
+    else:
+        chat_id = (message or callback_query.message).chat.id
     rows = await dm.req_connection.fetch('''
         SELECT
             player_tag, player_name, is_player_set_for_clan_wars,
@@ -164,12 +173,12 @@ async def cw_status(dm: DatabaseManager,
             player
             JOIN player_bot_user USING (clan_tag, player_tag)
             JOIN bot_user USING (clan_tag, chat_id, user_id)
-        WHERE clan_tag = $1 AND is_player_in_clan AND user_id = $2 AND is_user_in_chat
+        WHERE clan_tag = $1 AND is_player_in_clan AND chat_id = $2 AND user_id = $3 AND is_user_in_chat
         ORDER BY
             town_hall_level DESC,
             (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC,
             player_name
-    ''', dm.clan_tag, update.from_user.id)
+    ''', dm.clan_tag, chat_id, (message or callback_query).from_user.id)
     if len(rows) == 0:
         text += f'В базе данных нет вашего аккаунта'
         return text, ParseMode.HTML, None
@@ -265,7 +274,7 @@ async def cw_skips(dm: DatabaseManager,
                 CWMember(player_tag=cw_member['tag'],
                          attacks_spent=len(cw_member.get('attacks', [])),
                          attacks_limit=2))
-        text += await dm.print_skips(message, cw_members, ping, 2)
+        text += await dm.print_skips(message, cw_members, ping, attacks_limit=2)
     else:
         text += 'КВ сейчас не идёт'
     return text, ParseMode.HTML, None
@@ -285,7 +294,7 @@ async def command_cw_attacks(message: Message, dm: DatabaseManager) -> None:
 
 @router.message(Command('cw_status'))
 async def command_cw_status(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, reply_markup = await cw_status(dm, message, None, None)
+    text, parse_mode, reply_markup = await cw_status(dm, message, callback_query=None, callback_data=None)
     reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     await dm.dump_message_owner(reply_from_bot, message.from_user)
 
@@ -295,10 +304,16 @@ async def callback_cw_status(callback_query: CallbackQuery,
                              callback_data: CWCallbackFactory,
                              dm: DatabaseManager) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    player_is_linked_to_user = await dm.is_player_linked_to_user(callback_data.player_tag,
+                                                                 callback_query.message.chat.id,
+                                                                 callback_query.from_user.id)
+    if not user_is_message_owner or (callback_data.player_tag and not player_is_linked_to_user):
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
-        text, parse_mode, reply_markup = await cw_status(dm, None, callback_query, callback_data)
+        text, parse_mode, reply_markup = await cw_status(dm,
+                                                         message=None,
+                                                         callback_query=callback_query,
+                                                         callback_data=callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         await callback_query.answer()
@@ -306,7 +321,7 @@ async def callback_cw_status(callback_query: CallbackQuery,
 
 @router.message(Command('cw_list'))
 async def command_cw_list(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, reply_markup = await cw_list(dm, None)
+    text, parse_mode, reply_markup = await cw_list(dm, callback_data=None)
     reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     await dm.dump_message_owner(reply_from_bot, message.from_user)
 
@@ -333,7 +348,8 @@ async def command_cw_skips(message: Message, dm: DatabaseManager) -> None:
 
 @router.message(Command('cw_ping'))
 async def command_cw_ping(message: Message, dm: DatabaseManager) -> None:
-    if not await dm.can_user_ping_group_members(message):
+    user_can_ping_group_members = await dm.can_user_ping_group_members(message.chat.id, message.from_user.id)
+    if not user_can_ping_group_members:
         await message.reply(text=f'Эта команда не работает для вас')
     else:
         text, parse_mode, reply_markup = await cw_skips(dm, message, ping=True)

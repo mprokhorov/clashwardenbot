@@ -1,9 +1,12 @@
 import logging
+import datetime
+import re
+from datetime import UTC
 from typing import Callable, Dict, Any, Awaitable
 
 from aiogram import BaseMiddleware
 from aiogram.enums import ParseMode, ChatType
-from aiogram.types import TelegramObject, Message
+from aiogram.types import TelegramObject, Message, CallbackQuery
 
 from database_manager import DatabaseManager
 
@@ -30,13 +33,13 @@ class MessageMiddleware(BaseMiddleware):
         ''', dm.clan_tag)
         clan_name = row['clan_name']
         if message.chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
-            await dm.dump_group_chat(message)
-            await dm.dump_tg_user(message.chat, message.from_user)
-
+            await dm.dump_chat(message.chat)
+            await dm.dump_user(message.chat, message.from_user)
             for new_chat_member in (message.new_chat_members or []):
-                await dm.dump_tg_user(message.chat, new_chat_member)
+                await dm.dump_user(message.chat, new_chat_member)
+                await dm.load_and_cache_names()
             if message.left_chat_member and not message.left_chat_member.is_bot:
-                await dm.undump_tg_user(message.chat, message.left_chat_member)
+                await dm.undump_user(message.chat, message.left_chat_member)
 
             row = await dm.req_connection.fetch('''
                 SELECT chat_id
@@ -47,9 +50,8 @@ class MessageMiddleware(BaseMiddleware):
                 logging.info(f'Message by {{{user_info}}} was propagated')
                 return await handler(message, data)
             else:
-                if (message.text
-                        and message.text.startswith('/')
-                        and message.text.endswith(f'@{(await dm.bot.me()).username}')):
+                pattern = re.compile(r'^/[a-zA-Z0-9_]+' + re.escape((await dm.bot.me()).username) + r'$')
+                if message.text and pattern.match(message.text):
                     await message.reply(
                         text=f'Группа не привязана к клану {clan_name}',
                         parse_mode=ParseMode.HTML)
@@ -60,18 +62,11 @@ class MessageMiddleware(BaseMiddleware):
                     return
 
         elif message.chat.type == ChatType.PRIVATE:
-            await dm.dump_private_chat(message)
-            await dm.dump_tg_user(message.chat, message.from_user)
-            row = await dm.req_connection.fetchrow('''
-                SELECT user_id
-                FROM bot_user
-                WHERE
-                    clan_tag = $1
-                    AND chat_id in (SELECT chat_id FROM clan_chat WHERE clan_tag = $1)
-                    AND is_user_in_chat AND user_id = $2
-                    OR can_use_bot_without_clan_group
-            ''', dm.clan_tag, message.from_user.id)
-            if row is not None:
+            await dm.dump_chat(message.chat)
+            await dm.dump_user(message.chat, message.from_user)
+
+            user_can_use_bot = await dm.can_user_use_bot(message.from_user.id)
+            if user_can_use_bot:
                 logging.info(f'Message by {{{user_info}}} was propagated')
                 return await handler(message, data)
             else:
@@ -83,3 +78,25 @@ class MessageMiddleware(BaseMiddleware):
         else:
             logging.info(f'Message by {{{user_info}}} was not propagated')
             return
+
+
+class CallbackQueryMiddleware(BaseMiddleware):
+    def __init__(self):
+        pass
+
+    async def __call__(self,
+                       handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+                       callback_query: CallbackQuery,
+                       data: Dict[str, Any]) -> Any:
+        user_info = (f'chat_id={callback_query.message.chat.id}, '
+                     f'user_id={callback_query.from_user.id}, '
+                     f'username = {callback_query.from_user.username}, '
+                     f'first_name = {callback_query.from_user.first_name}, '
+                     f'last_name = {callback_query.from_user.last_name}, '
+                     f'data = {callback_query.data}')
+        if (datetime.datetime.now(UTC) - callback_query.message.date).days >= 1:
+            await callback_query.answer('Сообщение устарело')
+            logging.info(f'CallbackQuery by {{{user_info}}} was not propagated')
+            return
+        else:
+            return await handler(callback_query, data)

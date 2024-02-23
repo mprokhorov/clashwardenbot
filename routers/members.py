@@ -114,12 +114,7 @@ async def player_info(dm: DatabaseManager,
             chat_id = message.chat.id
             user_id = message.from_user.id
     elif message.chat.type == ChatType.PRIVATE:
-        row = await dm.req_connection.fetchrow('''
-            SELECT chat_id
-            FROM clan_chat
-            WHERE clan_tag = $1 AND is_chat_main
-        ''', dm.clan_tag)
-        chat_id = row['chat_id'] if row else None
+        chat_id = await dm.load_main_chat_id()
         user_id = message.from_user.id
     else:
         text = (f'<b>📋 Аккаунт пользователя в игре</b>\n'
@@ -171,24 +166,24 @@ async def player_info(dm: DatabaseManager,
 
 
 @router.message(Command('members'))
-async def cmd_members(message: Message, dm: DatabaseManager) -> None:
+async def command_members(message: Message, dm: DatabaseManager) -> None:
     text, parse_mode, reply_markup = await members(dm)
     await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
 
 
 @router.message(Command('donations'))
-async def cmd_donations(message: Message, dm: DatabaseManager) -> None:
+async def command_donations(message: Message, dm: DatabaseManager) -> None:
     text, parse_mode, reply_markup = await donations(dm)
     await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
 
 
 @router.message(Command('contributions'))
-async def cmd_contributions(message: Message, dm: DatabaseManager) -> None:
+async def command_contributions(message: Message, dm: DatabaseManager) -> None:
     text, parse_mode, reply_markup = await contributions(dm)
     await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
 
 
 @router.message(Command('player_info'))
-async def cmd_player_info(message: Message, dm: DatabaseManager) -> None:
+async def command_player_info(message: Message, dm: DatabaseManager) -> None:
     text, parse_mode, reply_markup = await player_info(dm, message)
     await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)

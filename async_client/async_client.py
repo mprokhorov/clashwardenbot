@@ -92,24 +92,30 @@ class AsyncClient:
                                                   timeout=60)
         return response.json() if response.status_code == HTTPStatus.OK else None
 
-    async def get_clan_war_league_group(self, clan_tag: str):
-        return await self.get_data(f'https://api.clashofclans.com/v1'
-                                   f'/clans/{urllib.parse.quote(clan_tag)}/currentwar/leaguegroup')
-
-    async def get_clan_war_league_war(self, war_tag: str):
-        return await self.get_data(f'https://api.clashofclans.com/v1'
-                                   f'/clanwarleagues/wars/{urllib.parse.quote(war_tag)}')
+    async def get_clan(self, clan_tag: str):
+        return await self.get_data(f'https://api.clashofclans.com/v1/clans/'
+                                   f'{urllib.parse.quote(clan_tag)}')
 
     async def get_clan_current_war(self, clan_tag: str):
-        return await self.get_data(f'https://api.clashofclans.com/v1'
-                                   f'/clans/{urllib.parse.quote(clan_tag)}/currentwar')
+        return await self.get_data(f'https://api.clashofclans.com/v1/clans/'
+                                   f'{urllib.parse.quote(clan_tag)}/currentwar')
 
-    async def get_clan_members(self, clan_tag: str):
-        return await self.get_data(f'https://api.clashofclans.com/v1/clans/{urllib.parse.quote(clan_tag)}/members')
+    async def get_clan_war_league_group(self, clan_tag: str):
+        return await self.get_data(f'https://api.clashofclans.com/v1/clans/'
+                                   f'{urllib.parse.quote(clan_tag)}/currentwar/leaguegroup')
+
+    async def get_clan_war_league_war(self, war_tag: str):
+        return await self.get_data(f'https://api.clashofclans.com/v1/clanwarleagues/wars/'
+                                   f'{urllib.parse.quote(war_tag)}')
 
     async def get_clan_capital_raid_seasons(self, clan_tag: str):
-        return await self.get_data(f'https://api.clashofclans.com/v1'
-                                   f'/clans/{urllib.parse.quote(clan_tag)}/capitalraidseasons')
+        return await self.get_data(f'https://api.clashofclans.com/v1/clans/'
+                                   f'{urllib.parse.quote(clan_tag)}/capitalraidseasons')
+
+    async def get_clan_members(self, clan_tag: str):
+        return await self.get_data(f'https://api.clashofclans.com/v1/clans/'
+                                   f'{urllib.parse.quote(clan_tag)}/members')
 
     async def get_player(self, player_tag: str):
-        return await self.get_data(f'https://api.clashofclans.com/v1/players/{urllib.parse.quote(player_tag)}')
+        return await self.get_data(f'https://api.clashofclans.com/v1/players/'
+                                   f'{urllib.parse.quote(player_tag)}')

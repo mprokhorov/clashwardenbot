@@ -104,7 +104,7 @@ async def raids_skips(dm: DatabaseManager,
             alleged_raid_members.append(AllegedRaidMember(player_tag=row['player_tag'],
                                                           attacks_spent=0,
                                                           attacks_limit=6))
-        text += await dm.print_skips(message, alleged_raid_members, ping, 6)
+        text += await dm.print_skips(message, alleged_raid_members, ping, attacks_limit=5 if ping else 6)
     else:
         text += 'Информация о рейдах отсутствует\n'
     return text, ParseMode.HTML, None
@@ -190,7 +190,8 @@ async def command_raids_skips(message: Message, dm: DatabaseManager) -> None:
 
 @router.message(Command('raids_ping'))
 async def command_raids_ping(message: Message, dm: DatabaseManager) -> None:
-    if not await dm.can_user_ping_group_members(message):
+    user_can_ping_group_members = await dm.can_user_ping_group_members(message.chat.id, message.from_user.id)
+    if not user_can_ping_group_members:
         await message.reply(text=f'Эта команда не работает для вас')
     else:
         text, parse_mode, keyboard = await raids_skips(dm, message, ping=True)

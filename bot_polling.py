@@ -6,7 +6,7 @@ from aiogram import Bot, Dispatcher
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 
 from bot.config import config
-from bot.middlewares import MessageMiddleware
+from bot.middlewares import MessageMiddleware, CallbackQueryMiddleware
 from bot import commands
 from database_manager import DatabaseManager
 from routers import admin, cw, cwl, members, raids
@@ -30,6 +30,7 @@ async def main():
 
     dp = Dispatcher(dm=dm)
     dp.message.outer_middleware(MessageMiddleware())
+    dp.callback_query.outer_middleware(CallbackQueryMiddleware())
     dp.include_routers(cw.router, raids.router, cwl.router, members.router, admin.router)
 
     scheduler = AsyncIOScheduler()

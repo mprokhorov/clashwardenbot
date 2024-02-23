@@ -45,8 +45,8 @@ async def main():
         INSERT INTO
             bot_user
                 (clan_tag, chat_id, user_id, username, first_name, last_name, is_user_in_chat, first_seen, last_seen,
-                 can_ping_group_members, can_link_group_members, can_edit_cw_list)
-        VALUES ($1, $2, $3, $4, $5, $6, TRUE, NULL, CURRENT_TIMESTAMP(0), FALSE, FALSE, FALSE)
+                 can_ping_group_members, can_link_group_members, can_edit_cw_list, can_send_messages_from_bot)
+        VALUES ($1, $2, $3, $4, $5, $6, TRUE, NULL, CURRENT_TIMESTAMP(0), FALSE, FALSE, FALSE, FALSE)
         ON CONFLICT (clan_tag, chat_id, user_id)
         DO UPDATE SET (username, first_name, last_name, is_user_in_chat, last_seen) = 
                       ($4, $5, $6, TRUE, CURRENT_TIMESTAMP(0))

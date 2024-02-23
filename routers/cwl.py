@@ -128,7 +128,7 @@ async def cwl_attacks(dm: DatabaseManager, cwl_day: Optional[int] = None):
             SELECT player_tag, player_name, town_hall_level,
                    barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
             FROM player
-            WHERE clan_tag = $1 -- AND is_player_in_clan
+            WHERE clan_tag = $1
         ''', dm.clan_tag)
         cwlw_member_info = {row['player_tag']: (f'{dm.of.to_html(row['player_name'])} — 🛖 {row['town_hall_level']}, '
                                                 f'👑 {row['barbarian_king_level']} / {row['archer_queen_level']} / '
@@ -271,7 +271,7 @@ async def cwl_skips(dm: DatabaseManager,
                 CWLWMember(player_tag=cwlw_member['tag'],
                            attacks_spent=len(cwlw_member.get('attacks', [])),
                            attacks_limit=1))
-        text += await dm.print_skips(message, cwlw_members, ping, 1)
+        text += await dm.print_skips(message, cwlw_members, ping, attacks_limit=1)
     else:
         text += 'ЛВК сейчас не идёт'
     return text, ParseMode.HTML, None
@@ -393,7 +393,8 @@ async def command_cwl_skips(message: Message, dm: DatabaseManager) -> None:
 
 @router.message(Command('cwl_ping'))
 async def command_cwl_ping(message: Message, dm: DatabaseManager) -> None:
-    if not await dm.can_user_ping_group_members(message):
+    user_can_ping_group_members = await dm.can_user_ping_group_members(message.chat.id, message.from_user.id)
+    if not user_can_ping_group_members:
         await message.reply(text=f'Эта команда не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_skips(dm, message, ping=True)

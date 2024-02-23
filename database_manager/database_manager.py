@@ -100,13 +100,14 @@ class DatabaseManager:
             await self.load_and_cache_names()
 
         for joined_clan_member_tag in joined_clan_member_tags:
-            rows = self.cron_connection.fetch('''
+            rows = await self.cron_connection.fetch('''
                 SELECT chat_id, title
                 FROM
                     clan
                     JOIN clan_chat USING (clan_tag)
                     JOIN chat USING (clan_tag, chat_id)
-            ''')
+                WHERE clan_tag = $1
+            ''', self.clan_tag)
             for row in rows:
                 await self.send_message_to_group(
                     user_id=None,
@@ -116,13 +117,14 @@ class DatabaseManager:
                     ping=False)
 
         for left_clan_member_tag in left_clan_member_tags:
-            rows = self.cron_connection.fetch('''
+            rows = await self.cron_connection.fetch('''
                 SELECT chat_id, title
                 FROM
                     clan
                     JOIN clan_chat USING (clan_tag)
                     JOIN chat USING (clan_tag, chat_id)
-            ''')
+                WHERE clan_tag = $1
+            ''', self.clan_tag)
             for row in rows:
                 user_rows = await self.cron_connection.fetch('''
                     SELECT first_name, last_name, user_id
@@ -140,7 +142,7 @@ class DatabaseManager:
                     user_id=None,
                     chat_id=row['chat_id'],
                     chat_title=row['title'],
-                    message_text=f'<b>{self.of.to_html(self.load_name(left_clan_member_tag) + ping_text)}</b> '
+                    message_text=f'<b>{self.of.to_html(self.load_name(left_clan_member_tag))}</b>{ping_text} '
                                  f'вышел из клана\n',
                     ping=False)
 

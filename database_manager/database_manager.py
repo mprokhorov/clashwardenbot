@@ -135,7 +135,7 @@ class DatabaseManager:
                     WHERE clan_tag = $1 AND player_tag = $2 AND chat_id = $3
                 ''', self.clan_tag, left_clan_member_tag, row['chat_id'])
                 ping_text = ''
-                if len(rows) > 0:
+                if len(user_rows) > 0:
                     ping_text += f' ({', '.join(self.load_mentioned_full_name_to_html(
                         row['chat_id'], user_row['user_id']) for user_row in user_rows)})'
                 await self.send_message_to_group(

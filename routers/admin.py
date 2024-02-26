@@ -300,7 +300,7 @@ async def send_message(dm: DatabaseManager,
     row = await dm.req_connection.fetchrow('''
         SELECT title
         FROM chat
-        WHERE (clan_tag, chat_id) = $1
+        WHERE (clan_tag, chat_id) = ($1, $2)
     ''', dm.clan_tag, chat_id)
     chat_title = row['title']
     if ping:

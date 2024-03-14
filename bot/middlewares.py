@@ -55,12 +55,15 @@ class MessageMiddleware(BaseMiddleware):
                 message.text[bot_commands[0].offset:bot_commands[0].offset + bot_commands[0].length],
                 bot_username
             ):
-                if self.is_command_valid(message.text, ['start', 'help']):
+                if self.is_command_valid(
+                    message.text[bot_commands[0].offset:bot_commands[0].offset + bot_commands[0].length],
+                    ['start', 'help']
+                ):
                     logging.info(f'Message {{{user_info}}} was propagated')
                     return await handler(message, data)
                 elif self.is_command_valid(
-                        message.text[bot_commands[0].offset:bot_commands[0].offset + bot_commands[0].length],
-                        [bot_command.get_secret_value() for bot_command in config.bot_commands]
+                    message.text[bot_commands[0].offset:bot_commands[0].offset + bot_commands[0].length],
+                    [bot_command.get_secret_value() for bot_command in config.bot_commands]
                 ):
                     if message.chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
                         if message.chat.id in await dm.get_chats_linked_to_clan():

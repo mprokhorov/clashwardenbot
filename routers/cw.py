@@ -35,45 +35,16 @@ class CWCallbackFactory(CallbackData, prefix='cw'):
 
 
 async def cw_info(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    cw = await dm.load_clan_war()
     text = (f'<b>📃 Информация о КВ</b>\n'
             f'\n')
-    if cw is None:
-        text += f'Информация о КВ отсутствует'
-        return text, ParseMode.HTML, None
-    if cw['state'] in ['preparation']:
-        text += (f'{dm.of.event_datetime(Event.CW, cw['startTime'], cw['endTime'], True)}\n'
-                 f'\n'
-                 f'{dm.of.to_html(cw['clan']['name'])} vs {dm.of.to_html(cw['opponent']['name'])}\n'
-                 f'{cw['teamSize']} 👤 vs {cw['teamSize']} 👤\n')
-    elif cw['state'] in ['inWar']:
-        text += (f'{dm.of.event_datetime(Event.CW, cw['startTime'], cw['endTime'], True)}\n'
-                 f'\n'
-                 f'{dm.of.to_html(cw['clan']['name'])} vs {dm.of.to_html(cw['opponent']['name'])}\n'
-                 f'{cw['teamSize']} 👤 vs {cw['teamSize']} 👤\n'
-                 f'{cw['clan']['attacks']} 🗡 vs {cw['opponent']['attacks']} 🗡\n'
-                 f'{cw['clan']['stars']} ⭐ vs {cw['opponent']['stars']} ⭐\n'
-                 f'{format(cw['clan']['destructionPercentage'], '.2f')}% vs '
-                 f'{format(cw['opponent']['destructionPercentage'], '.2f')}%\n')
-    elif cw['state'] in ['warEnded']:
-        text += (f'{dm.of.event_datetime(Event.CW, cw['startTime'], cw['endTime'], True)}\n'
-                 f'\n'
-                 f'{dm.of.to_html(cw['clan']['name'])} vs {dm.of.to_html(cw['opponent']['name'])}\n'
-                 f'{cw['teamSize']} 👤 vs {cw['teamSize']} 👤\n'
-                 f'{cw['clan']['attacks']} 🗡 vs {cw['opponent']['attacks']} 🗡\n'
-                 f'{cw['clan']['stars']} ⭐ vs {cw['opponent']['stars']} ⭐\n'
-                 f'{format(cw['clan']['destructionPercentage'], '.2f')}% vs '
-                 f'{format(cw['opponent']['destructionPercentage'], '.2f')}%\n')
-        if (cw['clan']['stars'], cw['clan']['destructionPercentage']) > (
-                cw['opponent']['stars'], cw['opponent']['destructionPercentage']):
-            text += f'🎉 Победа!\n'
-        elif (cw['clan']['stars'], cw['clan']['destructionPercentage']) < (
-                cw['opponent']['stars'], cw['opponent']['destructionPercentage']):
-            text += f'😢 Поражение\n'
-        else:
-            text += f'⚖️ Ничья\n'
+    cw = await dm.load_clan_war()
+    if cw and dm.of.war_state(cw) == 'preparation':
+        text += dm.of.cw_preparation(cw)
+    elif cw and dm.of.war_state(cw) in ['inWar', 'warEnded']:
+        text += dm.of.cw_in_war_or_ended(cw)
     else:
         text += f'Информация о КВ отсутствует\n'
+        return text, ParseMode.HTML, None
     return text, ParseMode.HTML, None
 
 
@@ -84,22 +55,27 @@ async def cw_attacks(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
     if cw is None:
         text += f'Информация о КВ отсутствует\n'
         return text, ParseMode.HTML, None
-    if cw['state'] in ['preparation']:
-        text += (f'{dm.of.event_datetime(Event.CW, cw['startTime'], cw['endTime'], True)}\n'
-                 f'\n'
-                 f'{dm.of.to_html(cw['clan']['name'])} vs {dm.of.to_html(cw['opponent']['name'])}\n'
-                 f'{cw['teamSize']} 👤 vs {cw['teamSize']} 👤\n'
+    if dm.of.war_state(cw) in ['preparation']:
+        text += (f'{dm.of.cw_preparation(cw)}'
                  f'\n')
-        rows = await dm.req_connection.fetch('''
+        rows = await dm.acquired_connection.fetch('''
             SELECT player_tag, player_name, town_hall_level,
                    barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
             FROM player
             WHERE clan_tag = $1
         ''', dm.clan_tag)
-        cw_member_info = {row['player_tag']: (f'{dm.of.to_html(row['player_name'])} — 🛖 {row['town_hall_level']}, '
-                                              f'👑 {row['barbarian_king_level']} / {row['archer_queen_level']} / '
-                                              f'{row['grand_warden_level']} / {row['royal_champion_level']}')
-                          for row in rows}
+        cw_member_info = {
+            row['player_tag']: (
+                f'{dm.of.to_html(row['player_name'])} — {dm.of.get_player_info_with_emoji(
+                    row['town_hall_level'],
+                    row['barbarian_king_level'],
+                    row['archer_queen_level'],
+                    row['grand_warden_level'],
+                    row['royal_champion_level']
+                )}'
+            )
+            for row in rows
+        }
         clan_map_position_by_player = {}
         for member in cw['clan']['members']:
             clan_map_position_by_player[member['tag']] = member['mapPosition']
@@ -109,11 +85,8 @@ async def cw_attacks(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
                 f'{clan_map_position_by_player[member['tag']]}) '
                 f'{cw_member_info.get(member['tag'], dm.of.to_html(member['name']))}\n')
         text += ''.join(cw_member_lines)
-    elif cw['state'] in ['inWar', 'warEnded']:
-        text += (f'{dm.of.event_datetime(Event.CW, cw['startTime'], cw['endTime'], True)}\n'
-                 f'\n'
-                 f'{dm.of.to_html(cw['clan']['name'])} vs {dm.of.to_html(cw['opponent']['name'])}\n'
-                 f'{cw['teamSize']} 👤 vs {cw['teamSize']} 👤\n'
+    elif dm.of.war_state(cw) in ['inWar', 'warEnded']:
+        text += (f'{dm.of.cw_in_war_or_ended(cw)}'
                  f'\n')
         clan_map_position_by_player = {}
         for member in cw['clan']['members']:
@@ -123,7 +96,6 @@ async def cw_attacks(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
             opponent_map_position_by_player[member['tag']] = member['mapPosition']
         cw_member_lines = [''] * len(clan_map_position_by_player)
         for member in cw['clan']['members']:
-            len(member.get('attacks', []))
             cw_member_lines[clan_map_position_by_player[member['tag']] - 1] += \
                 (f'{clan_map_position_by_player[member['tag']]}) '
                  f'{dm.of.to_html(member['name'])} — {len(member.get('attacks', []))} / 2\n')
@@ -142,6 +114,79 @@ async def cw_attacks(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
     return text, ParseMode.HTML, None
 
 
+async def cw_map(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    cw = await dm.load_clan_war()
+    text = (f'<b>🗺️ Карта КВ</b>\n'
+            f'\n')
+    if cw is None:
+        text += f'Информация о КВ отсутствует\n'
+        return text, ParseMode.HTML, None
+    if dm.of.war_state(cw) in ['preparation']:
+        text += (f'{dm.of.cw_preparation(cw)}'
+                 f'\n')
+        rows = await dm.acquired_connection.fetch('''
+            SELECT player_tag, player_name, town_hall_level,
+                   barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+            FROM player
+            WHERE clan_tag = $1
+        ''', dm.clan_tag)
+        cw_member_info = {
+            row['player_tag']: (
+                f'{dm.of.to_html(row['player_name'])} — {dm.of.get_player_info_with_emoji(
+                    row['town_hall_level'],
+                    row['barbarian_king_level'],
+                    row['archer_queen_level'],
+                    row['grand_warden_level'],
+                    row['royal_champion_level']
+                )}'
+            )
+            for row in rows
+        }
+        clan_map_position_by_player = {}
+        for member in cw['clan']['members']:
+            clan_map_position_by_player[member['tag']] = member['mapPosition']
+        cw_member_lines = [''] * len(clan_map_position_by_player)
+        for member in cw['clan']['members']:
+            cw_member_lines[clan_map_position_by_player[member['tag']] - 1] = (
+                f'{clan_map_position_by_player[member['tag']]}) '
+                f'{cw_member_info.get(member['tag'], dm.of.to_html(member['name']))}\n')
+        text += ''.join(cw_member_lines)
+    elif dm.of.war_state(cw) in ['inWar', 'warEnded']:
+        text += (f'{dm.of.cw_in_war_or_ended(cw)}'
+                 f'\n')
+        clan_map_position_by_player = {}
+        for member in cw['clan']['members']:
+            clan_map_position_by_player[member['tag']] = member['mapPosition']
+        opponent_map_position_by_player = {}
+        for member in cw['opponent']['members']:
+            opponent_map_position_by_player[member['tag']] = member['mapPosition']
+        opponent_member_lines = [''] * len(clan_map_position_by_player)
+        for opponent_member in cw['opponent']['members']:
+            if opponent_member.get('bestOpponentAttack'):
+                best_opponent_attack = opponent_member['bestOpponentAttack']
+                if best_opponent_attack['stars'] > 0:
+                    opponent_member_lines[opponent_map_position_by_player[opponent_member['tag']] - 1] += (
+                        f'{opponent_map_position_by_player[opponent_member['tag']]}) '
+                        f'{'⭐' * best_opponent_attack['stars']} '
+                        f'({best_opponent_attack['destructionPercentage']}%) '
+                        f'⬅️ '
+                        f'{clan_map_position_by_player[best_opponent_attack['attackerTag']]}. '
+                        f'{dm.of.to_html(dm.load_name(best_opponent_attack['attackerTag']))}'
+                    )
+                else:
+                    opponent_member_lines[opponent_map_position_by_player[opponent_member['tag']] - 1] += (
+                        f'{opponent_map_position_by_player[opponent_member['tag']]}) 0%'
+                    )
+            else:
+                opponent_member_lines[opponent_map_position_by_player[opponent_member['tag']] - 1] += (
+                    f'{opponent_map_position_by_player[opponent_member['tag']]}) 0%'
+                )
+        text += '\n'.join(opponent_member_lines)
+    else:
+        text += f'Информация о КВ отсутствует\n'
+    return text, ParseMode.HTML, None
+
+
 async def cw_status(dm: DatabaseManager,
                     message: Optional[Message],
                     callback_query: Optional[CallbackQuery],
@@ -150,22 +195,22 @@ async def cw_status(dm: DatabaseManager,
     text = (f'<b>✍🏻 Изменение статуса участия в КВ</b>\n'
             f'\n')
     if callback_data is not None and callback_data.player_tag is not None:
-        await dm.req_connection.execute('''
+        await dm.acquired_connection.execute('''
             UPDATE player
             SET is_player_set_for_clan_wars = $1
             WHERE clan_tag = $2 and player_tag = $3
         ''', callback_data.is_player_set_for_clan_wars, dm.clan_tag, callback_data.player_tag)
         description = (f'Player {dm.load_name_and_tag(callback_data.player_tag)} '
                        f'CW status was set to {callback_data.is_player_set_for_clan_wars}')
-        await dm.req_connection.execute('''
+        await dm.acquired_connection.execute('''
             INSERT INTO action (clan_tag, chat_id, user_id, action_timestamp, description)
             VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
         ''', dm.clan_tag, callback_query.message.chat.id, callback_query.from_user.id, description)
     if (message or callback_query.message).chat.type == ChatType.PRIVATE:
-        chat_id = await dm.load_main_chat_id()
+        chat_id = await dm.get_main_chat_id()
     else:
         chat_id = (message or callback_query.message).chat.id
-    rows = await dm.req_connection.fetch('''
+    rows = await dm.acquired_connection.fetch('''
         SELECT
             player_tag, player_name, is_player_set_for_clan_wars,
             town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
@@ -185,9 +230,12 @@ async def cw_status(dm: DatabaseManager,
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text=f'{'✅' if row['is_player_set_for_clan_wars'] else '❌'} '
-                 f'{dm.load_name(row['player_tag'])} — 🛖 {row['town_hall_level']}, '
-                 f'👑 {row['barbarian_king_level']} / {row['archer_queen_level']} / '
-                 f'{row['grand_warden_level']} / {row['royal_champion_level']}',
+                 f'{dm.load_name(row['player_tag'])} — {dm.of.get_player_info_with_emoji(
+                     row['town_hall_level'],
+                     row['barbarian_king_level'],
+                     row['archer_queen_level'],
+                     row['grand_warden_level'],
+                     row['royal_champion_level'])}',
             callback_data=CWCallbackFactory(
                 action=Action.change_cw_status,
                 player_tag=row['player_tag'],
@@ -207,7 +255,7 @@ async def cw_list(dm: DatabaseManager,
                   ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     cw_list_ordering = getattr(callback_data, 'cw_list_ordering', CWListOrderding.by_trophies)
     if cw_list_ordering == CWListOrderding.by_town_hall_and_heroes:
-        rows = await dm.req_connection.fetch('''
+        rows = await dm.acquired_connection.fetch('''
             SELECT
                 player_name, town_hall_level,
                 barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
@@ -223,7 +271,7 @@ async def cw_list(dm: DatabaseManager,
         opposite_ordering_button_text = '⬇️ по трофеям'
         opposite_ordering = CWListOrderding.by_trophies
     else:
-        rows = await dm.req_connection.fetch('''
+        rows = await dm.acquired_connection.fetch('''
             SELECT
                 player_name, town_hall_level,
                 barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
@@ -238,9 +286,12 @@ async def cw_list(dm: DatabaseManager,
     keyboard = None
     if len(rows) > 0:
         for i, row in enumerate(rows):
-            text += (f'{i + 1}) {dm.of.to_html(row['player_name'])} — 🛖 {row['town_hall_level']}, '
-                     f'👑 {row['barbarian_king_level']} / {row['archer_queen_level']} / '
-                     f'{row['grand_warden_level']} / {row['royal_champion_level']}\n')
+            text += (f'{i + 1}) {dm.of.to_html(row['player_name'])} — {dm.of.get_player_info_with_emoji(
+                row['town_hall_level'],
+                row['barbarian_king_level'],
+                row['archer_queen_level'],
+                row['grand_warden_level'],
+                row['royal_champion_level'])}\n')
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[
             InlineKeyboardButton(text=opposite_ordering_button_text,
                                  callback_data=CWCallbackFactory(
@@ -262,8 +313,7 @@ async def cw_skips(dm: DatabaseManager,
     if cw is None:
         text += 'Информация о КВ отсутствует'
         return text, ParseMode.HTML, None
-    if cw['state'] in ['inWar', 'warEnded']:
-        cwl_season, _ = await dm.load_clan_war_league()
+    if dm.of.war_state(cw) in ['inWar', 'warEnded']:
         text += (f'{dm.of.event_datetime(Event.CW, cw['startTime'], cw['endTime'], False)}\n'
                  f'\n')
         CWMember = namedtuple(typename='CWMember',
@@ -289,6 +339,12 @@ async def command_cw_info(message: Message, dm: DatabaseManager) -> None:
 @router.message(Command('cw_attacks'))
 async def command_cw_attacks(message: Message, dm: DatabaseManager) -> None:
     text, parse_mode, reply_markup = await cw_attacks(dm)
+    await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+
+
+@router.message(Command('cw_map'))
+async def command_cw_map(message: Message, dm: DatabaseManager) -> None:
+    text, parse_mode, reply_markup = await cw_map(dm)
     await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
 
 
@@ -349,7 +405,9 @@ async def command_cw_skips(message: Message, dm: DatabaseManager) -> None:
 @router.message(Command('cw_ping'))
 async def command_cw_ping(message: Message, dm: DatabaseManager) -> None:
     user_can_ping_group_members = await dm.can_user_ping_group_members(message.chat.id, message.from_user.id)
-    if not user_can_ping_group_members:
+    if message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
+        await message.reply(text=f'Эта команда работает только в группах')
+    elif not user_can_ping_group_members:
         await message.reply(text=f'Эта команда не работает для вас')
     else:
         text, parse_mode, reply_markup = await cw_skips(dm, message, ping=True)

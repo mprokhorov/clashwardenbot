@@ -25,6 +25,16 @@ class Settings(BaseSettings):
     clan_tags: list[SecretStr]
     telegram_bot_api_tokens: list[SecretStr]
 
+    telegram_emoji_set_name: SecretStr
+    town_hall_emoji_ids: list[SecretStr]
+    builder_hall_emoji_ids: list[SecretStr]
+    home_village_hero_emoji_ids: list[SecretStr]
+    capital_gold_emoji_id: SecretStr
+    raid_medal_emoji_id: SecretStr
+
+    telegram_bot_owner_id: SecretStr
+    bot_commands: list[SecretStr]
+
     class Config:
         env_file = 'bot/.env'
         env_file_encoding = 'utf-8'

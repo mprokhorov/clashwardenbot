@@ -193,7 +193,7 @@ async def users(dm: DatabaseManager, chat: Chat) -> Tuple[str, ParseMode, Option
         WHERE clan_tag = $1 AND is_player_in_clan
     ''', dm.clan_tag)
     text = (
-        f'<b>🪖 Участники клана</b>\n'
+        f'<b>👥 Участники клана</b>\n'
         f'\n'
         f'Количество участников: {members_number} / 50 🪖\n'
         f'\n'

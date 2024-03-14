@@ -230,7 +230,7 @@ async def command_raids_ping(message: Message, dm: DatabaseManager) -> None:
     user_can_ping_group_members = await dm.can_user_ping_group_members(message.chat.id, message.from_user.id)
     if message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
         await message.reply(text=f'Эта команда работает только в группах')
-    if not user_can_ping_group_members:
+    elif not user_can_ping_group_members:
         await message.reply(text=f'Эта команда не работает для вас')
     else:
         text, parse_mode, keyboard = await raids_skips(dm, message, ping=True)

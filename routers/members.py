@@ -64,7 +64,7 @@ async def start_help(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
         /cwl_ping — 🔔 Напомнить об атаках в ЛВК
         /cwl_clans — 📊 Уровни ТХ кланов в ЛВК
         /player_info — 👤 Аккаунты пользователя
-        /members — 👥 Участники клана
+        /members — 🪖 Участники клана
         /donations — 🥇 Лучшие жертвователи
         /contributions — 🤝 Вклады в столице
         /events — 📅 События
@@ -85,10 +85,12 @@ async def members(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineK
             (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC,
             player_name
     ''', dm.clan_tag)
-    text = (f'<b>👥 Участники клана</b>\n'
-            f'\n'
-            f'Количество участников: {len(rows)} / 50 👤\n'
-            f'\n')
+    text = (
+        f'<b>🪖 Участники клана</b>\n'
+        f'\n'
+        f'Количество участников: {len(rows)} / 50 🪖\n'
+        f'\n'
+    )
     for i, row in enumerate(rows):
         text += (f'{i + 1}) {dm.of.to_html(row['player_name'])} — '
                  f'{dm.of.get_player_info_for_callback_text(
@@ -191,9 +193,9 @@ async def users(dm: DatabaseManager, chat: Chat) -> Tuple[str, ParseMode, Option
         WHERE clan_tag = $1 AND is_player_in_clan
     ''', dm.clan_tag)
     text = (
-        f'<b>👥 Участники клана</b>\n'
+        f'<b>🪖 Участники клана</b>\n'
         f'\n'
-        f'Количество участников: {members_number} / 50 👤\n'
+        f'Количество участников: {members_number} / 50 🪖\n'
         f'\n'
     )
     if len(players_by_user) > 0:
@@ -224,7 +226,7 @@ async def users(dm: DatabaseManager, chat: Chat) -> Tuple[str, ParseMode, Option
         )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(
-            text='👥 Показать игроков',
+            text='🪖 Показать аккаунты',
             callback_data=MembersCallbackFactory(
                 action=Action.change_members_view, members_view=MembersView.members
             ).pack()
@@ -241,11 +243,15 @@ async def donations(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inlin
         ORDER BY donations_given DESC
         LIMIT 20
     ''', dm.clan_tag)
-    text = (f'<b>🥇 Лучшие жертвователи</b>\n'
-            f'\n')
+    text = (
+        f'<b>🥇 Лучшие жертвователи</b>\n'
+        f'\n'
+    )
     for i, row in enumerate(rows):
-        text += (f'{i + 1}) {dm.of.to_html(row['player_name'])}, {dm.of.role(row['player_role'])} — '
-                 f'🪖 {row['donations_given']}\n')
+        text += (
+            f'{i + 1}) {dm.of.to_html(row['player_name'])}, {dm.of.role(row['player_role'])} — '
+            f'{row['donations_given']}\n'
+        )
 
     rows = await dm.acquired_connection.fetch('''
         SELECT player_name, donations_given
@@ -259,12 +265,16 @@ async def donations(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inlin
         ORDER BY donations_given, player_name
     ''', dm.clan_tag)
     if len(rows) == 1:
-        text += (f'\n'
-                 f'⬇️ Будет понижен: {dm.of.to_html(rows[0]['player_name'])} — 🪖 {rows[0]['donations_given']}\n')
+        text += (
+            f'\n'
+            f'⬇️ Будет понижен: {dm.of.to_html(rows[0]['player_name'])} — {rows[0]['donations_given']}\n'
+        )
     elif len(rows) > 1:
-        text += (f'\n'
-                 f'⬇️ Будут понижены: {', '.join(f'{dm.of.to_html(row['player_name'])} — 🪖 {row['donations_given']}'
-                                                 for row in rows)}\n')
+        text += (
+            f'\n'
+            f'⬇️ Будут понижены: {', '.join(f'{dm.of.to_html(row['player_name'])} — {row['donations_given']}'
+                                            for row in rows)}\n'
+        )
 
     rows = await dm.acquired_connection.fetch('''
         SELECT player_name, donations_given
@@ -278,12 +288,16 @@ async def donations(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inlin
         ORDER BY donations_given, player_name
     ''', dm.clan_tag)
     if len(rows) == 1:
-        text += (f'\n'
-                 f'⬇️ Будет повышен: {dm.of.to_html(rows[0]['player_name'])} — 🪖 {rows[0]['donations_given']}\n')
+        text += (
+            f'\n'
+            f'⬇️ Будет повышен: {dm.of.to_html(rows[0]['player_name'])} — {rows[0]['donations_given']}\n'
+        )
     elif len(rows) > 1:
-        text += (f'\n'
-                 f'⬇️ Будут повышены: {', '.join(f'{dm.of.to_html(row['player_name'])} — 🪖 {row['donations_given']}'
-                                                 for row in rows)}\n')
+        text += (
+            f'\n'
+            f'⬇️ Будут повышены: {', '.join(f'{dm.of.to_html(row['player_name'])} — {row['donations_given']}'
+                                            for row in rows)}\n'
+        )
     return text, ParseMode.HTML, None
 
 
@@ -319,9 +333,11 @@ async def player_info(dm: DatabaseManager,
         chat_id = await dm.get_main_chat_id()
         user_id = message.from_user.id
     else:
-        text = (f'<b>📋 Аккаунт пользователя</b>\n'
-                f'\n'
-                f'Эта команда не работает для вас\n')
+        text = (
+            f'<b>📋 Аккаунт пользователя</b>\n'
+            f'\n'
+            f'Эта команда не работает для вас\n'
+        )
         return text, ParseMode.HTML, None
     rows = await dm.acquired_connection.fetch('''
         SELECT

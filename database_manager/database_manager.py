@@ -202,16 +202,16 @@ class DatabaseManager:
                     mentions = ''
                     if len(user_ids) > 0:
                         mentions += f' ({', '.join(
-                            self.of.to_html(self.load_full_name(chat_id, user_id)) for user_id in user_ids
+                            '👤 ' + self.of.to_html(self.load_full_name(chat_id, user_id)) for user_id in user_ids
                         )})'
-                    message_text += f'Игрок <b>{self.of.to_html(self.load_name(clan_member_tag))}</b>{mentions} '
+                    message_text += f'🪖 <b>{self.of.to_html(self.load_name(clan_member_tag))}</b>{mentions} '
                     if clan_member_tag in left_clan_member_tags:
                         message_text += f'больше не состоит в клане\n'
                     elif clan_member_tag in joined_clan_member_tags:
                         message_text += f'вступил в клан\n'
                 message_text += (
                     f'\n'
-                    f'Количество участников: {len(retrieved_clan_members['items'])} / 50 👤\n'
+                    f'Количество участников: {len(retrieved_clan_members['items'])} / 50 🪖\n'
                 )
                 await self.send_message_to_chat(
                     user_id=None,
@@ -1165,17 +1165,17 @@ class DatabaseManager:
         text = ''
         for user_id, players in members_by_user_to_mention.items():
             if ping:
-                text += f'{self.load_mentioned_full_name_to_html(chat_id, user_id)} — '
+                text += f'👤 {self.load_mentioned_full_name_to_html(chat_id, user_id)} — '
             else:
-                text += f'{self.of.to_html(self.load_full_name(chat_id, user_id))} — '
-            text += (', '.join([f'{self.of.to_html(self.load_name(player.player_tag))}: '
+                text += f'👤 {self.of.to_html(self.load_full_name(chat_id, user_id))} — '
+            text += (', '.join([f'🪖 {self.of.to_html(self.load_name(player.player_tag))}: '
                                 f'{player.attacks_spent} / {player.attacks_limit}'
                                 for player in players]) +
                      '\n')
         if len(members_by_user_to_mention) > 0:
             text += '\n'
         for player in unlinked_members:
-            text += (f'{self.of.to_html(self.load_name(player.player_tag))}: '
+            text += (f'🪖 {self.of.to_html(self.load_name(player.player_tag))}: '
                      f'{player.attacks_spent} / {player.attacks_limit}\n')
         if len(members_by_user_to_mention) + len(unlinked_members) == 0:
             text += f'Список пуст'

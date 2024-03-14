@@ -94,7 +94,7 @@ async def cwl_attacks(dm: DatabaseManager, cwl_day: Optional[int] = None):
                  f'\n'
                  f'Сезон ЛВК: {dm.of.season(cwl_season)}, день {cwl_day + 1}\n'
                  f'{dm.of.to_html(cwlw['clan']['name'])} vs {dm.of.to_html(cwlw['opponent']['name'])}\n'
-                 f'{cwlw['teamSize']} 👤 vs {cwlw['teamSize']} 👤\n'
+                 f'{cwlw['teamSize']} 🪖 vs {cwlw['teamSize']} 🪖\n'
                  f'\n')
         rows = await dm.acquired_connection.fetch('''
             SELECT player_tag, player_name, town_hall_level,
@@ -126,7 +126,7 @@ async def cwl_attacks(dm: DatabaseManager, cwl_day: Optional[int] = None):
                  f'\n'
                  f'Сезон ЛВК: {dm.of.season(cwl_season)}, день {cwl_day + 1}\n'
                  f'{dm.of.to_html(cwlw['clan']['name'])} vs {dm.of.to_html(cwlw['opponent']['name'])}\n'
-                 f'{cwlw['teamSize']} 👤 vs {cwlw['teamSize']} 👤\n'
+                 f'{cwlw['teamSize']} 🪖 vs {cwlw['teamSize']} 🪖\n'
                  f'{cwlw['clan']['attacks']} 🗡 vs {cwlw['opponent']['attacks']} 🗡\n'
                  f'{cwlw['clan']['stars']} ⭐ vs {cwlw['opponent']['stars']} ⭐\n'
                  f'{format(cwlw['clan']['destructionPercentage'], '.2f')}% vs '
@@ -200,7 +200,7 @@ async def cwl_map(dm: DatabaseManager,
             f'\n'
             f'Сезон ЛВК: {dm.of.season(cwl_season)}, день {cwl_day + 1}\n'
             f'{dm.of.to_html(cwlw['clan']['name'])} vs {dm.of.to_html(cwlw['opponent']['name'])}\n'
-            f'{cwlw['teamSize']} 👤 vs {cwlw['teamSize']} 👤\n'
+            f'{cwlw['teamSize']} 🪖 vs {cwlw['teamSize']} 🪖\n'
             f'\n'
         )
         rows = await dm.acquired_connection.fetch('''
@@ -233,7 +233,7 @@ async def cwl_map(dm: DatabaseManager,
             f'{dm.of.event_datetime(Event.CWLW, cwlw['startTime'], cwlw['endTime'], True)}\n'
             f'\n'
             f'{dm.of.to_html(cwlw['clan']['name'])} vs {dm.of.to_html(cwlw['opponent']['name'])}\n'
-            f'{cwlw['teamSize']} 👤 vs {cwlw['teamSize']} 👤\n'
+            f'{cwlw['teamSize']} 🪖 vs {cwlw['teamSize']} 🪖\n'
             f'{cwlw['clan']['attacks']} 🗡 vs {cwlw['opponent']['attacks']} 🗡\n'
             f'{cwlw['clan']['stars']} ⭐ vs {cwlw['opponent']['stars']} ⭐\n'
             f'{format(cwlw['clan']['destructionPercentage'], '.2f')}% vs '
@@ -551,7 +551,7 @@ async def command_cwl_ping(message: Message, dm: DatabaseManager) -> None:
     user_can_ping_group_members = await dm.can_user_ping_group_members(message.chat.id, message.from_user.id)
     if message.chat.type not in (ChatType.GROUP, ChatType.SUPERGROUP):
         await message.reply(text=f'Эта команда работает только в группах')
-    if not user_can_ping_group_members:
+    elif not user_can_ping_group_members:
         await message.reply(text=f'Эта команда не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_skips(dm, message, ping=True)

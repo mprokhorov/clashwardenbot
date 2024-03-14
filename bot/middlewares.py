@@ -15,10 +15,12 @@ class MessageMiddleware(BaseMiddleware):
     def __init__(self):
         pass
 
-    async def __call__(self,
-                       handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
-                       message: Message,
-                       data: Dict[str, Any]) -> Any:
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        message: Message,
+        data: Dict[str, Any]
+    ) -> Any:
         user_info = (
             f'chat_id={message.chat.id}, '
             f'user_id={message.from_user.id}, '
@@ -116,10 +118,12 @@ class CallbackQueryMiddleware(BaseMiddleware):
     def __init__(self):
         pass
 
-    async def __call__(self,
-                       handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
-                       callback_query: CallbackQuery,
-                       data: Dict[str, Any]) -> Any:
+    async def __call__(
+        self,
+        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+        callback_query: CallbackQuery,
+        data: Dict[str, Any]
+    ) -> Any:
         user_info = (
             f'chat_id={callback_query.message.chat.id}, '
             f'user_id={callback_query.from_user.id}, '

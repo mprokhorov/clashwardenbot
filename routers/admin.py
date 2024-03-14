@@ -69,16 +69,16 @@ def opposite_folding_text(folding: Union[Link]) -> str:
 async def admin() -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = f'<b>⚙️ Панель управления</b>'
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text='Изменить список участников КВ',
+        [InlineKeyboardButton(text='✍🏻 Изменить список участников КВ',
                               callback_data=AdminCallbackFactory(
                                   action=Action.edit_cw_list
                               ).pack())],
-        [InlineKeyboardButton(text='Привязать игрока к пользователю',
+        [InlineKeyboardButton(text='🔗 Привязать аккаунт к пользователю',
                               callback_data=AdminCallbackFactory(
                                   action=Action.link,
                                   link=Link.select_chat
                               ).pack())],
-        [InlineKeyboardButton(text='Отвязать игрока от пользователя',
+        [InlineKeyboardButton(text='⛓️ Отвязать аккаунт от пользователя',
                               callback_data=AdminCallbackFactory(
                                   action=Action.unlink,
                                   unlink=Unlink.select_chat
@@ -91,7 +91,7 @@ async def link_select_chat(dm: DatabaseManager,
                            callback_data: AdminCallbackFactory,
                            chat_id: int,
                            user_id: int) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (f'<b>⚙️ Привязка игрока к пользователю</b>\n'
+    text = (f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
             f'\n'
             f'Выберите чат:')
     rows = await dm.load_groups_where_user_can_link_members(chat_id, user_id)
@@ -120,9 +120,9 @@ async def link_select_chat(dm: DatabaseManager,
 async def link_select_player(dm: DatabaseManager,
                              callback_data: AdminCallbackFactory
                              ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (f'<b>⚙️ Привязка игрока к пользователю</b>\n'
+    text = (f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
             f'\n'
-            f'Выберите игрока:')
+            f'Выберите аккаунт:')
     rows = await dm.acquired_connection.fetch('''
         SELECT player_tag, player_name
         FROM player
@@ -168,7 +168,7 @@ async def link_select_player(dm: DatabaseManager,
 async def link_select_user(dm: DatabaseManager,
                            callback_data: AdminCallbackFactory
                            ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (f'<b>⚙️ Привязка игрока к пользователю</b>\n'
+    text = (f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
             f'\n'
             f'Выберите пользователя:')
     rows = await dm.acquired_connection.fetch('''
@@ -230,18 +230,18 @@ async def link_finish(dm: DatabaseManager,
             INSERT INTO player_bot_user (clan_tag, player_tag, chat_id, user_id)
             VALUES ($1, $2, $3, $4)
         ''', dm.clan_tag, callback_data.player_tag, callback_data.chat_id, callback_data.user_id)
-        text = (f'<b>⚙️ Привязка аккаунта к пользователю</b>\n'
+        text = (f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
                 f'\n'
-                f'Игрок {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
+                f'Аккаунт {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
                 f'привязан к пользователю '
                 f'{dm.of.to_html(dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id))}\n')
         description = (f'Player {dm.load_name_and_tag(callback_data.player_tag)} '
                        f'was linked to user '
                        f'{dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id)}')
     else:
-        text = (f'<b>⚙️ Привязка аккаунта к пользователю</b>\n'
+        text = (f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
                 f'\n'
-                f'Игрок {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
+                f'Аккаунт {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
                 f'уже был привязан к пользователю '
                 f'{dm.of.to_html(dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id))}\n')
         description = (f'Player {dm.load_name_and_tag(callback_data.player_tag)} '
@@ -262,7 +262,7 @@ async def unlink_select_chat(
     chat_id: int,
     user_id: int
 ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (f'<b>⚙️ Отвязка игрока от пользователя</b>\n'
+    text = (f'<b>⛓️ Отвязка аккаунта от пользователя</b>\n'
             f'\n'
             f'Выберите чат:')
     rows = await dm.load_groups_where_user_can_link_members(chat_id, user_id)
@@ -292,9 +292,9 @@ async def unlink_select_player(
     dm: DatabaseManager,
     callback_data: AdminCallbackFactory,
 ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (f'<b>⚙️ Отвязка игрока от пользователя</b>\n'
+    text = (f'<b>⛓️ Отвязка аккаунта от пользователя</b>\n'
             f'\n'
-            f'Выберите игрока:')
+            f'Выберите аккаунт:')
     rows = await dm.acquired_connection.fetch('''
         SELECT player_tag, player_name
         FROM player
@@ -337,7 +337,7 @@ async def unlink_select_user(
     dm: DatabaseManager,
     callback_data: AdminCallbackFactory
 ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (f'<b>⚙️ Отвязка игрока от пользователя</b>\n'
+    text = (f'<b>⛓️ Отвязка аккаунта от пользователя</b>\n'
             f'\n'
             f'Выберите пользователя:')
     rows = await dm.acquired_connection.fetch('''
@@ -390,9 +390,9 @@ async def unlink_finish(
     ''', dm.clan_tag, callback_data.player_tag, callback_data.chat_id, callback_data.user_id)
     if len(rows) == 0:
         text = (
-            f'<b>⚙️ Отвязка игрока от пользователя</b>\n'
+            f'<b>⛓️ Отвязка аккаунта от пользователя</b>\n'
             f'\n'
-            f'Игрок {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
+            f'Аккаунт {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
             f'не был привязан к пользователю '
             f'{dm.of.to_html(dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id))}\n'
         )
@@ -407,9 +407,9 @@ async def unlink_finish(
             WHERE (clan_tag, player_tag, chat_id, user_id) = ($1, $2, $3, $4)
         ''', dm.clan_tag, callback_data.player_tag, callback_data.chat_id, callback_data.user_id)
         text = (
-            f'<b>⚙️ Отвязка игрока от пользователя</b>\n'
+            f'<b>⛓️ Отвязка аккаунта от пользователя</b>\n'
             f'\n'
-            f'Игрок {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
+            f'Аккаунт {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
             f'был отвязан от пользователя '
             f'{dm.of.to_html(dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id))}\n'
         )

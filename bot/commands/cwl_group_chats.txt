@@ -10,7 +10,7 @@ raids_skips - 🙈 Список не проатаковавших в рейда�
 raids_ping - 🔔 Напомнить об атаках в рейдах
 raids_analysis - 📊 Анализ атак в рейдах
 player_info - 👤 Аккаунты пользователя
-members - 👥 Участники клана
+members - 🪖 Участники клана
 donations - 🥇 Лучшие жертвователи
 contributions - 🤝 Вклады в столице
 events - 📅 События

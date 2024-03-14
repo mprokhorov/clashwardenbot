@@ -373,27 +373,27 @@ class OutputFormatter:
             if dt_now < dt_event_start:
                 if show_datetime:
                     output_string += (
-                            'Начало ' + event_name_genitive[event] + ': '
-                            + self.short_datetime(dt_event - self.utc_to_local_hours) + ','
+                        'Начало ' + event_name_genitive[event] + ': '
+                        + self.short_datetime(dt_event - self.utc_to_local_hours) + ','
                     )
                 else:
                     output_string += event_name[event] + ' ' + event_verbs[event][0]
             else:
                 if show_datetime:
                     output_string += (
-                            'Конец ' + event_name_genitive[event] + ': ' +
-                            self.short_datetime(dt_event - self.utc_to_local_hours) + ','
+                        'Конец ' + event_name_genitive[event] + ': ' +
+                        self.short_datetime(dt_event - self.utc_to_local_hours) + ','
                     )
                 else:
                     output_string += (
-                            event_name[event] + ' ' +
-                            (event_verbs[event][1 if dt_now < dt_event and dt_diff_str != '' else 2])
+                        event_name[event] + ' ' +
+                        (event_verbs[event][1 if dt_now < dt_event and dt_diff_str != '' else 2])
                     )
         else:
             if show_datetime:
                 output_string += (
-                        event_action_name[event] + ': ' +
-                        self.short_datetime(dt_event - self.utc_to_local_hours) + ','
+                    event_action_name[event] + ': ' +
+                    self.short_datetime(dt_event - self.utc_to_local_hours) + ','
                 )
             else:
                 output_string += event_action[event]
@@ -405,9 +405,7 @@ class OutputFormatter:
             output_string += f' {dt_diff_str} назад'
         return output_string
 
-    def get_event_datetime(self,
-                           dt_start: datetime,
-                           dt_end: datetime) -> datetime:
+    def get_event_datetime(self, dt_start: datetime, dt_end: datetime) -> datetime:
         dt_now = datetime.now(UTC).replace(tzinfo=None) + self.utc_to_local_hours
         if dt_now < dt_start + self.utc_to_local_hours:
             return dt_start
@@ -423,7 +421,7 @@ class OutputFormatter:
             f'{self.event_datetime(Event.CW, cw['startTime'], cw['endTime'], True)}\n'
             f'\n'
             f'{self.to_html(cw['clan']['name'])} vs {self.to_html(cw['opponent']['name'])}\n'
-            f'{cw['teamSize']} 👤 vs {cw['teamSize']} 👤\n'
+            f'{cw['teamSize']} 🪖 vs {cw['teamSize']} 🪖\n'
         )
         return text
 
@@ -432,7 +430,7 @@ class OutputFormatter:
             f'{self.event_datetime(Event.CW, cw['startTime'], cw['endTime'], True)}\n'
             f'\n'
             f'{self.to_html(cw['clan']['name'])} vs {self.to_html(cw['opponent']['name'])}\n'
-            f'{cw['teamSize']} 👤 vs {cw['teamSize']} 👤\n'
+            f'{cw['teamSize']} 🪖 vs {cw['teamSize']} 🪖\n'
             f'{cw['clan']['attacks']} 🗡 vs {cw['opponent']['attacks']} 🗡\n'
             f'{cw['clan']['stars']} ⭐ vs {cw['opponent']['stars']} ⭐\n'
             f'{format(cw['clan']['destructionPercentage'], '.2f')}% vs '
@@ -459,7 +457,7 @@ class OutputFormatter:
             f'\n'
             f'Сезон ЛВК: {self.season(cwl_season)}, день {cwl_day + 1}\n'
             f'{self.to_html(cwlw['clan']['name'])} vs {self.to_html(cwlw['opponent']['name'])}\n'
-            f'{cwlw['teamSize']} 👤 vs {cwlw['teamSize']} 👤\n'
+            f'{cwlw['teamSize']} 🪖 vs {cwlw['teamSize']} 🪖\n'
         )
         return text
 
@@ -469,7 +467,7 @@ class OutputFormatter:
             f'\n'
             f'Сезон ЛВК: {self.season(cwl_season)}, день {cwl_day + 1}\n'
             f'{self.to_html(cwlw['clan']['name'])} vs {self.to_html(cwlw['opponent']['name'])}\n'
-            f'{cwlw['teamSize']} 👤 vs {cwlw['teamSize']} 👤\n'
+            f'{cwlw['teamSize']} 🪖 vs {cwlw['teamSize']} 🪖\n'
             f'{cwlw['clan']['attacks']} 🗡 vs {cwlw['opponent']['attacks']} 🗡\n'
             f'{cwlw['clan']['stars']} ⭐ vs {cwlw['opponent']['stars']} ⭐\n'
             f'{format(cwlw['clan']['destructionPercentage'], '.2f')}% vs '

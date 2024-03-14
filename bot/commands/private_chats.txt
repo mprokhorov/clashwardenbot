@@ -14,7 +14,7 @@ cwl_attacks - 🗡️ Атаки в ЛВК
 cwl_skips - 🙈 Список не проатаковавших в ЛВК
 cwl_clans - 📊 Уровни ТХ кланов в ЛВК
 player_info - 👤 Аккаунты пользователя
-members - 👥 Участники клана
+members - 🪖 Участники клана
 donations - 🥇 Лучшие жертвователи
 contributions - 🤝 Вклады в столице
 events - 📅 События

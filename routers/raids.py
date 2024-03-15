@@ -71,7 +71,7 @@ async def raids_loot(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
         raid_members.sort(key=lambda rm: (-rm.gold_looted, dm.load_name(rm.player_tag)))
         for i, raid_member in enumerate(raid_members):
             text += (
-                f'{i + 1}) {dm.of.to_html(dm.load_name(raid_member.player_tag))} — '
+                f'{i + 1}) {dm.of.to_html(dm.load_name(raid_member.player_tag))}: '
                 f'{raid_member.gold_looted} {dm.of.get_capital_gold_emoji()} '
                 f'({raid_member.attacks_spent} / {raid_member.attacks_limit})\n'
             )
@@ -178,10 +178,10 @@ async def raids_analysis(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[
             )
             for attack in district_best_by_destruction['attacks'][::-1]:
                 if attack['stars'] == 0:
-                    text += f'{dm.of.to_html(attack['attacker']['name'])} — {attack['destructionPercent']}%\n'
+                    text += f'{dm.of.to_html(attack['attacker']['name'])}: {attack['destructionPercent']}%\n'
                 else:
                     text += (
-                        f'{dm.of.to_html(attack['attacker']['name'])} — '
+                        f'{dm.of.to_html(attack['attacker']['name'])}: '
                         f'{'⭐' * attack['stars']} ({attack['destructionPercent']}%)\n'
                     )
             district_worst_by_destruction = (
@@ -193,10 +193,10 @@ async def raids_analysis(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[
             )
             for attack in district_worst_by_destruction['attacks'][::-1]:
                 if attack['stars'] == 0:
-                    text += f'{dm.of.to_html(attack['attacker']['name'])} — {attack['destructionPercent']}%\n'
+                    text += f'{dm.of.to_html(attack['attacker']['name'])}: {attack['destructionPercent']}%\n'
                 else:
                     text += (
-                        f'{dm.of.to_html(attack['attacker']['name'])} — '
+                        f'{dm.of.to_html(attack['attacker']['name'])}: '
                         f'{'⭐' * attack['stars']} ({attack['destructionPercent']}%)\n'
                     )
             text += f'\n'

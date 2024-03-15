@@ -66,7 +66,7 @@ async def cw_attacks(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
         ''', dm.clan_tag)
         cw_member_info = {
             row['player_tag']: (
-                f'{dm.of.to_html(row['player_name'])} — {dm.of.get_player_info_with_emoji(
+                f'{dm.of.to_html(row['player_name'])} {dm.of.get_player_info_with_emoji(
                     row['town_hall_level'],
                     row['barbarian_king_level'],
                     row['archer_queen_level'],
@@ -98,7 +98,7 @@ async def cw_attacks(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
         for member in cw['clan']['members']:
             cw_member_lines[clan_map_position_by_player[member['tag']] - 1] += \
                 (f'{clan_map_position_by_player[member['tag']]}) '
-                 f'{dm.of.to_html(member['name'])} — {len(member.get('attacks', []))} / 2\n')
+                 f'{dm.of.to_html(member['name'])}: {len(member.get('attacks', []))} / 2\n')
             for attack in member.get('attacks', []):
                 if attack['stars'] != 0:
                     cw_member_lines[clan_map_position_by_player[member['tag']] - 1] += \
@@ -132,7 +132,7 @@ async def cw_map(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKe
         ''', dm.clan_tag)
         cw_member_info = {
             row['player_tag']: (
-                f'{dm.of.to_html(row['player_name'])} — {dm.of.get_player_info_with_emoji(
+                f'{dm.of.to_html(row['player_name'])} {dm.of.get_player_info_with_emoji(
                     row['town_hall_level'],
                     row['barbarian_king_level'],
                     row['archer_queen_level'],
@@ -230,7 +230,7 @@ async def cw_status(dm: DatabaseManager,
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text=f'{'✅' if row['is_player_set_for_clan_wars'] else '❌'} '
-                 f'{dm.load_name(row['player_tag'])} — {dm.of.get_player_info_with_emoji(
+                 f'{dm.load_name(row['player_tag'])} {dm.of.get_player_info_with_emoji(
                      row['town_hall_level'],
                      row['barbarian_king_level'],
                      row['archer_queen_level'],
@@ -286,7 +286,7 @@ async def cw_list(dm: DatabaseManager,
     keyboard = None
     if len(rows) > 0:
         for i, row in enumerate(rows):
-            text += (f'{i + 1}) {dm.of.to_html(row['player_name'])} — {dm.of.get_player_info_with_emoji(
+            text += (f'{i + 1}) {dm.of.to_html(row['player_name'])} {dm.of.get_player_info_with_emoji(
                 row['town_hall_level'],
                 row['barbarian_king_level'],
                 row['archer_queen_level'],

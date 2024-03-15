@@ -12,6 +12,6 @@ raids_ping - 🔔 Напомнить об атаках в рейдах
 raids_analysis - 📊 Анализ атак в рейдах
 player_info - 👤 Аккаунты пользователя
 members - 🪖 Участники клана
-donations - 🥇 Лучшие жертвователи
+donations - 🏅 Лучшие жертвователи
 contributions - 🤝 Вклады в столице
 events - 📅 События

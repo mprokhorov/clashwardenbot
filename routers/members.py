@@ -65,7 +65,7 @@ async def start_help(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
         /cwl_clans — 📊 Уровни ТХ кланов в ЛВК
         /player_info — 👤 Аккаунты пользователя
         /members — 🪖 Участники клана
-        /donations — 🥇 Лучшие жертвователи
+        /donations — 🏅 Лучшие жертвователи
         /contributions — 🤝 Вклады в столице
         /events — 📅 События
         /admin — ⚙️ Панель управления
@@ -92,13 +92,14 @@ async def members(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineK
         f'\n'
     )
     for i, row in enumerate(rows):
-        text += (f'{i + 1}) {dm.of.to_html(row['player_name'])} — '
-                 f'{dm.of.get_player_info_for_callback_text(
-                     row['town_hall_level'],
-                     row['barbarian_king_level'],
-                     row['archer_queen_level'],
-                     row['grand_warden_level'],
-                     row['royal_champion_level'])}\n')
+        text += (
+            f'{i + 1}) {dm.of.to_html(row['player_name'])} {dm.of.get_player_info_with_custom_emoji(
+                row['town_hall_level'],
+                row['barbarian_king_level'],
+                row['archer_queen_level'],
+                row['grand_warden_level'],
+                row['royal_champion_level']
+            )}\n')
     if len(rows) == 0:
         text += f'Список пуст\n'
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
@@ -206,7 +207,7 @@ async def users(dm: DatabaseManager, chat: Chat) -> Tuple[str, ParseMode, Option
             reverse=True
     ):
         text += (
-            f'👤 {dm.of.to_html(dm.load_full_name(chat_id, user_id))} — '
+            f'👤 {dm.of.to_html(dm.load_full_name(chat_id, user_id))}: '
             f'{', '.join('🪖 ' + dm.of.to_html(dm.load_name(player.player_tag)) for player in players)}\n'
         )
     if len(players_by_user) > 0:
@@ -235,7 +236,7 @@ async def users(dm: DatabaseManager, chat: Chat) -> Tuple[str, ParseMode, Option
     return text, ParseMode.HTML, keyboard
 
 
-async def donations(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+async def donations(dm: DatabaseManager, chat: Chat) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     rows = await dm.acquired_connection.fetch('''
         SELECT player_name, player_role, donations_given
         FROM player
@@ -244,60 +245,72 @@ async def donations(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inlin
         LIMIT 20
     ''', dm.clan_tag)
     text = (
-        f'<b>🥇 Лучшие жертвователи</b>\n'
+        f'<b>🏅 Лучшие жертвователи</b>\n'
         f'\n'
     )
     for i, row in enumerate(rows):
         text += (
-            f'{i + 1}) {dm.of.to_html(row['player_name'])}, {dm.of.role(row['player_role'])} — '
-            f'{row['donations_given']}\n'
+            f'🪖 {dm.of.to_html(row['player_name'])}, {dm.of.role(row['player_role'])}: '
+            f'{row['donations_given']}🏅\n'
         )
 
-    rows = await dm.acquired_connection.fetch('''
-        SELECT player_name, donations_given
-        FROM player
-        WHERE clan_tag = $1 AND is_player_in_clan AND player_role = 'admin' AND player_tag NOT IN
-            (SELECT player_tag
+    if chat.type == ChatType.PRIVATE:
+        chat_id = await dm.get_main_chat_id()
+    else:
+        chat_id = chat.id
+    consider_donations = await dm.acquired_connection.fetchval('''
+        SELECT consider_donations
+        FROM clan_chat
+        WHERE (clan_tag, chat_id) = ($1, $2)
+    ''', dm.clan_tag, chat_id)
+    if consider_donations:
+        rows = await dm.acquired_connection.fetch('''
+            SELECT player_name, donations_given
             FROM player
-            WHERE clan_tag = $1 AND is_player_in_clan AND player_role NOT IN ('coLeader', 'leader')
-            ORDER BY donations_given DESC
-            LIMIT 10)
-        ORDER BY donations_given, player_name
-    ''', dm.clan_tag)
-    if len(rows) == 1:
-        text += (
-            f'\n'
-            f'⬇️ Будет понижен: {dm.of.to_html(rows[0]['player_name'])} — {rows[0]['donations_given']}\n'
-        )
-    elif len(rows) > 1:
-        text += (
-            f'\n'
-            f'⬇️ Будут понижены: {', '.join(f'{dm.of.to_html(row['player_name'])} — {row['donations_given']}'
-                                            for row in rows)}\n'
-        )
+            WHERE clan_tag = $1 AND is_player_in_clan AND player_role = 'admin' AND player_tag NOT IN
+                (SELECT player_tag
+                FROM player
+                WHERE clan_tag = $1 AND is_player_in_clan AND player_role NOT IN ('coLeader', 'leader')
+                ORDER BY donations_given DESC
+                LIMIT 10)
+            ORDER BY donations_given, player_name
+        ''', dm.clan_tag)
+        if len(rows) == 1:
+            text += (
+                f'\n'
+                f'<b>⬇️ Будет понижен</b>\n'
+                f'🪖 {dm.of.to_html(rows[0]['player_name'])}: {rows[0]['donations_given']}🏅\n'
+            )
+        elif len(rows) > 1:
+            text += (
+                f'\n'
+                f'<b>⬇️ Будут понижены</b>\n'
+                f'{', '.join(f'🪖 {dm.of.to_html(row['player_name'])}: {row['donations_given']}🏅' for row in rows)}\n'
+            )
 
-    rows = await dm.acquired_connection.fetch('''
-        SELECT player_name, donations_given
-        FROM player
-        WHERE clan_tag = $1 AND is_player_in_clan AND player_role = 'member' AND player_tag IN
-            (SELECT player_tag
+        rows = await dm.acquired_connection.fetch('''
+            SELECT player_name, donations_given
             FROM player
-            WHERE clan_tag = $1 AND is_player_in_clan AND player_role NOT IN ('coLeader', 'leader')
-            ORDER BY donations_given DESC
-            LIMIT 10)
-        ORDER BY donations_given, player_name
-    ''', dm.clan_tag)
-    if len(rows) == 1:
-        text += (
-            f'\n'
-            f'⬇️ Будет повышен: {dm.of.to_html(rows[0]['player_name'])} — {rows[0]['donations_given']}\n'
-        )
-    elif len(rows) > 1:
-        text += (
-            f'\n'
-            f'⬇️ Будут повышены: {', '.join(f'{dm.of.to_html(row['player_name'])} — {row['donations_given']}'
-                                            for row in rows)}\n'
-        )
+            WHERE clan_tag = $1 AND is_player_in_clan AND player_role = 'member' AND player_tag IN
+                (SELECT player_tag
+                FROM player
+                WHERE clan_tag = $1 AND is_player_in_clan AND player_role NOT IN ('coLeader', 'leader')
+                ORDER BY donations_given DESC
+                LIMIT 10)
+            ORDER BY donations_given DESC, player_name
+        ''', dm.clan_tag)
+        if len(rows) == 1:
+            text += (
+                f'\n'
+                f'<b>⬆️ Будет повышен</b>\n'
+                f'🪖 {dm.of.to_html(rows[0]['player_name'])}: {rows[0]['donations_given']}🏅\n'
+            )
+        elif len(rows) > 1:
+            text += (
+                f'\n'
+                f'<b>⬆️ Будут повышены</b>\n'
+                f'{', '.join(f'🪖 {dm.of.to_html(row['player_name'])}: {row['donations_given']}🏅' for row in rows)}\n'
+            )
     return text, ParseMode.HTML, None
 
 
@@ -312,8 +325,8 @@ async def contributions(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[I
     text = (f'<b>🤝 Вклады в столице</b>\n'
             f'\n')
     for i, row in enumerate(rows):
-        text += (f'{dm.of.to_html(dm.load_name(row['player_tag']))} — '
-                 f'{row['gold_amount']} {dm.of.get_capital_gold_emoji()} '
+        text += (f'🪖 {dm.of.to_html(dm.load_name(row['player_tag']))}: '
+                 f'{row['gold_amount']} {dm.of.get_capital_gold_emoji()}, '
                  f'{dm.of.shortest_datetime(row['contribution_timestamp'])}\n')
     if len(rows) == 0:
         text += f'Список пуст'
@@ -452,7 +465,7 @@ async def callback_members(callback_query: CallbackQuery,
 
 @router.message(Command('donations'))
 async def command_donations(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, reply_markup = await donations(dm)
+    text, parse_mode, reply_markup = await donations(dm, message.chat)
     await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
 
 

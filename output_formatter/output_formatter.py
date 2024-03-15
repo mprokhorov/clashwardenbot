@@ -237,8 +237,6 @@ class OutputFormatter:
         }
         if dt.day == dt_now.day:
             return f'сегодня в {dt.hour}:{str(dt.minute).zfill(2)}'
-        elif dt.day == (dt_now - timedelta(days=1)).day:
-            return f'вчера в {dt.hour}:{str(dt.minute).zfill(2)}'
         else:
             return f'{dt.day} {month_in_russian_genitive[dt.month]} в {dt.hour}:{str(dt.minute).zfill(2)}'
 

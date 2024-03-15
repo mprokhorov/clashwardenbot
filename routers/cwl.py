@@ -104,7 +104,7 @@ async def cwl_attacks(dm: DatabaseManager, cwl_day: Optional[int] = None):
         ''', dm.clan_tag)
         cwlw_member_info = {
             row['player_tag']: (
-                f'{dm.of.to_html(row['player_name'])} — {dm.of.get_player_info_with_emoji(
+                f'{dm.of.to_html(row['player_name'])} {dm.of.get_player_info_with_emoji(
                     row['town_hall_level'],
                     row['barbarian_king_level'],
                     row['archer_queen_level'],
@@ -141,7 +141,7 @@ async def cwl_attacks(dm: DatabaseManager, cwl_day: Optional[int] = None):
         for member in cwlw['clan']['members']:
             cwlw_member_lines[clan_map_position_by_player[member['tag']] - 1] += \
                 (f'{clan_map_position_by_player[member['tag']]}) '
-                 f'{dm.of.to_html(member['name'])} — {len(member.get('attacks', []))} / 1\n')
+                 f'{dm.of.to_html(member['name'])}: {len(member.get('attacks', []))} / 1\n')
             for attack in member.get('attacks', []):
                 if attack['stars'] != 0:
                     cwlw_member_lines[clan_map_position_by_player[member['tag']] - 1] += \
@@ -211,7 +211,7 @@ async def cwl_map(dm: DatabaseManager,
         ''', dm.clan_tag)
         cwlw_member_info = {
             row['player_tag']: (
-                f'{dm.of.to_html(row['player_name'])} — {dm.of.get_player_info_with_emoji(
+                f'{dm.of.to_html(row['player_name'])} {dm.of.get_player_info_with_emoji(
                     row['town_hall_level'],
                     row['barbarian_king_level'],
                     row['archer_queen_level'],

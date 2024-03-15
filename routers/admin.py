@@ -459,7 +459,7 @@ async def edit_cw_list(dm: DatabaseManager,
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text=f'{'✅' if row['is_player_set_for_clan_wars'] else '❌'} '
-                 f'{dm.load_name(row['player_tag'])} — {dm.of.get_player_info_for_callback_text(
+                 f'{dm.load_name(row['player_tag'])} {dm.of.get_player_info_for_callback_text(
                      row['town_hall_level'],
                      row['barbarian_king_level'],
                      row['archer_queen_level'],

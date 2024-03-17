@@ -72,7 +72,8 @@ class MessageMiddleware(BaseMiddleware):
                         else:
                             await message.reply(
                                 text=f'Группа не привязана к клану {dm.of.to_html(clan_name)}',
-                                parse_mode=ParseMode.HTML)
+                                parse_mode=ParseMode.HTML
+                            )
                             logging.info(f'Message {{{user_info}}} was not propagated')
                             return None
                     elif message.chat.type == ChatType.PRIVATE:
@@ -82,16 +83,15 @@ class MessageMiddleware(BaseMiddleware):
                         else:
                             await message.reply(
                                 text=f'Вы не состоите в группе клана {dm.of.to_html(clan_name)}',
-                                parse_mode=ParseMode.HTML)
+                                parse_mode=ParseMode.HTML
+                            )
                             logging.info(f'Message {{{user_info}}} was not propagated')
                             return None
                     else:
                         logging.info(f'Message {{{user_info}}} was not propagated')
                         return None
                 else:
-                    await message.reply(
-                        text=f'Такой команды нет',
-                        parse_mode=ParseMode.HTML)
+                    await message.reply(text=f'Такой команды нет', parse_mode=ParseMode.HTML)
                     logging.info(f'Message {{{user_info}}} was not propagated')
                     return None
             else:
@@ -140,4 +140,5 @@ class CallbackQueryMiddleware(BaseMiddleware):
             logging.info(f'CallbackQuery {{{user_info}}} was not propagated')
             return
         else:
+            logging.info(f'CallbackQuery {{{user_info}}} was propagated')
             return await handler(callback_query, data)

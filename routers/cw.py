@@ -226,7 +226,13 @@ async def cw_status(dm: DatabaseManager,
     ''', dm.clan_tag, chat_id, (message or callback_query).from_user.id)
     if len(rows) == 0:
         text += f'В базе данных нет вашего аккаунта'
-        return text, ParseMode.HTML, None
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(
+                text='🔄 Обновить',
+                callback_data=CWCallbackFactory(action=Action.change_cw_status).pack()
+            )]
+        ])
+        return text, ParseMode.HTML, keyboard
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text=f'{'✅' if row['is_player_set_for_clan_wars'] else '❌'} '

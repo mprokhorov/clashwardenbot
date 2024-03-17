@@ -74,6 +74,8 @@ class DatabaseManager:
         self.full_name = None
         self.full_name_and_username = None
 
+        self.is_privacy_mode_enabled = None
+
     async def establish_connections(self) -> None:
         self.connection_pool = await asyncpg.create_pool(
             host=config.postgres_host.get_secret_value(),
@@ -136,6 +138,14 @@ class DatabaseManager:
         await self.dump_raid_weekends()
         await self.dump_clan_war_league()
         await self.dump_clan_war_league_wars()
+
+    async def load_privacy_mode(self) -> bool:
+        self.is_privacy_mode_enabled = self.acquired_connection.fetchval('''
+            SELECT privacy_mode_enabled
+            FROM clan
+            WHERE clan_tag = $1
+        ''', self.clan_tag)
+        return True
 
     async def set_actual_commands(self) -> bool:
         cw_start_time = None

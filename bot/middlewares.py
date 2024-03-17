@@ -16,10 +16,10 @@ class MessageMiddleware(BaseMiddleware):
         pass
 
     async def __call__(
-        self,
-        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
-        message: Message,
-        data: Dict[str, Any]
+            self,
+            handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+            message: Message,
+            data: Dict[str, Any]
     ) -> Any:
         user_info = (
             f'chat_id={message.chat.id}, '
@@ -52,12 +52,12 @@ class MessageMiddleware(BaseMiddleware):
                 logging.info(f'Message {{{user_info}}} was not propagated')
                 return None
             elif not message.forward_origin and self.is_command_for_bot(
-                message.text[bot_commands[0].offset:bot_commands[0].offset + bot_commands[0].length],
-                bot_username
+                    message.text[bot_commands[0].offset:bot_commands[0].offset + bot_commands[0].length],
+                    bot_username
             ):
                 if self.is_command_valid(
-                    message.text[bot_commands[0].offset:bot_commands[0].offset + bot_commands[0].length],
-                    ['start', 'help']
+                        message.text[bot_commands[0].offset:bot_commands[0].offset + bot_commands[0].length],
+                        ['start', 'help']
                 ):
                     logging.info(f'Message {{{user_info}}} was propagated')
                     return await handler(message, data)
@@ -66,7 +66,7 @@ class MessageMiddleware(BaseMiddleware):
                     [bot_command.get_secret_value() for bot_command in config.bot_commands]
                 ):
                     if message.chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
-                        if message.chat.id in await dm.get_chats_linked_to_clan():
+                        if message.chat.id in await dm.get_chats_linked_to_clan() or not dm.is_privacy_mode_enabled:
                             logging.info(f'Message {{{user_info}}} was propagated')
                             return await handler(message, data)
                         else:
@@ -77,7 +77,7 @@ class MessageMiddleware(BaseMiddleware):
                             logging.info(f'Message {{{user_info}}} was not propagated')
                             return None
                     elif message.chat.type == ChatType.PRIVATE:
-                        if await dm.can_user_use_bot(message.from_user.id):
+                        if await dm.can_user_use_bot(message.from_user.id) or not dm.is_privacy_mode_enabled:
                             logging.info(f'Message {{{user_info}}} was propagated')
                             return await handler(message, data)
                         else:
@@ -122,10 +122,10 @@ class CallbackQueryMiddleware(BaseMiddleware):
         pass
 
     async def __call__(
-        self,
-        handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
-        callback_query: CallbackQuery,
-        data: Dict[str, Any]
+            self,
+            handler: Callable[[TelegramObject, Dict[str, Any]], Awaitable[Any]],
+            callback_query: CallbackQuery,
+            data: Dict[str, Any]
     ) -> Any:
         user_info = (
             f'chat_id={callback_query.message.chat.id}, '

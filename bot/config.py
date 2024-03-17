@@ -14,6 +14,7 @@ class Settings(BaseSettings):
 
     postgres_host: SecretStr
     postgres_database: SecretStr
+    postgres_schema: SecretStr
     postgres_user: SecretStr
     postgres_password: SecretStr
 

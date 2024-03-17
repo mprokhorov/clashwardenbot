@@ -92,7 +92,7 @@ create table clan
     main_chat_id         bigint,
     privacy_mode_enabled boolean     not null,
     constraint clan_clan_chat_clan_tag_chat_id_fk
-        foreign key (clan_tag, main_chat_id) references public.clan_chat (clan_tag, chat_id)
+        foreign key (clan_tag, main_chat_id) references clan_chat (clan_tag, chat_id)
 );
 
 create table clan_chat

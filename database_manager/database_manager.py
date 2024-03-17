@@ -82,7 +82,7 @@ class DatabaseManager:
             database=config.postgres_database.get_secret_value(),
             user=config.postgres_user.get_secret_value(),
             password=config.postgres_password.get_secret_value(),
-            server_settings={'search_path': 'public'}
+            server_settings={'search_path': config.postgres_schema.get_secret_value()}
         )
         self.acquired_connection = AcquiredConnection(self.connection_pool)
 

@@ -26,7 +26,6 @@ class Settings(BaseSettings):
     clan_tags: list[SecretStr]
     telegram_bot_api_tokens: list[SecretStr]
 
-    telegram_emoji_set_name: SecretStr
     town_hall_emoji_ids: list[SecretStr]
     builder_hall_emoji_ids: list[SecretStr]
     home_village_hero_emoji_ids: list[SecretStr]

@@ -93,7 +93,7 @@ async def members(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineK
     )
     for i, row in enumerate(rows):
         text += (
-            f'{i + 1}) {dm.of.to_html(row['player_name'])} {dm.of.get_player_info_with_custom_emoji(
+            f'{i + 1}) {dm.of.to_html(row['player_name'])} {dm.of.get_player_info_with_emoji(
                 row['town_hall_level'],
                 row['barbarian_king_level'],
                 row['archer_queen_level'],

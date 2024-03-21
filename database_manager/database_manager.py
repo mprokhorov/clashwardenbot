@@ -5,11 +5,13 @@ from datetime import datetime, UTC
 from typing import Optional, Tuple, Any
 
 import asyncpg
+import psutil
 from aiogram import Bot
 from aiogram.enums import ChatType, ParseMode
 from aiogram.types import Chat, User, Message
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from asyncpg import Record, Pool
+from psutil._common import bytes2human
 
 from async_client import AsyncClient
 from bot.commands import set_cw_commands, set_cwl_commands, set_commands
@@ -46,9 +48,7 @@ class AcquiredConnection:
 
 
 class DatabaseManager:
-    def __init__(self,
-                 clan_tag: str,
-                 bot: Bot):
+    def __init__(self, clan_tag: str, bot: Bot):
         self.api_client = AsyncClient(
             email=config.clash_of_clans_api_login.get_secret_value(),
             password=config.clash_of_clans_api_password.get_secret_value(),
@@ -87,14 +87,15 @@ class DatabaseManager:
         self.acquired_connection = AcquiredConnection(self.connection_pool)
 
     async def start_scheduler(self, bot_number: int) -> None:
+        SECONDS_IN_MINUTE = 60
         scheduler = AsyncIOScheduler()
         infrequent_jobs_minutes = [
             minute * self.infrequent_jobs_frequency_minutes
-            for minute in range(0, 60 // self.infrequent_jobs_frequency_minutes)
+            for minute in range(0, SECONDS_IN_MINUTE // self.infrequent_jobs_frequency_minutes)
         ]
         frequent_jobs_minutes = [
             minute * self.frequent_jobs_frequency_minutes
-            for minute in range(0, 60 // self.frequent_jobs_frequency_minutes)
+            for minute in range(0, SECONDS_IN_MINUTE // self.frequent_jobs_frequency_minutes)
             if minute * self.frequent_jobs_frequency_minutes not in infrequent_jobs_minutes
         ]
         infrequent_jobs_minutes_str = ','.join(map(str, infrequent_jobs_minutes))
@@ -122,6 +123,7 @@ class DatabaseManager:
         await self.dump_raid_weekends()
         await self.dump_clan_war_league()
         await self.dump_clan_war_league_wars()
+        self.print_ram_usage()
 
     async def infrequent_jobs(self) -> None:
         await self.set_actual_commands()
@@ -138,6 +140,18 @@ class DatabaseManager:
         await self.dump_raid_weekends()
         await self.dump_clan_war_league()
         await self.dump_clan_war_league_wars()
+        self.print_ram_usage()
+
+    @staticmethod
+    def print_ram_usage() -> None:
+        total, available, percent, used, free, *_ = psutil.virtual_memory()
+        process = psutil.Process()
+        print(
+            f'Total RAM: {bytes2human(total)}, '
+            f'available RAM: {bytes2human(available)}, '
+            f'used RAM: {bytes2human(used)} ({percent}%)'
+        )
+        print(f'RAM used by process: {bytes2human(process.memory_info().rss)}')
 
     async def load_privacy_mode(self) -> bool:
         self.is_privacy_mode_enabled = self.acquired_connection.fetchval('''
@@ -487,7 +501,7 @@ class DatabaseManager:
         return json.loads(row['data'])
 
     async def clan_war_alert(self, old_cw: dict, cw: dict) -> None:
-        HOUR = 3600
+        SECONDS_IN_HOUR = 3600
         await self.acquired_connection.execute('''
             INSERT INTO activity
                 (clan_tag, name, start_time,
@@ -518,7 +532,9 @@ class DatabaseManager:
             )
         elif (not row['half_time_remaining_message_sent']
               and self.of.war_state(cw) == 'inWar'
-              and (8 * HOUR) <= (self.of.to_datetime(cw['endTime']) - self.of.utc_now()).seconds <= 12 * HOUR):
+              and 8 * SECONDS_IN_HOUR <= (
+                      self.of.to_datetime(cw['endTime']) - self.of.utc_now()
+              ).seconds <= 12 * SECONDS_IN_HOUR):
             texts.append(
                 f'<b>📣 До конца КВ осталось менее 12 часов</b>\n'
                 f'\n'
@@ -576,8 +592,7 @@ class DatabaseManager:
             ON CONFLICT (clan_tag, start_time)
             DO UPDATE SET data = $3
         ''', [(self.clan_tag, self.of.to_datetime(item['startTime']), json.dumps(item))
-              for item
-              in retrieved_raid_weekends['items']])
+              for item in retrieved_raid_weekends['items']])
 
         new_raid = await self.load_raid_weekend()
 
@@ -679,18 +694,12 @@ class DatabaseManager:
         loaded_clan_war_league_season, loaded_clan_war_league = await self.load_clan_war_league()
         if loaded_clan_war_league is None:
             return False
-        ClanWarLeagueWar = namedtuple(
-            typename='ClanWarLeagueWar', field_names='clan_tag war_tag season day'
-        )
+        ClanWarLeagueWar = namedtuple(typename='ClanWarLeagueWar', field_names='clan_tag war_tag season day')
         clan_war_league_wars = [
-            ClanWarLeagueWar(
-                clan_tag=self.clan_tag,
-                war_tag=war_tag,
-                season=loaded_clan_war_league_season,
-                day=day
-            )
+            ClanWarLeagueWar(clan_tag=self.clan_tag, war_tag=war_tag, season=loaded_clan_war_league_season, day=day)
             for day, war_tags in enumerate(loaded_clan_war_league['rounds'])
-            for war_tag in war_tags['warTags'] if war_tag != '#0'
+            for war_tag in war_tags['warTags']
+            if war_tag != '#0'
         ]
         clan_war_league_wars_to_retrieve = []
         for clan_war_league_war in clan_war_league_wars:
@@ -763,7 +772,8 @@ class DatabaseManager:
             clan_war_league_war = json.loads(row['data'])
             if clan_war_league_war['opponent']['tag'] == self.clan_tag:
                 clan_war_league_war['clan'], clan_war_league_war['opponent'] = (
-                    clan_war_league_war['opponent'], clan_war_league_war['clan'])
+                    clan_war_league_war['opponent'], clan_war_league_war['clan']
+                )
             clan_war_league_wars.append(clan_war_league_war)
         return clan_war_league_wars
 
@@ -865,11 +875,10 @@ class DatabaseManager:
                     (clan_tag, chat_id, user_id,
                     username, first_name, last_name, is_user_in_chat, first_seen, last_seen)
                 VALUES 
-                    ($1, $2, $3,
-                    $4, $5, $6, TRUE, CURRENT_TIMESTAMP(0), CURRENT_TIMESTAMP(0))
-                ON CONFLICT (clan_tag, chat_id, user_id) DO
-                UPDATE
-                SET
+                    ($1, $2, $3, $4, $5, $6, TRUE, CURRENT_TIMESTAMP(0), CURRENT_TIMESTAMP(0))
+                ON CONFLICT
+                    (clan_tag, chat_id, user_id)
+                DO UPDATE SET
                     (username, first_name, last_name, is_user_in_chat, last_seen) = 
                     ($4, $5, $6, TRUE, CURRENT_TIMESTAMP(0))
             ''', self.clan_tag, chat.id, user.id, user.username, user.first_name, user.last_name)
@@ -884,12 +893,11 @@ class DatabaseManager:
                     can_edit_cw_list,
                     can_send_messages_from_bot)
                 VALUES 
-                    ($1, $2, $3,
-                    $4, $5, $6, TRUE, CURRENT_TIMESTAMP(0), CURRENT_TIMESTAMP(0),
+                    ($1, $2, $3, $4, $5, $6, TRUE, CURRENT_TIMESTAMP(0), CURRENT_TIMESTAMP(0),
                     FALSE, FALSE, FALSE, FALSE, FALSE)
-                ON CONFLICT (clan_tag, chat_id, user_id) DO
-                UPDATE
-                SET
+                ON CONFLICT
+                (clan_tag, chat_id, user_id)
+                DO UPDATE SET
                     (username, first_name, last_name, is_user_in_chat, last_seen) = 
                     ($4, $5, $6, TRUE, CURRENT_TIMESTAMP(0))
             ''', self.clan_tag, chat.id, user.id, user.username, user.first_name, user.last_name)
@@ -907,15 +915,15 @@ class DatabaseManager:
             await self.acquired_connection.execute('''
                 INSERT INTO chat (clan_tag, chat_id, type, title)
                 VALUES ($1, $2, $3, $4)
-                ON CONFLICT (clan_tag, chat_id) DO
-                UPDATE SET (type, title) = ($3, $4)
+                ON CONFLICT (clan_tag, chat_id)
+                DO UPDATE SET (type, title) = ($3, $4)
             ''', self.clan_tag, chat.id, chat.type, chat.title)
         elif chat.type == ChatType.PRIVATE:
             await self.acquired_connection.execute('''
                 INSERT INTO chat (clan_tag, chat_id, type, username, first_name, last_name)
                 VALUES ($1, $2, $3, $4, $5, $6)
-                ON CONFLICT (clan_tag, chat_id) DO
-                UPDATE SET (type, username, first_name, last_name) = ($3, $4, $5, $6)
+                ON CONFLICT (clan_tag, chat_id)
+                DO UPDATE SET (type, username, first_name, last_name) = ($3, $4, $5, $6)
             ''', self.clan_tag, chat.id, chat.type, chat.username, chat.first_name, chat.last_name)
 
     def load_name(self, player_tag: str) -> str:
@@ -965,7 +973,8 @@ class DatabaseManager:
             FROM bot_user
             WHERE
                 clan_tag = $1
-                AND (chat_id IN (SELECT chat_id FROM clan_chat WHERE clan_tag = $1) AND is_user_in_chat
+                AND (chat_id IN (SELECT chat_id FROM clan_chat WHERE clan_tag = $1)
+                     AND is_user_in_chat
                      OR can_use_bot_without_clan_group)
                 AND user_id = $2
         ''', self.clan_tag, user_id)
@@ -1096,14 +1105,19 @@ class DatabaseManager:
             WHERE chat_id = $1
         ''', chat_id)
         if user_ids_to_ping:
-            message_text += (f'\n'
-                             f'{', '.join(self.load_mentioned_first_name_to_html(
-                                 chat_id, user_id_to_ping) for user_id_to_ping in user_ids_to_ping)}\n')
+            message_text += (
+                f'\n'
+                f'{', '.join(
+                    self.load_mentioned_first_name_to_html(chat_id, user_id_to_ping)
+                    for user_id_to_ping in user_ids_to_ping
+                )}\n')
         log_text = f'Message "{message_text}" was sent to group {chat_title} ({chat_id})'
-        await self.bot.send_message(chat_id=chat_id,
-                                    text=message_text,
-                                    parse_mode=ParseMode.HTML,
-                                    reply_markup=None)
+        await self.bot.send_message(
+            chat_id=chat_id,
+            text=message_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=None
+        )
         await self.acquired_connection.execute('''
             INSERT INTO action (clan_tag, chat_id, user_id, action_timestamp, description)
             VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
@@ -1178,15 +1192,18 @@ class DatabaseManager:
                 text += f'👤 {self.load_mentioned_full_name_to_html(chat_id, user_id)} — '
             else:
                 text += f'👤 {self.of.to_html(self.load_full_name(chat_id, user_id))} — '
-            text += (', '.join([f'🪖 {self.of.to_html(self.load_name(player.player_tag))}: '
-                                f'{player.attacks_spent} / {player.attacks_limit}'
-                                for player in players]) +
-                     '\n')
+            text += f'{', '.join(
+                [f'🪖 {self.of.to_html(self.load_name(player.player_tag))}: '
+                 f'{player.attacks_spent} / {player.attacks_limit}'
+                 for player in players]
+            )}\n'
         if len(members_by_user_to_mention) > 0:
             text += '\n'
         for player in unlinked_members:
-            text += (f'🪖 {self.of.to_html(self.load_name(player.player_tag))}: '
-                     f'{player.attacks_spent} / {player.attacks_limit}\n')
+            text += (
+                f'🪖 {self.of.to_html(self.load_name(player.player_tag))}: '
+                f'{player.attacks_spent} / {player.attacks_limit}\n'
+            )
         if len(members_by_user_to_mention) + len(unlinked_members) == 0:
             text += f'Список пуст'
         return text

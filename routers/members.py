@@ -39,7 +39,7 @@ async def start_help(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
         WHERE clan_tag = $1
     ''', dm.clan_tag)
     clan_name = row['clan_name']
-    text = f'''
+    text = dedent(f'''
         Привет! Этот бот был создан специально для клана <b>{dm.of.to_html(clan_name)}.</b>
         
         Для использования бота необходимо состоять в Telegram-группе клана.
@@ -69,8 +69,8 @@ async def start_help(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
         /contributions — 🤝 Вклады в столице
         /events — 📅 События
         /admin — ⚙️ Панель управления
-    '''
-    return dedent(text), ParseMode.HTML, None
+    ''')
+    return text, ParseMode.HTML, None
 
 
 async def members(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
@@ -103,11 +103,11 @@ async def members(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineK
     if len(rows) == 0:
         text += f'Список пуст\n'
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
-        InlineKeyboardButton(text='👥 Показать пользователей',
-                             callback_data=MembersCallbackFactory(
-                                 action=Action.change_members_view,
-                                 members_view=MembersView.users
-                             ).pack())
+        InlineKeyboardButton(
+            text='👥 Показать пользователей',
+            callback_data=MembersCallbackFactory(
+                action=Action.change_members_view, members_view=MembersView.users
+            ).pack())
     ]])
     return text, ParseMode.HTML, keyboard
 
@@ -139,7 +139,8 @@ async def users(dm: DatabaseManager, chat: Chat) -> Tuple[str, ParseMode, Option
     ClanMember = namedtuple(
         typename='ClanMember',
         field_names='player_tag town_hall_level '
-                    'barbarian_king_level archer_queen_level grand_warden_level royal_champion_level')
+                    'barbarian_king_level archer_queen_level grand_warden_level royal_champion_level'
+    )
     for row in rows:
         players_by_user[row['user_id']].append(ClanMember(
             row['player_tag'], row['town_hall_level'],
@@ -267,8 +268,8 @@ async def donations(dm: DatabaseManager, chat: Chat) -> Tuple[str, ParseMode, Op
         rows = await dm.acquired_connection.fetch('''
             SELECT player_name, donations_given
             FROM player
-            WHERE clan_tag = $1 AND is_player_in_clan AND player_role = 'admin' AND player_tag NOT IN
-                (SELECT player_tag
+            WHERE clan_tag = $1 AND is_player_in_clan AND player_role = 'admin' AND player_tag NOT IN (
+                SELECT player_tag
                 FROM player
                 WHERE clan_tag = $1 AND is_player_in_clan AND player_role NOT IN ('coLeader', 'leader')
                 ORDER BY donations_given DESC
@@ -291,8 +292,8 @@ async def donations(dm: DatabaseManager, chat: Chat) -> Tuple[str, ParseMode, Op
         rows = await dm.acquired_connection.fetch('''
             SELECT player_name, donations_given
             FROM player
-            WHERE clan_tag = $1 AND is_player_in_clan AND player_role = 'member' AND player_tag IN
-                (SELECT player_tag
+            WHERE clan_tag = $1 AND is_player_in_clan AND player_role = 'member' AND player_tag IN (
+                SELECT player_tag
                 FROM player
                 WHERE clan_tag = $1 AND is_player_in_clan AND player_role NOT IN ('coLeader', 'leader')
                 ORDER BY donations_given DESC
@@ -322,19 +323,22 @@ async def contributions(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[I
         ORDER BY contribution_timestamp DESC
         LIMIT 20
     ''', dm.clan_tag)
-    text = (f'<b>🤝 Вклады в столице</b>\n'
-            f'\n')
+    text = (
+        f'<b>🤝 Вклады в столице</b>\n'
+        f'\n'
+    )
     for i, row in enumerate(rows):
-        text += (f'🪖 {dm.of.to_html(dm.load_name(row['player_tag']))}: '
-                 f'{row['gold_amount']} {dm.of.get_capital_gold_emoji()}, '
-                 f'{dm.of.shortest_datetime(row['contribution_timestamp'])}\n')
+        text += (
+            f'🪖 {dm.of.to_html(dm.load_name(row['player_tag']))}: '
+            f'{row['gold_amount']} {dm.of.get_capital_gold_emoji()}, '
+            f'{dm.of.shortest_datetime(row['contribution_timestamp'])}\n'
+        )
     if len(rows) == 0:
         text += f'Список пуст'
     return text, ParseMode.HTML, None
 
 
-async def player_info(dm: DatabaseManager,
-                      message: Message) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+async def player_info(dm: DatabaseManager, message: Message) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     if message.chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
         if message.reply_to_message:
             chat_id = message.chat.id
@@ -377,30 +381,38 @@ async def player_info(dm: DatabaseManager,
             player_name
     ''', dm.clan_tag, chat_id, user_id)
     if len(rows) > 1:
-        text = (f'<b>📋 Аккаунты пользователя</b>\n'
-                f'\n')
+        text = (
+            f'<b>📋 Аккаунты пользователя</b>\n'
+            f'\n'
+        )
     else:
-        text = (f'<b>📋 Аккаунт пользователя</b>\n'
-                f'\n')
+        text = (
+            f'<b>📋 Аккаунт пользователя</b>\n'
+            f'\n'
+        )
     for row in rows:
-        text += (f'<b>{dm.of.to_html(row['player_name'])}</b>, {dm.of.role(row['player_role'])}\n'
-                 f'Статус участия в КВ: {'✅' if row['is_player_set_for_clan_wars'] else '❌'}\n'
-                 f'{dm.of.get_player_info_with_custom_emoji(
-                     row['town_hall_level'],
-                     row['barbarian_king_level'],
-                     row['archer_queen_level'],
-                     row['grand_warden_level'],
-                     row['royal_champion_level']
-                 )}\n'
-                 f'\n')
+        text += (
+            f'<b>{dm.of.to_html(row['player_name'])}</b>, {dm.of.role(row['player_role'])}\n'
+            f'Статус участия в КВ: {'✅' if row['is_player_set_for_clan_wars'] else '❌'}\n'
+            f'{dm.of.get_player_info_with_custom_emoji(
+                row['town_hall_level'],
+                row['barbarian_king_level'],
+                row['archer_queen_level'],
+                row['grand_warden_level'],
+                row['royal_champion_level']
+            )}\n'
+            f'\n'
+        )
     if len(rows) == 0:
         text += f'Список пуст\n'
     return text, ParseMode.HTML, None
 
 
 async def events(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (f'<b>📅 События</b>\n'
-            f'\n')
+    text = (
+        f'<b>📅 События</b>\n'
+        f'\n'
+    )
     datetimes_and_lines = [(
         dm.of.get_next_trader_refresh(),
         f'{dm.of.event_datetime(Event.TR, None, None, False, dm.of.get_next_trader_refresh())}\n'
@@ -447,9 +459,9 @@ async def command_members(message: Message, dm: DatabaseManager) -> None:
 
 
 @router.callback_query(MembersCallbackFactory.filter(F.action == Action.change_members_view))
-async def callback_members(callback_query: CallbackQuery,
-                           callback_data: MembersCallbackFactory,
-                           dm: DatabaseManager) -> None:
+async def callback_members(
+        callback_query: CallbackQuery, callback_data: MembersCallbackFactory, dm: DatabaseManager
+) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     if not user_is_message_owner:
         await callback_query.answer('Эта кнопка не работает для вас')

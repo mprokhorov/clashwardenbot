@@ -21,7 +21,7 @@ class MessageMiddleware(BaseMiddleware):
             message: Message,
             data: Dict[str, Any]
     ) -> Any:
-        user_info = (
+        message_info = (
             f'chat_id={message.chat.id}, '
             f'user_id={message.from_user.id}, '
             f'username = {message.from_user.username}, '
@@ -47,58 +47,55 @@ class MessageMiddleware(BaseMiddleware):
                 if message.left_chat_member and not message.left_chat_member.is_bot:
                     await dm.undump_user(message.chat, message.left_chat_member)
 
-            bot_commands = [entity for entity in message.entities or [] if entity.type == 'bot_command']
+            bot_commands = [
+                entity for entity in message.entities or []
+                if entity.type == 'bot_command'
+            ]
             if len(bot_commands) == 0:
-                logging.info(f'Message {{{user_info}}} was not propagated')
+                logging.info(f'Message {{{message_info}}} was not propagated')
                 return None
-            elif not message.forward_origin and self.is_command_for_bot(
-                    message.text[bot_commands[0].offset:bot_commands[0].offset + bot_commands[0].length],
-                    bot_username
-            ):
-                if self.is_command_valid(
-                        message.text[bot_commands[0].offset:bot_commands[0].offset + bot_commands[0].length],
-                        ['start', 'help']
-                ):
-                    logging.info(f'Message {{{user_info}}} was propagated')
-                    return await handler(message, data)
-                elif self.is_command_valid(
-                    message.text[bot_commands[0].offset:bot_commands[0].offset + bot_commands[0].length],
-                    [bot_command.get_secret_value() for bot_command in config.bot_commands]
-                ):
-                    if message.chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
-                        if message.chat.id in await dm.get_chats_linked_to_clan() or not dm.is_privacy_mode_enabled:
-                            logging.info(f'Message {{{user_info}}} was propagated')
-                            return await handler(message, data)
+            else:
+                first_command = message.text[bot_commands[0].offset:bot_commands[0].offset + bot_commands[0].length]
+                acceptable_commands = [bot_command.get_secret_value() for bot_command in config.bot_commands]
+                if self.is_command_for_bot(first_command, bot_username) and not message.forward_origin:
+                    if self.is_command_valid(first_command, ['start', 'help']):
+                        logging.info(f'Message {{{message_info}}} was propagated')
+                        return await handler(message, data)
+                    elif self.is_command_valid(first_command, acceptable_commands):
+                        if message.chat.type in (ChatType.GROUP, ChatType.SUPERGROUP):
+                            if message.chat.id in await dm.get_chats_linked_to_clan() or not dm.is_privacy_mode_enabled:
+                                logging.info(f'Message {{{message_info}}} was propagated')
+                                return await handler(message, data)
+                            else:
+                                await message.reply(
+                                    text=f'Группа не привязана к клану {dm.of.to_html(clan_name)}',
+                                    parse_mode=ParseMode.HTML
+                                )
+                                logging.info(f'Message {{{message_info}}} was not propagated')
+                                return None
+                        elif message.chat.type == ChatType.PRIVATE:
+                            if await dm.can_user_use_bot(message.from_user.id) or not dm.is_privacy_mode_enabled:
+                                logging.info(f'Message {{{message_info}}} was propagated')
+                                return await handler(message, data)
+                            else:
+                                await message.reply(
+                                    text=f'Вы не состоите в группе клана {dm.of.to_html(clan_name)}',
+                                    parse_mode=ParseMode.HTML
+                                )
+                                logging.info(f'Message {{{message_info}}} was not propagated')
+                                return None
                         else:
-                            await message.reply(
-                                text=f'Группа не привязана к клану {dm.of.to_html(clan_name)}',
-                                parse_mode=ParseMode.HTML
-                            )
-                            logging.info(f'Message {{{user_info}}} was not propagated')
-                            return None
-                    elif message.chat.type == ChatType.PRIVATE:
-                        if await dm.can_user_use_bot(message.from_user.id) or not dm.is_privacy_mode_enabled:
-                            logging.info(f'Message {{{user_info}}} was propagated')
-                            return await handler(message, data)
-                        else:
-                            await message.reply(
-                                text=f'Вы не состоите в группе клана {dm.of.to_html(clan_name)}',
-                                parse_mode=ParseMode.HTML
-                            )
-                            logging.info(f'Message {{{user_info}}} was not propagated')
+                            logging.info(f'Message {{{message_info}}} was not propagated')
                             return None
                     else:
-                        logging.info(f'Message {{{user_info}}} was not propagated')
+                        await message.reply(text=f'Такой команды нет', parse_mode=ParseMode.HTML)
+                        logging.info(f'Message {{{message_info}}} was not propagated')
                         return None
                 else:
-                    await message.reply(text=f'Такой команды нет', parse_mode=ParseMode.HTML)
-                    logging.info(f'Message {{{user_info}}} was not propagated')
+                    logging.info(f'Message {{{message_info}}} was not propagated')
                     return None
-            else:
-                logging.info(f'Message {{{user_info}}} was not propagated')
-                return None
         else:
-            logging.info(f'Message {{{user_info}}} was not propagated')
+            logging.info(f'Message {{{message_info}}} was not propagated')
             return
 
     @staticmethod
@@ -127,7 +124,7 @@ class CallbackQueryMiddleware(BaseMiddleware):
             callback_query: CallbackQuery,
             data: Dict[str, Any]
     ) -> Any:
-        user_info = (
+        callback_query_info = (
             f'chat_id={callback_query.message.chat.id}, '
             f'user_id={callback_query.from_user.id}, '
             f'username = {callback_query.from_user.username}, '
@@ -137,8 +134,8 @@ class CallbackQueryMiddleware(BaseMiddleware):
         )
         if (datetime.datetime.now(UTC) - callback_query.message.date).days >= 1:
             await callback_query.answer('Сообщение устарело')
-            logging.info(f'CallbackQuery {{{user_info}}} was not propagated')
+            logging.info(f'CallbackQuery {{{callback_query_info}}} was not propagated')
             return
         else:
-            logging.info(f'CallbackQuery {{{user_info}}} was propagated')
+            logging.info(f'CallbackQuery {{{callback_query_info}}} was propagated')
             return await handler(callback_query, data)

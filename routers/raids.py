@@ -83,9 +83,7 @@ async def raids_loot(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
 
 
 async def raids_skips(
-        dm: DatabaseManager,
-        message: Message,
-        ping: bool
+        dm: DatabaseManager, message: Message, ping: bool
 ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = (
         f'<b>🙈 Список не проатаковавших в рейдах</b>\n'
@@ -101,8 +99,7 @@ async def raids_skips(
             f'\n'
         )
         AllegedRaidMember = namedtuple(
-            typename='AllegedRaidMember',
-            field_names='player_tag attacks_spent attacks_limit'
+            typename='AllegedRaidMember', field_names='player_tag attacks_spent attacks_limit'
         )
         alleged_raid_members = []
         for raid_member in raid['members']:
@@ -147,10 +144,7 @@ async def raids_analysis(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[
             f'{dm.of.event_datetime(Event.RW, raid['startTime'], raid['endTime'], True)}\n'
             f'\n'
         )
-        RaidAttack = namedtuple(
-            typename='RaidAttack',
-            field_names='attacks_count average_destruction district'
-        )
+        RaidAttack = namedtuple(typename='RaidAttack', field_names='attacks_count average_destruction district')
         clan_attacks_by_district = {}
         for attack_log in raid['attackLog']:
             for district in attack_log['districts']:

@@ -68,109 +68,110 @@ def opposite_folding_text(folding: Union[Link]) -> str:
 
 async def admin() -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = f'<b>⚙️ Панель управления</b>'
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text='✍🏻 Изменить список участников КВ',
-                              callback_data=AdminCallbackFactory(
-                                  action=Action.edit_cw_list
-                              ).pack())],
-        [InlineKeyboardButton(text='🔗 Привязать аккаунт к пользователю',
-                              callback_data=AdminCallbackFactory(
-                                  action=Action.link,
-                                  link=Link.select_chat
-                              ).pack())],
-        [InlineKeyboardButton(text='⛓️ Отвязать аккаунт от пользователя',
-                              callback_data=AdminCallbackFactory(
-                                  action=Action.unlink,
-                                  unlink=Unlink.select_chat
-                              ).pack())]
-    ])
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text='✍🏻 Изменить список участников КВ',
+                callback_data=AdminCallbackFactory(action=Action.edit_cw_list).pack()
+            )],
+            [InlineKeyboardButton(
+                text='🔗 Привязать аккаунт к пользователю',
+                callback_data=AdminCallbackFactory(action=Action.link, link=Link.select_chat).pack()
+            )],
+            [InlineKeyboardButton(
+                text='⛓️ Отвязать аккаунт от пользователя',
+                callback_data=AdminCallbackFactory(action=Action.unlink, unlink=Unlink.select_chat).pack()
+            )]
+        ]
+    )
     return text, ParseMode.HTML, keyboard
 
 
-async def link_select_chat(dm: DatabaseManager,
-                           callback_data: AdminCallbackFactory,
-                           chat_id: int,
-                           user_id: int) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
-            f'\n'
-            f'Выберите чат:')
+async def link_select_chat(
+        dm: DatabaseManager,
+        callback_data: AdminCallbackFactory,
+        chat_id: int,
+        user_id: int
+) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    text = (
+        f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
+        f'\n'
+        f'Выберите чат:'
+    )
     rows = await dm.load_groups_where_user_can_link_members(chat_id, user_id)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f'{row['title']}',
-                              callback_data=AdminCallbackFactory(
-                                  action=Action.link,
-                                  link=Link.select_player_from_unknown,
-                                  chat_id=row['chat_id']
-                              ).pack())]
-        for row in rows
-    ] + [[
-        InlineKeyboardButton(text='⬅️ Назад',
-                             callback_data=AdminCallbackFactory(
-                                 action=Action.menu
-                             ).pack()),
-        InlineKeyboardButton(text='🔄 Обновить',
-                             callback_data=AdminCallbackFactory(
-                                 action=Action.link,
-                                 link=callback_data.link
-                             ).pack())
-    ]])
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text=f'{row['title']}',
+                callback_data=AdminCallbackFactory(
+                    action=Action.link, link=Link.select_player_from_unknown, chat_id=row['chat_id']
+                ).pack()
+            )] for row in rows
+        ] + [[
+            InlineKeyboardButton(text='⬅️ Назад', callback_data=AdminCallbackFactory(
+                action=Action.menu
+            ).pack()),
+            InlineKeyboardButton(text='🔄 Обновить', callback_data=AdminCallbackFactory(
+                  action=Action.link, link=callback_data.link
+            ).pack())
+        ]])
     return text, ParseMode.HTML, keyboard
 
 
-async def link_select_player(dm: DatabaseManager,
-                             callback_data: AdminCallbackFactory
-                             ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
-            f'\n'
-            f'Выберите аккаунт:')
+async def link_select_player(
+        dm: DatabaseManager,
+        callback_data: AdminCallbackFactory
+) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    text = (
+        f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
+        f'\n'
+        f'Выберите аккаунт:'
+    )
     rows = await dm.acquired_connection.fetch('''
         SELECT player_tag, player_name
         FROM player
         WHERE
             clan_tag = $1
             AND is_player_in_clan
-            AND ((clan_tag, player_tag) NOT IN (SELECT clan_tag, player_tag
-                                                FROM player_bot_user
-                                                WHERE chat_id = $2) OR $3)
+            AND ((clan_tag, player_tag) NOT IN (SELECT clan_tag, player_tag FROM player_bot_user WHERE chat_id = $2)
+                 OR $3)
         ORDER BY player_name, player_tag
     ''', dm.clan_tag, callback_data.chat_id, callback_data.link == Link.select_player_from_all)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=dm.load_name_and_tag(row['player_tag']),
-                              callback_data=AdminCallbackFactory(
-                                  action=Action.link,
-                                  link=Link.select_user_from_unknown,
-                                  chat_id=callback_data.chat_id,
-                                  player_tag=row['player_tag']
-                              ).pack())]
-        for row in rows
-    ] + [[
-        InlineKeyboardButton(text='⬅️ Назад',
-                             callback_data=AdminCallbackFactory(
-                                 action=Action.link,
-                                 link=Link.select_chat
-                             ).pack()),
-        InlineKeyboardButton(text='🔄 Обновить',
-                             callback_data=AdminCallbackFactory(
-                                 action=Action.link,
-                                 link=callback_data.link,
-                                 chat_id=callback_data.chat_id
-                             ).pack()),
-        InlineKeyboardButton(text=opposite_folding_text(callback_data.link),
-                             callback_data=AdminCallbackFactory(
-                                 action=Action.link,
-                                 link=opposite_folding(callback_data.link),
-                                 chat_id=callback_data.chat_id
-                             ).pack()),
-    ]])
+    keyboard = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text=dm.load_name_and_tag(row['player_tag']), callback_data=AdminCallbackFactory(
+                    action=Action.link,
+                    link=Link.select_user_from_unknown,
+                    chat_id=callback_data.chat_id,
+                    player_tag=row['player_tag']
+                ).pack())] for row in rows
+        ] + [[
+            InlineKeyboardButton(
+                text='⬅️ Назад', callback_data=AdminCallbackFactory(
+                    action=Action.link, link=Link.select_chat
+                ).pack()),
+            InlineKeyboardButton(
+                text='🔄 Обновить', callback_data=AdminCallbackFactory(
+                    action=Action.link, link=callback_data.link, chat_id=callback_data.chat_id
+                ).pack()),
+            InlineKeyboardButton(
+                text=opposite_folding_text(callback_data.link), callback_data=AdminCallbackFactory(
+                    action=Action.link, link=opposite_folding(callback_data.link), chat_id=callback_data.chat_id
+                ).pack()),
+        ]])
     return text, ParseMode.HTML, keyboard
 
 
-async def link_select_user(dm: DatabaseManager,
-                           callback_data: AdminCallbackFactory
-                           ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
-            f'\n'
-            f'Выберите пользователя:')
+async def link_select_user(
+        dm: DatabaseManager,
+        callback_data: AdminCallbackFactory
+) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    text = (
+        f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
+        f'\n'
+        f'Выберите пользователя:'
+    )
     rows = await dm.acquired_connection.fetch('''
         SELECT user_id, username, first_name, last_name
         FROM bot_user
@@ -183,43 +184,48 @@ async def link_select_user(dm: DatabaseManager,
         ORDER BY first_name, last_name, username
     ''', dm.clan_tag, callback_data.chat_id, callback_data.link == Link.select_user_from_all)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=dm.load_full_name_and_username(callback_data.chat_id, row['user_id']),
-                              callback_data=AdminCallbackFactory(
-                                  action=Action.link,
-                                  link=Link.finish,
-                                  chat_id=callback_data.chat_id,
-                                  player_tag=callback_data.player_tag,
-                                  user_id=row['user_id']
-                              ).pack())]
-        for row in rows
+        [InlineKeyboardButton(
+            text=dm.load_full_name_and_username(callback_data.chat_id, row['user_id']),
+            callback_data=AdminCallbackFactory(
+                action=Action.link,
+                link=Link.finish,
+                chat_id=callback_data.chat_id,
+                player_tag=callback_data.player_tag,
+                user_id=row['user_id']
+            ).pack())] for row in rows
     ] + [[
-        InlineKeyboardButton(text='⬅️ Назад',
-                             callback_data=AdminCallbackFactory(
-                                 action=Action.link,
-                                 link=Link.select_player_from_unknown,
-                                 chat_id=callback_data.chat_id
-                             ).pack()),
-        InlineKeyboardButton(text='🔄 Обновить',
-                             callback_data=AdminCallbackFactory(
-                                 action=Action.link,
-                                 link=callback_data.link,
-                                 chat_id=callback_data.chat_id,
-                                 player_tag=callback_data.player_tag
-                             ).pack()),
-        InlineKeyboardButton(text=opposite_folding_text(callback_data.link),
-                             callback_data=AdminCallbackFactory(
-                                 action=Action.link,
-                                 link=opposite_folding(callback_data.link),
-                                 chat_id=callback_data.chat_id,
-                                 player_tag=callback_data.player_tag
-                             ).pack()),
+        InlineKeyboardButton(
+            text='⬅️ Назад',
+            callback_data=AdminCallbackFactory(
+                action=Action.link,
+                link=Link.select_player_from_unknown,
+                chat_id=callback_data.chat_id
+            ).pack()),
+        InlineKeyboardButton(
+            text='🔄 Обновить',
+            callback_data=AdminCallbackFactory(
+                action=Action.link,
+                link=callback_data.link,
+                chat_id=callback_data.chat_id,
+                player_tag=callback_data.player_tag
+            ).pack()),
+        InlineKeyboardButton(
+            text=opposite_folding_text(callback_data.link),
+            callback_data=AdminCallbackFactory(
+                action=Action.link,
+                link=opposite_folding(callback_data.link),
+                chat_id=callback_data.chat_id,
+                player_tag=callback_data.player_tag
+            ).pack()),
     ]])
     return text, ParseMode.HTML, keyboard
 
 
-async def link_finish(dm: DatabaseManager,
-                      callback_data: AdminCallbackFactory,
-                      callback_query: CallbackQuery) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+async def link_finish(
+        dm: DatabaseManager,
+        callback_data: AdminCallbackFactory,
+        callback_query: CallbackQuery
+) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     rows = await dm.acquired_connection.fetch('''
         SELECT clan_tag, player_tag, chat_id, user_id
         FROM player_bot_user
@@ -230,23 +236,29 @@ async def link_finish(dm: DatabaseManager,
             INSERT INTO player_bot_user (clan_tag, player_tag, chat_id, user_id)
             VALUES ($1, $2, $3, $4)
         ''', dm.clan_tag, callback_data.player_tag, callback_data.chat_id, callback_data.user_id)
-        text = (f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
-                f'\n'
-                f'Аккаунт {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
-                f'привязан к пользователю '
-                f'{dm.of.to_html(dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id))}\n')
-        description = (f'Player {dm.load_name_and_tag(callback_data.player_tag)} '
-                       f'was linked to user '
-                       f'{dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id)}')
+        text = (
+            f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
+            f'\n'
+            f'Аккаунт {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
+            f'привязан к пользователю '
+            f'{dm.of.to_html(dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id))}\n'
+        )
+        description = (
+            f'Player {dm.load_name_and_tag(callback_data.player_tag)} was linked to user '
+            f'{dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id)}'
+        )
     else:
-        text = (f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
-                f'\n'
-                f'Аккаунт {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
-                f'уже был привязан к пользователю '
-                f'{dm.of.to_html(dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id))}\n')
-        description = (f'Player {dm.load_name_and_tag(callback_data.player_tag)} '
-                       f'was already linked '
-                       f'to user {dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id)}')
+        text = (
+            f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
+            f'\n'
+            f'Аккаунт {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
+            f'уже был привязан к пользователю '
+            f'{dm.of.to_html(dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id))}\n'
+        )
+        description = (
+            f'Player {dm.load_name_and_tag(callback_data.player_tag)} was already linked '
+            f'to user {dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id)}'
+        )
 
     await dm.acquired_connection.execute('''
         INSERT INTO action (clan_tag, chat_id, user_id, action_timestamp, description)
@@ -257,44 +269,45 @@ async def link_finish(dm: DatabaseManager,
 
 
 async def unlink_select_chat(
-    dm: DatabaseManager,
-    callback_data: AdminCallbackFactory,
-    chat_id: int,
-    user_id: int
+        dm: DatabaseManager,
+        callback_data: AdminCallbackFactory,
+        chat_id: int,
+        user_id: int
 ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (f'<b>⛓️ Отвязка аккаунта от пользователя</b>\n'
-            f'\n'
-            f'Выберите чат:')
+    text = (
+        f'<b>⛓️ Отвязка аккаунта от пользователя</b>\n'
+        f'\n'
+        f'Выберите чат:'
+    )
     rows = await dm.load_groups_where_user_can_link_members(chat_id, user_id)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=f'{row['title']}',
-                              callback_data=AdminCallbackFactory(
-                                  action=Action.unlink,
-                                  unlink=Unlink.select_player,
-                                  chat_id=row['chat_id']
-                              ).pack())]
-        for row in rows
+        [InlineKeyboardButton(
+            text=f'{row['title']}',
+            callback_data=AdminCallbackFactory(
+                action=Action.unlink, unlink=Unlink.select_player, chat_id=row['chat_id']
+            ).pack())] for row in rows
     ] + [[
-        InlineKeyboardButton(text='⬅️ Назад',
-                             callback_data=AdminCallbackFactory(
-                                 action=Action.menu
-                             ).pack()),
-        InlineKeyboardButton(text='🔄 Обновить',
-                             callback_data=AdminCallbackFactory(
-                                 action=Action.unlink,
-                                 unlink=callback_data.unlink
-                             ).pack())
+        InlineKeyboardButton(
+            text='⬅️ Назад', callback_data=AdminCallbackFactory(
+                action=Action.menu
+            ).pack()),
+        InlineKeyboardButton(
+            text='🔄 Обновить', callback_data=AdminCallbackFactory(
+                action=Action.unlink, unlink=callback_data.unlink
+            ).pack())
     ]])
     return text, ParseMode.HTML, keyboard
 
 
 async def unlink_select_player(
-    dm: DatabaseManager,
-    callback_data: AdminCallbackFactory,
+        dm: DatabaseManager,
+        callback_data: AdminCallbackFactory,
 ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (f'<b>⛓️ Отвязка аккаунта от пользователя</b>\n'
-            f'\n'
-            f'Выберите аккаунт:')
+    text = (
+        f'<b>⛓️ Отвязка аккаунта от пользователя</b>\n'
+        f'\n'
+        f'Выберите аккаунт:'
+    )
     rows = await dm.acquired_connection.fetch('''
         SELECT player_tag, player_name
         FROM player
@@ -309,37 +322,42 @@ async def unlink_select_player(
         ORDER BY player_name, player_tag
     ''', dm.clan_tag, callback_data.chat_id)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=dm.load_name_and_tag(row['player_tag']),
-                              callback_data=AdminCallbackFactory(
-                                  action=Action.unlink,
-                                  unlink=Unlink.select_user,
-                                  chat_id=callback_data.chat_id,
-                                  player_tag=row['player_tag']
-                              ).pack())]
+        [InlineKeyboardButton(
+            text=dm.load_name_and_tag(row['player_tag']),
+            callback_data=AdminCallbackFactory(
+                action=Action.unlink,
+                unlink=Unlink.select_user,
+                chat_id=callback_data.chat_id,
+                player_tag=row['player_tag']
+            ).pack())]
         for row in rows
     ] + [[
-        InlineKeyboardButton(text='⬅️ Назад',
-                             callback_data=AdminCallbackFactory(
-                                 action=Action.unlink,
-                                 unlink=Unlink.select_chat
-                             ).pack()),
-        InlineKeyboardButton(text='🔄 Обновить',
-                             callback_data=AdminCallbackFactory(
-                                 action=Action.unlink,
-                                 unlink=callback_data.unlink,
-                                 chat_id=callback_data.chat_id
-                             ).pack())
+        InlineKeyboardButton(
+            text='⬅️ Назад',
+            callback_data=AdminCallbackFactory(
+                action=Action.unlink,
+                unlink=Unlink.select_chat
+            ).pack()),
+        InlineKeyboardButton(
+            text='🔄 Обновить',
+            callback_data=AdminCallbackFactory(
+                action=Action.unlink,
+                unlink=callback_data.unlink,
+                chat_id=callback_data.chat_id
+            ).pack())
     ]])
     return text, ParseMode.HTML, keyboard
 
 
 async def unlink_select_user(
-    dm: DatabaseManager,
-    callback_data: AdminCallbackFactory
+        dm: DatabaseManager,
+        callback_data: AdminCallbackFactory
 ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (f'<b>⛓️ Отвязка аккаунта от пользователя</b>\n'
-            f'\n'
-            f'Выберите пользователя:')
+    text = (
+        f'<b>⛓️ Отвязка аккаунта от пользователя</b>\n'
+        f'\n'
+        f'Выберите пользователя:'
+    )
     rows = await dm.acquired_connection.fetch('''
         SELECT user_id, username, first_name, last_name
         FROM bot_user
@@ -351,29 +369,31 @@ async def unlink_select_user(
             )
     ''', dm.clan_tag, callback_data.player_tag)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text=dm.load_full_name_and_username(callback_data.chat_id, row['user_id']),
-                              callback_data=AdminCallbackFactory(
-                                  action=Action.unlink,
-                                  unlink=Unlink.finish,
-                                  chat_id=callback_data.chat_id,
-                                  player_tag=callback_data.player_tag,
-                                  user_id=row['user_id']
-                              ).pack())]
-        for row in rows
+        [InlineKeyboardButton(
+            text=dm.load_full_name_and_username(callback_data.chat_id, row['user_id']),
+            callback_data=AdminCallbackFactory(
+                action=Action.unlink,
+                unlink=Unlink.finish,
+                chat_id=callback_data.chat_id,
+                player_tag=callback_data.player_tag,
+                user_id=row['user_id']
+            ).pack())] for row in rows
     ] + [[
-        InlineKeyboardButton(text='⬅️ Назад',
-                             callback_data=AdminCallbackFactory(
-                                 action=Action.unlink,
-                                 unlink=Unlink.select_player,
-                                 chat_id=callback_data.chat_id
-                             ).pack()),
-        InlineKeyboardButton(text='🔄 Обновить',
-                             callback_data=AdminCallbackFactory(
-                                 action=Action.unlink,
-                                 unlink=callback_data.unlink,
-                                 chat_id=callback_data.chat_id,
-                                 player_tag=callback_data.player_tag
-                             ).pack())
+        InlineKeyboardButton(
+            text='⬅️ Назад',
+            callback_data=AdminCallbackFactory(
+                action=Action.unlink,
+                unlink=Unlink.select_player,
+                chat_id=callback_data.chat_id
+            ).pack()),
+        InlineKeyboardButton(
+            text='🔄 Обновить',
+            callback_data=AdminCallbackFactory(
+                action=Action.unlink,
+                unlink=callback_data.unlink,
+                chat_id=callback_data.chat_id,
+                player_tag=callback_data.player_tag
+            ).pack())
     ]])
     return text, ParseMode.HTML, keyboard
 
@@ -427,20 +447,25 @@ async def unlink_finish(
     return text, ParseMode.HTML, None
 
 
-async def edit_cw_list(dm: DatabaseManager,
-                       callback_query: Optional[CallbackQuery],
-                       callback_data: Optional[AdminCallbackFactory]
-                       ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (f'<b>✍🏻 Изменение списка участников КВ</b>\n'
-            f'\n')
+async def edit_cw_list(
+        dm: DatabaseManager,
+        callback_query: Optional[CallbackQuery],
+        callback_data: Optional[AdminCallbackFactory]
+) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    text = (
+        f'<b>✍🏻 Изменение списка участников КВ</b>\n'
+        f'\n'
+    )
     if callback_data is not None and callback_data.player_tag is not None:
         await dm.acquired_connection.execute('''
             UPDATE player
             SET is_player_set_for_clan_wars = $1
             WHERE clan_tag = $2 and player_tag = $3
         ''', callback_data.is_player_set_for_clan_wars, dm.clan_tag, callback_data.player_tag)
-        description = (f'Player {dm.load_name_and_tag(callback_data.player_tag)} '
-                       f'CW status was set to {callback_data.is_player_set_for_clan_wars}')
+        description = (
+            f'Player {dm.load_name_and_tag(callback_data.player_tag)} '
+            f'CW status was set to {callback_data.is_player_set_for_clan_wars}'
+        )
         await dm.acquired_connection.execute('''
             INSERT INTO action (clan_tag, chat_id, user_id, action_timestamp, description)
             VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
@@ -464,13 +489,13 @@ async def edit_cw_list(dm: DatabaseManager,
                      row['barbarian_king_level'],
                      row['archer_queen_level'],
                      row['grand_warden_level'],
-                     row['royal_champion_level'])}',
+                     row['royal_champion_level']
+                 )}',
             callback_data=AdminCallbackFactory(
                 action=Action.edit_cw_list,
                 player_tag=row['player_tag'],
                 is_player_set_for_clan_wars=not row['is_player_set_for_clan_wars']
-            ).pack())]
-        for row in rows
+            ).pack())] for row in rows
     ] + [[
         InlineKeyboardButton(
             text='⬅️ Назад',
@@ -482,10 +507,12 @@ async def edit_cw_list(dm: DatabaseManager,
     return text, ParseMode.HTML, keyboard
 
 
-async def alert(dm: DatabaseManager,
-                chat_id: int,
-                message: Message,
-                ping: bool) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+async def alert(
+        dm: DatabaseManager,
+        chat_id: int,
+        message: Message,
+        ping: bool
+) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     row = await dm.acquired_connection.fetchrow('''
         SELECT title
         FROM chat
@@ -493,32 +520,44 @@ async def alert(dm: DatabaseManager,
     ''', dm.clan_tag, chat_id)
     chat_title = row['title']
     if ping:
-        text = (f'<b>✍🏻 Отправка сообщения всем пользователям в группах</b>\n'
-                f'\n')
+        text = (
+            f'<b>✍🏻 Отправка сообщения всем пользователям в группах</b>\n'
+            f'\n'
+        )
         if message.html_text.removeprefix('/alert').removeprefix('/ping').lstrip(' '):
-            message_text = (f'<b>📣 Оповещение</b>\n'
-                            f'\n'
-                            f'{message.html_text.removeprefix('/alert').removeprefix('/ping').lstrip(' ')}\n')
+            message_text = (
+                f'<b>📣 Оповещение</b>\n'
+                f'\n'
+                f'{message.html_text.removeprefix('/alert').removeprefix('/ping').lstrip(' ')}\n'
+            )
         else:
             message_text = f'<b>📣 Оповещение</b>'
-        await dm.send_message_to_chat(user_id=message.from_user.id,
-                                      chat_id=chat_id,
-                                      message_text=message_text,
-                                      user_ids_to_ping=await dm.get_clan_member_user_ids(chat_id))
+        await dm.send_message_to_chat(
+            user_id=message.from_user.id,
+            chat_id=chat_id,
+            message_text=message_text,
+            user_ids_to_ping=await dm.get_clan_member_user_ids(chat_id)
+        )
         text += f'Сообщение отправлено всем пользователям в группе {chat_title}\n'
     else:
-        text = (f'<b>✍🏻 Отправка сообщения в группы</b>\n'
-                f'\n')
+        text = (
+            f'<b>✍🏻 Отправка сообщения в группы</b>\n'
+            f'\n'
+        )
         if message.html_text.removeprefix('/alert').removeprefix('/ping').lstrip(' '):
-            message_text = (f'<b>💬 Сообщение</b>\n'
-                            f'\n'
-                            f'{message.html_text.removeprefix('/alert').removeprefix('/ping').lstrip(' ')}\n')
+            message_text = (
+                f'<b>💬 Сообщение</b>\n'
+                f'\n'
+                f'{message.html_text.removeprefix('/alert').removeprefix('/ping').lstrip(' ')}\n'
+            )
         else:
             message_text = f'<b>💬 Сообщение</b>'
-        await dm.send_message_to_chat(user_id=message.from_user.id,
-                                      chat_id=chat_id,
-                                      message_text=message_text,
-                                      user_ids_to_ping=None)
+        await dm.send_message_to_chat(
+            user_id=message.from_user.id,
+            chat_id=chat_id,
+            message_text=message_text,
+            user_ids_to_ping=None
+        )
         text += f'Сообщение отправлено в группу {chat_title}\n'
     return text, ParseMode.HTML, None
 
@@ -538,9 +577,9 @@ async def command_admin(message: Message, dm: DatabaseManager) -> None:
 
 
 @router.callback_query(AdminCallbackFactory.filter(F.action == Action.menu))
-async def callback_admin(callback_query: CallbackQuery,
-                         callback_data: AdminCallbackFactory,
-                         dm: DatabaseManager) -> None:
+async def callback_admin(
+        callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
+) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     can_user_link_members = await dm.can_user_link_group_members(
         callback_query.message.chat.id, callback_query.from_user.id
@@ -556,9 +595,9 @@ async def callback_admin(callback_query: CallbackQuery,
 
 
 @router.callback_query(AdminCallbackFactory.filter((F.action == Action.link) & (F.link == Link.select_chat)))
-async def callback_link_select_chat(callback_query: CallbackQuery,
-                                    callback_data: AdminCallbackFactory,
-                                    dm: DatabaseManager) -> None:
+async def callback_link_select_chat(
+        callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
+) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     can_user_link_members = await dm.can_user_link_group_members(
         callback_query.message.chat.id, callback_query.from_user.id
@@ -574,13 +613,15 @@ async def callback_link_select_chat(callback_query: CallbackQuery,
         await callback_query.answer()
 
 
-@router.callback_query(AdminCallbackFactory
-                       .filter((F.action == Action.link) & (F.link == Link.select_player_from_unknown)))
-@router.callback_query(AdminCallbackFactory
-                       .filter((F.action == Action.link) & (F.link == Link.select_player_from_all)))
-async def callback_link_select_player(callback_query: CallbackQuery,
-                                      callback_data: AdminCallbackFactory,
-                                      dm: DatabaseManager) -> None:
+@router.callback_query(
+    AdminCallbackFactory.filter((F.action == Action.link) & (F.link == Link.select_player_from_unknown))
+)
+@router.callback_query(
+    AdminCallbackFactory.filter((F.action == Action.link) & (F.link == Link.select_player_from_all))
+)
+async def callback_link_select_player(
+        callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
+) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     can_user_link_members = await dm.can_user_link_group_members(
         callback_query.message.chat.id, callback_query.from_user.id
@@ -594,13 +635,15 @@ async def callback_link_select_player(callback_query: CallbackQuery,
         await callback_query.answer()
 
 
-@router.callback_query(AdminCallbackFactory
-                       .filter((F.action == Action.link) & (F.link == Link.select_user_from_unknown)))
-@router.callback_query(AdminCallbackFactory
-                       .filter((F.action == Action.link) & (F.link == Link.select_user_from_all)))
-async def callback_link_select_user(callback_query: CallbackQuery,
-                                    callback_data: AdminCallbackFactory,
-                                    dm: DatabaseManager) -> None:
+@router.callback_query(
+    AdminCallbackFactory.filter((F.action == Action.link) & (F.link == Link.select_user_from_unknown))
+)
+@router.callback_query(
+    AdminCallbackFactory.filter((F.action == Action.link) & (F.link == Link.select_user_from_all))
+)
+async def callback_link_select_user(
+        callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
+) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     can_user_link_members = await dm.can_user_link_group_members(
         callback_query.message.chat.id, callback_query.from_user.id
@@ -615,9 +658,9 @@ async def callback_link_select_user(callback_query: CallbackQuery,
 
 
 @router.callback_query(AdminCallbackFactory.filter((F.action == Action.link) & (F.link == Link.finish)))
-async def callback_link_finish(callback_query: CallbackQuery,
-                               callback_data: AdminCallbackFactory,
-                               dm: DatabaseManager) -> None:
+async def callback_link_finish(
+        callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
+) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     can_user_link_members = await dm.can_user_link_group_members(
         callback_query.message.chat.id, callback_query.from_user.id
@@ -632,9 +675,9 @@ async def callback_link_finish(callback_query: CallbackQuery,
 
 
 @router.callback_query(AdminCallbackFactory.filter((F.action == Action.unlink) & (F.unlink == Unlink.select_chat)))
-async def callback_unlink_select_chat(callback_query: CallbackQuery,
-                                      callback_data: AdminCallbackFactory,
-                                      dm: DatabaseManager) -> None:
+async def callback_unlink_select_chat(
+        callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
+) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     can_user_unlink_members = await dm.can_user_link_group_members(
         callback_query.message.chat.id, callback_query.from_user.id
@@ -653,9 +696,9 @@ async def callback_unlink_select_chat(callback_query: CallbackQuery,
 @router.callback_query(
     AdminCallbackFactory.filter((F.action == Action.unlink) & (F.unlink == Unlink.select_player))
 )
-async def callback_unlink_select_player(callback_query: CallbackQuery,
-                                        callback_data: AdminCallbackFactory,
-                                        dm: DatabaseManager) -> None:
+async def callback_unlink_select_player(
+        callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
+) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     can_user_unlink_members = await dm.can_user_link_group_members(
         callback_query.message.chat.id, callback_query.from_user.id
@@ -672,9 +715,9 @@ async def callback_unlink_select_player(callback_query: CallbackQuery,
 @router.callback_query(
     AdminCallbackFactory.filter((F.action == Action.unlink) & (F.unlink == Unlink.select_user))
 )
-async def callback_unlink_select_user(callback_query: CallbackQuery,
-                                      callback_data: AdminCallbackFactory,
-                                      dm: DatabaseManager) -> None:
+async def callback_unlink_select_user(
+        callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
+) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     can_user_unlink_members = await dm.can_user_link_group_members(
         callback_query.message.chat.id, callback_query.from_user.id
@@ -689,9 +732,9 @@ async def callback_unlink_select_user(callback_query: CallbackQuery,
 
 
 @router.callback_query(AdminCallbackFactory.filter((F.action == Action.unlink) & (F.unlink == Unlink.finish)))
-async def callback_unlink_finish(callback_query: CallbackQuery,
-                                 callback_data: AdminCallbackFactory,
-                                 dm: DatabaseManager) -> None:
+async def callback_unlink_finish(
+        callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
+) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     can_user_unlink_members = await dm.can_user_link_group_members(
         callback_query.message.chat.id, callback_query.from_user.id
@@ -706,9 +749,9 @@ async def callback_unlink_finish(callback_query: CallbackQuery,
 
 
 @router.callback_query(AdminCallbackFactory.filter(F.action == Action.edit_cw_list))
-async def callback_edit_cw_list(callback_query: CallbackQuery,
-                                callback_data: AdminCallbackFactory,
-                                dm: DatabaseManager) -> None:
+async def callback_edit_cw_list(
+        callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
+) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     can_user_edit_cw_list = await dm.can_user_edit_cw_list(callback_query.message.chat.id, callback_query.from_user.id)
     if not user_is_message_owner or not can_user_edit_cw_list:

@@ -11,12 +11,12 @@ from typing import Optional
 
 class AsyncClient:
     def __init__(
-        self,
-        email: Optional[str] = None,
-        password: Optional[str] = None,
-        key_name: Optional[str] = None,
-        key_description: Optional[str] = None,
-        key: Optional[str] = None
+            self,
+            email: Optional[str] = None,
+            password: Optional[str] = None,
+            key_name: Optional[str] = None,
+            key_description: Optional[str] = None,
+            key: Optional[str] = None
     ):
         """
         An asynchronous Clash of Clans API client

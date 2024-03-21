@@ -441,10 +441,12 @@ class OutputFormatter:
     @staticmethod
     def war_result(war: dict) -> str:
         if (war['clan']['stars'], war['clan']['destructionPercentage']) > (
-                war['opponent']['stars'], war['opponent']['destructionPercentage']):
+                war['opponent']['stars'], war['opponent']['destructionPercentage']
+        ):
             return f'🎉 Победа!\n'
         elif (war['clan']['stars'], war['clan']['destructionPercentage']) < (
-                war['opponent']['stars'], war['opponent']['destructionPercentage']):
+                war['opponent']['stars'], war['opponent']['destructionPercentage']
+        ):
             return f'😢 Поражение\n'
         else:
             return f'⚖️ Ничья\n'
@@ -495,8 +497,10 @@ class OutputFormatter:
             f'Сделано атак: {raid['totalAttacks']} / 300 🗡️\n'
         )
         if raid.get('offensiveReward') and raid.get('defensiveReward'):
-            text += (f'Награда за 6 атак: {int(raid['offensiveReward']) * 6 + int(raid['defensiveReward'])} '
-                     f'{self.get_raid_medal_emoji()}\n')
+            text += (
+                f'Награда за 6 атак: {int(raid['offensiveReward']) * 6 + int(raid['defensiveReward'])} '
+                f'{self.get_raid_medal_emoji()}\n'
+            )
         return text
 
     def clan_games_ongoing_or_ended(self, cg: dict) -> str:
@@ -524,10 +528,10 @@ class OutputFormatter:
             return datetime(dt_now.year, dt_now.month, 1, 8)
         else:
             return datetime(
-                dt_now.year if dt_now.month < 12 else dt_now.year + 1,
-                dt_now.month + 1 if dt_now.month < 12 else 1,
-                1,
-                8
+                year=dt_now.year if dt_now.month < 12 else dt_now.year + 1,
+                month=dt_now.month + 1 if dt_now.month < 12 else 1,
+                day=1,
+                hour=8
             )
 
     @staticmethod
@@ -541,16 +545,16 @@ class OutputFormatter:
         else:
             return (
                 datetime(
-                    dt_now.year if dt_now.month < 12 else dt_now.year + 1,
-                    dt_now.month + 1 if dt_now.month < 12 else 1,
-                    1,
-                    8
+                    year=dt_now.year if dt_now.month < 12 else dt_now.year + 1,
+                    month=dt_now.month + 1 if dt_now.month < 12 else 1,
+                    day=1,
+                    hour=8
                 ),
                 datetime(
-                    dt_now.year if dt_now.month < 12 else dt_now.year + 1,
-                    dt_now.month + 1 if dt_now.month < 12 else 1,
-                    1,
-                    8
+                    year=dt_now.year if dt_now.month < 12 else dt_now.year + 1,
+                    month=dt_now.month + 1 if dt_now.month < 12 else 1,
+                    day=1,
+                    hour=8
                 )
             )
 
@@ -565,16 +569,16 @@ class OutputFormatter:
         else:
             return (
                 datetime(
-                    dt_now.year if dt_now.month < 12 else dt_now.year + 1,
-                    dt_now.month + 1 if dt_now.month < 12 else 1,
-                    22,
-                    8
+                    year=dt_now.year if dt_now.month < 12 else dt_now.year + 1,
+                    month=dt_now.month + 1 if dt_now.month < 12 else 1,
+                    day=22,
+                    hour=8
                 ),
                 datetime(
-                    dt_now.year if dt_now.month < 12 else dt_now.year + 1,
-                    dt_now.month + 1 if dt_now.month < 12 else 1,
-                    28,
-                    8
+                    year=dt_now.year if dt_now.month < 12 else dt_now.year + 1,
+                    month=dt_now.month + 1 if dt_now.month < 12 else 1,
+                    day=28,
+                    hour=8
                 )
             )
 
@@ -607,8 +611,7 @@ class OutputFormatter:
             map_position[member['tag']] = member['mapPosition']
         map_position = {
             item[0]: i + 1
-            for i, item
-            in enumerate(sorted(map_position.items(), key=lambda item: item[1]))
+            for i, item in enumerate(sorted(map_position.items(), key=lambda item: item[1]))
         }
         return map_position
 

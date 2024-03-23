@@ -54,11 +54,11 @@ async def main():
         INSERT INTO bot_user
             (clan_tag, chat_id, user_id, username, first_name, last_name, is_user_in_chat, first_seen, last_seen)
         VALUES
-            ($1, $2, $3, $4, $5, $6, TRUE, NULL, CURRENT_TIMESTAMP(0))
+            ($1, $2, $3, $4, $5, $6, TRUE, NULL, NOW() AT TIME ZONE 'UTC')
         ON CONFLICT
             (clan_tag, chat_id, user_id)
         DO UPDATE SET
-            (username, first_name, last_name, is_user_in_chat, last_seen) = ($4, $5, $6, TRUE, CURRENT_TIMESTAMP(0))
+            (username, first_name, last_name, is_user_in_chat, last_seen) = ($4, $5, $6, TRUE, NOW() AT TIME ZONE 'UTC')
     ''', user_data)
 
     await app.stop()

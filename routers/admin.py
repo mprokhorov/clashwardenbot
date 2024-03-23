@@ -262,7 +262,7 @@ async def link_finish(
 
     await dm.acquired_connection.execute('''
         INSERT INTO action (clan_tag, chat_id, user_id, action_timestamp, description)
-        VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
+        VALUES ($1, $2, $3, NOW() AT TIME ZONE 'UTC', $4)
     ''', dm.clan_tag, callback_query.message.chat.id, callback_query.from_user.id, description)
 
     return text, ParseMode.HTML, None
@@ -441,7 +441,7 @@ async def unlink_finish(
 
     await dm.acquired_connection.execute('''
         INSERT INTO action (clan_tag, chat_id, user_id, action_timestamp, description)
-        VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
+        VALUES ($1, $2, $3, NOW() AT TIME ZONE 'UTC', $4)
     ''', dm.clan_tag, callback_query.message.chat.id, callback_query.from_user.id, description)
 
     return text, ParseMode.HTML, None
@@ -468,7 +468,7 @@ async def edit_cw_list(
         )
         await dm.acquired_connection.execute('''
             INSERT INTO action (clan_tag, chat_id, user_id, action_timestamp, description)
-            VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
+            VALUES ($1, $2, $3, NOW() AT TIME ZONE 'UTC', $4)
         ''', dm.clan_tag, callback_query.message.chat.id, callback_query.from_user.id, description)
     rows = await dm.acquired_connection.fetch('''
         SELECT

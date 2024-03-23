@@ -112,11 +112,13 @@ create table clan_chat
 
 create table clan_games
 (
-    clan_tag   varchar(16)
+    clan_tag   varchar(16) not null
         constraint clan_games_clan_clan_tag_fk
             references clan,
-    start_time timestamp,
-    data       jsonb not null
+    start_time timestamp   not null,
+    data       jsonb       not null,
+    constraint clan_games_pk
+        primary key (clan_tag, start_time)
 );
 
 create table clan_war

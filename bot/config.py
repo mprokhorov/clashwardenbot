@@ -32,6 +32,10 @@ class Settings(BaseSettings):
     capital_gold_emoji_id: SecretStr
     raid_medal_emoji_id: SecretStr
 
+    frequent_jobs_frequency_minutes: SecretStr
+    infrequent_jobs_frequency_minutes: SecretStr
+    job_timespan_seconds: SecretStr
+
     telegram_bot_owner_id: SecretStr
     bot_commands: list[SecretStr]
 

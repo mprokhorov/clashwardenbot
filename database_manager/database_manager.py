@@ -61,9 +61,9 @@ class DatabaseManager:
         self.acquired_connection = None
 
         self.scheduler = None
-        self.frequent_jobs_frequency_minutes = 1
-        self.infrequent_jobs_frequency_minutes = 10
-        self.job_timespan_seconds = 10
+        self.frequent_jobs_frequency_minutes = int(config.frequent_jobs_frequency_minutes.get_secret_value())
+        self.infrequent_jobs_frequency_minutes = int(config.infrequent_jobs_frequency_minutes.get_secret_value())
+        self.job_timespan_seconds = int(config.job_timespan_seconds.get_secret_value())
 
         self.clan_tag = clan_tag
         self.bot = bot
@@ -191,11 +191,13 @@ class DatabaseManager:
         loaded_clan_member_tags = [row['player_tag'] for row in rows]
         retrieved_clan_member_tags = [clan_member['tag'] for clan_member in retrieved_clan_members['items']]
         joined_clan_member_tags = [
-            clan_member_tag for clan_member_tag in retrieved_clan_member_tags
+            clan_member_tag
+            for clan_member_tag in retrieved_clan_member_tags
             if clan_member_tag not in loaded_clan_member_tags
         ]
         left_clan_member_tags = [
-            clan_member_tag for clan_member_tag in loaded_clan_member_tags
+            clan_member_tag
+            for clan_member_tag in loaded_clan_member_tags
             if clan_member_tag not in retrieved_clan_member_tags
         ]
         if left_clan_member_tags or joined_clan_member_tags:
@@ -260,9 +262,10 @@ class DatabaseManager:
         retrieved_clan_members = await self.api_client.get_clan_members(clan_tag=self.clan_tag)
         if retrieved_clan_members is None:
             return False
-        player_tasks = [self.api_client.get_player(player_tag=clan_member['tag'])
-                        for clan_member
-                        in retrieved_clan_members['items']]
+        player_tasks = [
+            self.api_client.get_player(player_tag=clan_member['tag'])
+            for clan_member in retrieved_clan_members['items']
+        ]
         retrieved_players = list(await asyncio.gather(*player_tasks))
         if None in retrieved_players:
             return False
@@ -311,7 +314,7 @@ class DatabaseManager:
             VALUES
                 ($1, $2,
                 $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-                CURRENT_TIMESTAMP(0), CURRENT_TIMESTAMP(0))
+                NOW() AT TIME ZONE 'UTC', NOW() AT TIME ZONE 'UTC')
             ON CONFLICT (clan_tag, player_tag)
             DO UPDATE SET
                 (player_name, is_player_in_clan,
@@ -323,7 +326,7 @@ class DatabaseManager:
                 donations_given, donations_received,
                 last_seen) =
                 ($3, $4, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
-                CURRENT_TIMESTAMP(0))
+                NOW() AT TIME ZONE 'UTC')
         ''', rows)
         return True
 
@@ -373,7 +376,7 @@ class DatabaseManager:
             if new_contributions.get(player_tag) and new_contributions[player_tag] > old_contributions[player_tag]:
                 await self.acquired_connection.execute('''
                     INSERT INTO capital_contribution (clan_tag, player_tag, gold_amount, contribution_timestamp)
-                    VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0))
+                    VALUES ($1, $2, $3, NOW() AT TIME ZONE 'UTC')
                 ''', self.clan_tag, player_tag, new_contributions[player_tag] - old_contributions[player_tag])
 
     async def get_clan_games(self) -> Optional[dict]:
@@ -875,12 +878,12 @@ class DatabaseManager:
                     (clan_tag, chat_id, user_id,
                     username, first_name, last_name, is_user_in_chat, first_seen, last_seen)
                 VALUES 
-                    ($1, $2, $3, $4, $5, $6, TRUE, CURRENT_TIMESTAMP(0), CURRENT_TIMESTAMP(0))
+                    ($1, $2, $3, $4, $5, $6, TRUE, NOW() AT TIME ZONE 'UTC', NOW() AT TIME ZONE 'UTC')
                 ON CONFLICT
                     (clan_tag, chat_id, user_id)
                 DO UPDATE SET
                     (username, first_name, last_name, is_user_in_chat, last_seen) = 
-                    ($4, $5, $6, TRUE, CURRENT_TIMESTAMP(0))
+                    ($4, $5, $6, TRUE, NOW() AT TIME ZONE 'UTC')
             ''', self.clan_tag, chat.id, user.id, user.username, user.first_name, user.last_name)
         elif chat.type == ChatType.PRIVATE:
             await self.acquired_connection.execute('''
@@ -893,20 +896,20 @@ class DatabaseManager:
                     can_edit_cw_list,
                     can_send_messages_from_bot)
                 VALUES 
-                    ($1, $2, $3, $4, $5, $6, TRUE, CURRENT_TIMESTAMP(0), CURRENT_TIMESTAMP(0),
+                    ($1, $2, $3, $4, $5, $6, TRUE, NOW() AT TIME ZONE 'UTC', NOW() AT TIME ZONE 'UTC',
                     FALSE, FALSE, FALSE, FALSE, FALSE)
                 ON CONFLICT
                 (clan_tag, chat_id, user_id)
                 DO UPDATE SET
                     (username, first_name, last_name, is_user_in_chat, last_seen) = 
-                    ($4, $5, $6, TRUE, CURRENT_TIMESTAMP(0))
+                    ($4, $5, $6, TRUE, NOW() AT TIME ZONE 'UTC')
             ''', self.clan_tag, chat.id, user.id, user.username, user.first_name, user.last_name)
 
     async def undump_user(self, chat: Chat, user: User) -> None:
         await self.acquired_connection.execute('''
             UPDATE bot_user
             SET (username, first_name, last_name, is_user_in_chat, last_seen) = 
-                ($4, $5, $6, FALSE, CURRENT_TIMESTAMP(0))
+                ($4, $5, $6, FALSE, NOW() AT TIME ZONE 'UTC')
             WHERE (clan_tag, chat_id, user_id) = ($1, $2, $3)
         ''', self.clan_tag, chat.id, user.id, user.username, user.first_name, user.last_name)
 
@@ -1120,7 +1123,7 @@ class DatabaseManager:
         )
         await self.acquired_connection.execute('''
             INSERT INTO action (clan_tag, chat_id, user_id, action_timestamp, description)
-            VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
+            VALUES ($1, $2, $3, NOW() AT TIME ZONE 'UTC', $4)
         ''', self.clan_tag, user_id, user_id, log_text)
 
     async def set_activity_preparation_message_sent(self, clan_tag: str, name: str, start_time: datetime) -> None:

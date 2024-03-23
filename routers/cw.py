@@ -226,7 +226,7 @@ async def cw_status(
         )
         await dm.acquired_connection.execute('''
             INSERT INTO action (clan_tag, chat_id, user_id, action_timestamp, description)
-            VALUES ($1, $2, $3, CURRENT_TIMESTAMP(0), $4)
+            VALUES ($1, $2, $3, NOW() AT TIME ZONE 'UTC', $4)
         ''', dm.clan_tag, callback_query.message.chat.id, callback_query.from_user.id, description)
     if (message or callback_query.message).chat.type == ChatType.PRIVATE:
         chat_id = await dm.get_main_chat_id()

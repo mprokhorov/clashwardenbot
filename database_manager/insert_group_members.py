@@ -4,7 +4,7 @@ import asyncpg
 from pyrogram import Client
 from pyrogram.enums import ChatType
 
-from bot.config import config
+from config import config
 
 app = Client(
     name=config.telegram_api_client_name.get_secret_value(),

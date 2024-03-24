@@ -4,8 +4,8 @@ import logging
 
 from aiogram import Bot, Dispatcher
 
-from bot.config import config
 from bot.middlewares import MessageMiddleware, CallbackQueryMiddleware
+from config import config
 from database_manager import DatabaseManager
 from routers import admin, cw, cwl, members, raids
 

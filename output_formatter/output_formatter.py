@@ -2,7 +2,7 @@ from datetime import datetime, timedelta, UTC
 from enum import Enum
 from typing import Optional, Tuple
 
-from bot.config import config
+from config import config
 
 
 class Event(Enum):
@@ -35,6 +35,10 @@ class OutputFormatter:
     @staticmethod
     def from_datetime(dt: datetime) -> str:
         return datetime.strftime(dt, '%Y%m%dT%H%M%S.%fZ')
+
+    @staticmethod
+    def full_dedent(text: str) -> str:
+        return '\n'.join(map(str.lstrip, text.split('\n')))
 
     @staticmethod
     def season(season_data: str) -> str:

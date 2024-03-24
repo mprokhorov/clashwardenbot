@@ -27,7 +27,7 @@ $ pip install -r requirements.txt
 ```
 ### Create PostgreSQL database
 
-Use ```ddl.sql``` script to create schema ```public```
+Use ```schema.sql``` to create ```clashwardenbot``` schema and ```update_chat_members.py``` to insert group members to database _(Telegram client required)_
 
 
 ### Create and configure `.env` file
@@ -37,6 +37,8 @@ TELEGRAM_API_CLIENT_NAME = name
 TELEGRAM_API_ID = 1234567890
 TELEGRAM_API_HASH = 1234567890abcdefghijklmnopqrstuv
 
+TELEGRAM_BOT_OWNER_ID = 1234567890
+
 CLASH_OF_CLANS_API_LOGIN = login@example.com
 CLASH_OF_CLANS_API_PASSWORD = 1234567890abcdef
 CLASH_OF_CLANS_API_KEY_NAME = name
@@ -44,9 +46,13 @@ CLASH_OF_CLANS_API_KEY_DESCRIPTION = description
 
 POSTGRES_HOST = https://host.example.com
 POSTGRES_DATABASE = database
-POSTGRES_SCHEMA = public
+POSTGRES_SCHEMA = clashwardenbot
 POSTGRES_USER = user
 POSTGRES_PASSWORD = 1234567890abcdef
+
+FREQUENT_JOBS_FREQUENCY_MINUTES = 1
+INFREQUENT_JOBS_FREQUENCY_MINUTES = 10
+JOB_TIMESPAN_SECONDS = 10
 
 WEBHOOK_HOST = https://host.example.com
 WEBHOOK_PATH = /path
@@ -61,9 +67,6 @@ BUILDER_HALL_EMOJI_IDS = '["5197185288887089032","5197384742873348667","51971623
 HOME_VILLAGE_HERO_EMOJI_IDS = '["5194922180424516899","5197627129352699105","5197327744362363447","5197329312025425842"]'
 CAPITAL_GOLD_EMOJI_ID = 5197204942657436620
 RAID_MEDAL_EMOJI_ID = 5201914713599920485
-
-TELEGRAM_BOT_OWNER_ID = 1234567890
-BOT_COMMANDS = '["cw_info","cw_attacks","cw_map","cw_skips","cw_ping","cw_status","cw_list","raids_info","raids_loot","raids_skips","raids_ping","raids_analysis","cwl_info","cwl_attacks","cwl_map","cwl_skips","cwl_ping","cwl_clans","player_info","members","donations","contributions","events","admin","alert","ping"]'
 ```
 
 

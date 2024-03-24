@@ -1,7 +1,6 @@
 import enum
 from collections import namedtuple
 from contextlib import suppress
-from textwrap import dedent
 from typing import Tuple, Optional
 
 from aiogram import Router
@@ -12,6 +11,7 @@ from aiogram.filters.callback_data import CallbackData
 from aiogram.types import Message, InlineKeyboardMarkup, CallbackQuery, Chat, InlineKeyboardButton
 from magic_filter import F
 
+from bot.commands import bot_cmd_list, get_shown_bot_commands
 from database_manager import DatabaseManager
 from output_formatter.output_formatter import Event
 
@@ -32,43 +32,44 @@ class MembersCallbackFactory(CallbackData, prefix='members'):
     members_view: Optional[MembersView] = None
 
 
-async def start_help(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+async def start(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     row = await dm.acquired_connection.fetchrow('''
         SELECT clan_name
         FROM clan
         WHERE clan_tag = $1
     ''', dm.clan_tag)
     clan_name = row['clan_name']
-    text = dedent(f'''
+    text = dm.of.full_dedent(f'''
         Привет! Этот бот был создан специально для клана <b>{dm.of.to_html(clan_name)}.</b>
         
         Для использования бота необходимо состоять в Telegram-группе клана.
         
         Список доступных команд:
-        /cw_info — 📃 Информация о КВ
-        /cw_map — 🗺️ Карта КВ
-        /cw_attacks — 🗡️ Атаки в КВ
-        /cw_skips — 🙈 Список не проатаковавших в КВ
-        /cw_ping — 🔔 Напомнить об атаках в КВ
-        /cw_status — ✍🏻 Изменить статус участия в КВ
-        /cw_list — 📋 Список участников КВ
-        /raids_info — 📃 Информация о рейдах
-        /raids_loot — 🟡 Полученное золото в рейдах
-        /raids_skips — 🙈 Список не проатаковавших в рейдах
-        /raids_ping — 🔔 Напомнить об атаках в рейдах
-        /raids_analysis — 📊 Анализ атак в рейдах
-        /cwl_info — 📃 Информация о ЛВК
-        /cwl_map — 🗺️ Карта ЛВК
-        /cwl_attacks — 🗡️ Атаки в ЛВК
-        /cwl_skips — 🙈 Список не проатаковавших в ЛВК
-        /cwl_ping — 🔔 Напомнить об атаках в ЛВК
-        /cwl_clans — 📊 Уровни ТХ кланов в ЛВК
-        /player_info — 👤 Аккаунты пользователя
-        /members — 🪖 Участники клана
-        /donations — 🏅 Лучшие жертвователи
-        /contributions — 🤝 Вклады в столице
-        /events — 📅 События
-        /admin — ⚙️ Панель управления
+        {'\n'.join(
+            f'/{bot_cmd.command} — {bot_cmd.description}'
+            for bot_cmd in get_shown_bot_commands(bot_cmd_list, ['group', 'private'], ['ANY'])
+        )}
+    ''')
+    return text, ParseMode.HTML, None
+
+
+async def help_(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    row = await dm.acquired_connection.fetchrow('''
+        SELECT clan_name
+        FROM clan
+        WHERE clan_tag = $1
+    ''', dm.clan_tag)
+    clan_name = row['clan_name']
+    text = dm.of.full_dedent(f'''
+        Этот бот был создан специально для клана <b>{dm.of.to_html(clan_name)}.</b>
+        
+        Для использования бота необходимо состоять в Telegram-группе клана.
+        
+        Список доступных команд:
+        {'\n'.join(
+            f'/{bot_cmd.command} — {bot_cmd.description}'
+            for bot_cmd in get_shown_bot_commands(bot_cmd_list, ['group', 'private'], ['ANY'])
+        )}
     ''')
     return text, ParseMode.HTML, None
 
@@ -444,9 +445,15 @@ async def events(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKe
 
 
 @router.message(Command('start'))
+async def command_start(message: Message, dm: DatabaseManager) -> None:
+    text, parse_mode, reply_markup = await start(dm)
+    reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+    await dm.dump_message_owner(reply_from_bot, message.from_user)
+
+
 @router.message(Command('help'))
-async def commands_start_help(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, reply_markup = await start_help(dm)
+async def command_help(message: Message, dm: DatabaseManager) -> None:
+    text, parse_mode, reply_markup = await help_(dm)
     reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     await dm.dump_message_owner(reply_from_bot, message.from_user)
 

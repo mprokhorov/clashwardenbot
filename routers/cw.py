@@ -278,7 +278,7 @@ async def cw_status(
 async def cw_list(
         dm: DatabaseManager, callback_data: Optional[CWCallbackFactory]
 ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    cw_list_ordering = callback_data.cw_list_ordering or CWListOrderding.by_trophies
+    cw_list_ordering = callback_data.cw_list_ordering if callback_data else CWListOrderding.by_trophies
     if cw_list_ordering == CWListOrderding.by_town_hall_and_heroes:
         rows = await dm.acquired_connection.fetch('''
             SELECT

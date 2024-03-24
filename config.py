@@ -7,6 +7,8 @@ class Settings(BaseSettings):
     telegram_api_id: SecretStr
     telegram_api_hash: SecretStr
 
+    telegram_bot_owner_id: SecretStr
+
     clash_of_clans_api_login: SecretStr
     clash_of_clans_api_password: SecretStr
     clash_of_clans_api_key_name: SecretStr
@@ -17,6 +19,10 @@ class Settings(BaseSettings):
     postgres_schema: SecretStr
     postgres_user: SecretStr
     postgres_password: SecretStr
+
+    frequent_jobs_frequency_minutes: SecretStr
+    infrequent_jobs_frequency_minutes: SecretStr
+    job_timespan_seconds: SecretStr
 
     webhook_host: SecretStr
     webhook_path: SecretStr
@@ -32,15 +38,8 @@ class Settings(BaseSettings):
     capital_gold_emoji_id: SecretStr
     raid_medal_emoji_id: SecretStr
 
-    frequent_jobs_frequency_minutes: SecretStr
-    infrequent_jobs_frequency_minutes: SecretStr
-    job_timespan_seconds: SecretStr
-
-    telegram_bot_owner_id: SecretStr
-    bot_commands: list[SecretStr]
-
     class Config:
-        env_file = 'bot/.env'
+        env_file = '.env'
         env_file_encoding = 'utf-8'
 
 

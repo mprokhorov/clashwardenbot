@@ -7,7 +7,7 @@ from aiogram import BaseMiddleware
 from aiogram.enums import ParseMode, ChatType
 from aiogram.types import TelegramObject, Message, CallbackQuery
 
-from bot.config import config
+from bot.commands import bot_cmd_list
 from database_manager import DatabaseManager
 
 
@@ -56,7 +56,7 @@ class MessageMiddleware(BaseMiddleware):
                 return None
             else:
                 first_command = message.text[bot_commands[0].offset:bot_commands[0].offset + bot_commands[0].length]
-                acceptable_commands = [bot_command.get_secret_value() for bot_command in config.bot_commands]
+                acceptable_commands = [bot_cmd.command for bot_cmd in bot_cmd_list]
                 if self.is_command_for_bot(first_command, bot_username) and not message.forward_origin:
                     if self.is_command_valid(first_command, ['start', 'help']):
                         logging.info(f'Message {{{message_info}}} was propagated')

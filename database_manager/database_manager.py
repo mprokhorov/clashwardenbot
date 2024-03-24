@@ -8,14 +8,14 @@ import asyncpg
 import psutil
 from aiogram import Bot
 from aiogram.enums import ChatType, ParseMode
-from aiogram.types import Chat, User, Message
+from aiogram.types import Chat, User, Message, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from asyncpg import Record, Pool
 from psutil._common import bytes2human
 
 from async_client import AsyncClient
-from bot.commands import set_cw_commands, set_cwl_commands, set_commands
-from bot.config import config
+from bot.commands import bot_cmd_list, get_shown_bot_commands
+from config import config
 from output_formatter import OutputFormatter
 
 
@@ -162,20 +162,40 @@ class DatabaseManager:
         return True
 
     async def set_actual_commands(self) -> bool:
-        cw_start_time = None
         cw = await self.load_clan_war()
-        if cw:
-            cw_start_time = cw['startTime']
-        cwlw_start_time = None
+        cw_start_time = self.of.to_datetime(cw['startTime']) if cw else datetime.min
+
         _, cwlw = await self.load_clan_war_league_own_war()
-        if cwlw:
-            cwlw_start_time = cwlw['startTime']
-        if cw_start_time and cwlw_start_time and cw_start_time > cwlw_start_time:
-            await set_cw_commands(self.bot)
-        elif cw_start_time and cwlw_start_time and cw_start_time < cwlw_start_time:
-            await set_cwl_commands(self.bot)
+        cwlw_start_time = self.of.to_datetime(cwlw['startTime']) if cwlw else datetime.min
+
+        if cw_start_time > cwlw_start_time:
+            await self.bot.set_my_commands(
+                commands=get_shown_bot_commands(bot_cmd_list, ['group'], ['CW']),
+                scope=BotCommandScopeAllGroupChats()
+            )
+            await self.bot.set_my_commands(
+                commands=get_shown_bot_commands(bot_cmd_list, ['private'], ['CW']),
+                scope=BotCommandScopeAllPrivateChats()
+            )
+        elif cw_start_time < cwlw_start_time:
+            await self.bot.set_my_commands(
+                commands=get_shown_bot_commands(bot_cmd_list, ['group'], ['CWL']),
+                scope=BotCommandScopeAllGroupChats()
+            )
+            await self.bot.set_my_commands(
+                commands=get_shown_bot_commands(bot_cmd_list, ['private'], ['CWL']),
+                scope=BotCommandScopeAllPrivateChats()
+            )
         else:
-            await set_commands(self.bot)
+            await self.bot.set_my_commands(
+                commands=get_shown_bot_commands(bot_cmd_list, ['group'], ['ANY']),
+                scope=BotCommandScopeAllGroupChats()
+            )
+            await self.bot.set_my_commands(
+                commands=get_shown_bot_commands(bot_cmd_list, ['private'], ['ANY']),
+                scope=BotCommandScopeAllPrivateChats()
+            )
+
         return True
 
     async def check_clan_members(self) -> bool:

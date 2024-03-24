@@ -6,8 +6,8 @@ from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_applicati
 from aiohttp.web import run_app
 from aiohttp.web_app import Application
 
-from bot.config import config
 from bot.middlewares import MessageMiddleware, CallbackQueryMiddleware
+from config import config
 from database_manager import DatabaseManager
 from routers import admin, cw, cwl, members, raids
 

@@ -1,68 +1,27 @@
-from aiogram import Bot
-from aiogram.types import BotCommand, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
+from collections import namedtuple
+
+from aiogram.types import BotCommand
+
+BotCMD = namedtuple('BotCMD', 'command description scopes req_event')
 
 
-async def set_cw_commands(bot: Bot):
-    cw_private_chats_commands = []
-    with open('bot/commands/cw_private_chats.txt', 'r', encoding='utf8') as file:
-        for line in file:
-            command, description = line.strip().split(' - ')
-            cw_private_chats_commands.append(BotCommand(command=command, description=description))
-    await bot.set_my_commands(
-        commands=cw_private_chats_commands,
-        scope=BotCommandScopeAllPrivateChats()
-    )
-
-    cw_group_chats_commands = []
-    with open('bot/commands/cw_group_chats.txt', 'r', encoding='utf8') as file:
-        for line in file:
-            command, description = line.strip().split(' - ')
-            cw_group_chats_commands.append(BotCommand(command=command, description=description))
-    await bot.set_my_commands(
-        commands=cw_group_chats_commands,
-        scope=BotCommandScopeAllGroupChats()
-    )
+def get_shown_bot_commands(all_bot_cmd_list: list[BotCMD], scopes: list[str], events: list[str]) -> list[BotCommand]:
+    shown_bot_commands = []
+    for bot_cmd in all_bot_cmd_list:
+        events_requirements_met = any(event in bot_cmd.req_event for event in events) or not bot_cmd.req_event
+        scope_allowed = any(scope in bot_cmd.scopes for scope in scopes)
+        if ('ANY' in events or events_requirements_met) and scope_allowed:
+            shown_bot_commands.append(BotCommand(command=bot_cmd.command, description=bot_cmd.description))
+    return shown_bot_commands
 
 
-async def set_cwl_commands(bot: Bot):
-    cwl_private_chats_commands = []
-    with open('bot/commands/cwl_private_chats.txt', 'r', encoding='utf8') as file:
-        for line in file:
-            command, description = line.strip().split(' - ')
-            cwl_private_chats_commands.append(BotCommand(command=command, description=description))
-    await bot.set_my_commands(
-        commands=cwl_private_chats_commands,
-        scope=BotCommandScopeAllPrivateChats()
-    )
-
-    cwl_group_chats_commands = []
-    with open('bot/commands/cwl_group_chats.txt', 'r', encoding='utf8') as file:
-        for line in file:
-            command, description = line.strip().split(' - ')
-            cwl_group_chats_commands.append(BotCommand(command=command, description=description))
-    await bot.set_my_commands(
-        commands=cwl_group_chats_commands,
-        scope=BotCommandScopeAllGroupChats()
-    )
-
-
-async def set_commands(bot: Bot):
-    all_private_chats_commands = []
-    with open('bot/commands/private_chats.txt', 'r', encoding='utf8') as file:
-        for line in file:
-            command, description = line.strip().split(' - ')
-            all_private_chats_commands.append(BotCommand(command=command, description=description))
-    await bot.set_my_commands(
-        commands=all_private_chats_commands,
-        scope=BotCommandScopeAllPrivateChats()
-    )
-
-    all_group_chats_commands = []
-    with open('bot/commands/group_chats.txt', 'r', encoding='utf8') as file:
-        for line in file:
-            command, description = line.strip().split(' - ')
-            all_group_chats_commands.append(BotCommand(command=command, description=description))
-    await bot.set_my_commands(
-        commands=all_group_chats_commands,
-        scope=BotCommandScopeAllGroupChats()
-    )
+bot_cmd_list = []
+with open(file='bot/commands.txt', mode='r', encoding='utf8') as file:
+    for line in file:
+        command, description, scopes_data, events_data = map(str.strip, line.split('|'))
+        bot_cmd_list.append(BotCMD(
+            command,
+            description,
+            scopes_data.split(', ') if scopes_data else [],
+            events_data.split(', ') if events_data else []
+        ))

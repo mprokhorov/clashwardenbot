@@ -36,7 +36,7 @@ async def cwl_info(dm: DatabaseManager,
                    cwl_day: Optional[int] = None
                    ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = (
-        f'<b>📃 Информация о ЛВК</b>\n'
+        f'<b>⚔️ Информация о ЛВК</b>\n'
         f'\n'
     )
     if cwl_day is None:
@@ -307,12 +307,11 @@ async def cwl_map(
     return text, ParseMode.HTML, keyboard
 
 
-async def cwl_days_list(dm: DatabaseManager,
-                        action: Action) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+async def cwl_days_list(dm: DatabaseManager, action: Action) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     cwl_season, _ = await dm.load_clan_war_league()
     if action == Action.cwl_info_days_list:
         text = (
-            f'<b>📃 Информация о ЛВК</b>\n'
+            f'<b>⚔️ Информация о ЛВК</b>\n'
             f'\n'
             f'Сезон: {dm.of.season(cwl_season)}\n'
             f'\n'
@@ -375,11 +374,17 @@ async def cwl_days_list(dm: DatabaseManager,
 
 async def cwl_skips(
         dm: DatabaseManager, message: Message, ping: bool
-) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (
-        f'<b>🙈 Список не проатаковавших в ЛВК</b>\n'
-        f'\n'
-    )
+                    ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    if ping:
+        text = (
+            f'<b>🔔 Напоминание об атаках в ЛВК</b>\n'
+            f'\n'
+        )
+    else:
+        text = (
+            f'<b>🕒 Не проатаковавшие в ЛВК</b>\n'
+            f'\n'
+        )
     cwl_day, cwlw = await dm.load_clan_war_league_own_war()
     if cwlw is None:
         text += 'Информация о ЛВК отсутствует'
@@ -410,7 +415,7 @@ async def cwl_skips(
 async def cwl_clans(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     cwl_wars = await dm.load_clan_war_league_last_day_wars()
     text = (
-        f'<b>📊 Уровни ТХ кланов в ЛВК</b>\n'
+        f'<b>📶 Уровни ТХ кланов в ЛВК</b>\n'
         f'\n'
     )
     if cwl_wars is None:

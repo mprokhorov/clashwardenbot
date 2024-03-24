@@ -14,7 +14,7 @@ router = Router()
 
 async def raids_info(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = (
-        f'<b>📃 Информация о рейдах</b>\n'
+        f'<b>⚔️ Информация о рейдах</b>\n'
         f'\n'
     )
     raid = await dm.load_raid_weekend()
@@ -26,9 +26,9 @@ async def raids_info(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
     return text, ParseMode.HTML, None
 
 
-async def raids_loot(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+async def raids_attacks(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = (
-        f'<b>{dm.of.get_capital_gold_emoji()} Полученное золото в рейдах</b>\n'
+        f'<b>🗡️ Атаки в рейдах</b>\n'
         f'\n'
     )
     raid = await dm.load_raid_weekend()
@@ -85,10 +85,16 @@ async def raids_loot(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
 async def raids_skips(
         dm: DatabaseManager, message: Message, ping: bool
 ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (
-        f'<b>🙈 Список не проатаковавших в рейдах</b>\n'
-        f'\n'
-    )
+    if ping:
+        text = (
+            f'<b>🔔 Напоминание об атаках в рейдах</b>\n'
+            f'\n'
+        )
+    else:
+        text = (
+            f'<b>🕒 Не проатаковавшие в рейдах</b>\n'
+            f'\n'
+        )
     raid = await dm.load_raid_weekend()
     if raid is None:
         text += 'Информация о рейдах отсутствует'
@@ -207,9 +213,9 @@ async def command_raids_info(message: Message, dm: DatabaseManager) -> None:
     await message.reply(text=text, parse_mode=parse_mode, keyboard=keyboard)
 
 
-@router.message(Command('raids_loot'))
-async def command_raids_loot(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, keyboard = await raids_loot(dm)
+@router.message(Command('raids_attacks'))
+async def command_raids_attacks(message: Message, dm: DatabaseManager) -> None:
+    text, parse_mode, keyboard = await raids_attacks(dm)
     await message.reply(text=text, parse_mode=parse_mode, keyboard=keyboard)
 
 

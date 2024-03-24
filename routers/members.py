@@ -325,7 +325,7 @@ async def contributions(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[I
         LIMIT 20
     ''', dm.clan_tag)
     text = (
-        f'<b>🤝 Вклады в столице</b>\n'
+        f'<b>{dm.of.get_capital_gold_emoji()} Вклады в столице</b>\n'
         f'\n'
     )
     for i, row in enumerate(rows):
@@ -347,16 +347,9 @@ async def player_info(dm: DatabaseManager, message: Message) -> Tuple[str, Parse
         else:
             chat_id = message.chat.id
             user_id = message.from_user.id
-    elif message.chat.type == ChatType.PRIVATE:
+    else:
         chat_id = await dm.get_main_chat_id()
         user_id = message.from_user.id
-    else:
-        text = (
-            f'<b>📋 Аккаунт пользователя</b>\n'
-            f'\n'
-            f'Эта команда не работает для вас\n'
-        )
-        return text, ParseMode.HTML, None
     rows = await dm.acquired_connection.fetch('''
         SELECT
             player_name, player.player_tag, is_player_set_for_clan_wars,
@@ -383,12 +376,12 @@ async def player_info(dm: DatabaseManager, message: Message) -> Tuple[str, Parse
     ''', dm.clan_tag, chat_id, user_id)
     if len(rows) > 1:
         text = (
-            f'<b>📋 Аккаунты пользователя</b>\n'
+            f'<b>👤 Аккаунты пользователя</b>\n'
             f'\n'
         )
     else:
         text = (
-            f'<b>📋 Аккаунт пользователя</b>\n'
+            f'<b>👤 Аккаунт пользователя</b>\n'
             f'\n'
         )
     for row in rows:
@@ -411,7 +404,7 @@ async def player_info(dm: DatabaseManager, message: Message) -> Tuple[str, Parse
 
 async def events(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = (
-        f'<b>📅 События</b>\n'
+        f'<b>📆 События</b>\n'
         f'\n'
     )
     datetimes_and_lines = [(

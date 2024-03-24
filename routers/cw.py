@@ -36,7 +36,7 @@ class CWCallbackFactory(CallbackData, prefix='cw'):
 
 async def cw_info(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = \
-        (f'<b>📃 Информация о КВ</b>\n'
+        (f'<b>⚔️ Информация о КВ</b>\n'
          f'\n'
          )
     cw = await dm.load_clan_war()
@@ -211,7 +211,7 @@ async def cw_status(
         callback_data: Optional[CWCallbackFactory]
 ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = (
-        f'<b>✍🏻 Изменение статуса участия в КВ</b>\n'
+        f'<b>📝 Изменение статуса участия в КВ</b>\n'
         f'\n'
     )
     if callback_data is not None and callback_data.player_tag is not None:
@@ -337,10 +337,16 @@ async def cw_list(
 async def cw_skips(
         dm: DatabaseManager, message: Message, ping: bool
 ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (
-        f'<b>🙈 Список не проатаковавших в КВ</b>\n'
-        f'\n'
-    )
+    if ping:
+        text = (
+            f'<b>🔔 Напоминание об атаках в КВ</b>\n'
+            f'\n'
+        )
+    else:
+        text = (
+            f'<b>🕒 Не проатаковавшие в КВ</b>\n'
+            f'\n'
+        )
     cw = await dm.load_clan_war()
     if cw is None:
         text += 'Информация о КВ отсутствует'

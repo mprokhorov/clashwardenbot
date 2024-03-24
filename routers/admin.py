@@ -71,7 +71,7 @@ async def admin() -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(
-                text='✍🏻 Изменить список участников КВ',
+                text='📝 Изменить список участников КВ',
                 callback_data=AdminCallbackFactory(action=Action.edit_cw_list).pack()
             )],
             [InlineKeyboardButton(
@@ -453,7 +453,7 @@ async def edit_cw_list(
         callback_data: Optional[AdminCallbackFactory]
 ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = (
-        f'<b>✍🏻 Изменение списка участников КВ</b>\n'
+        f'<b>📝 Изменение списка участников КВ</b>\n'
         f'\n'
     )
     if callback_data is not None and callback_data.player_tag is not None:
@@ -521,7 +521,7 @@ async def alert(
     chat_title = row['title']
     if ping:
         text = (
-            f'<b>✍🏻 Отправка сообщения всем пользователям в группах</b>\n'
+            f'<b>📝 Отправка сообщения всем пользователям в группах</b>\n'
             f'\n'
         )
         if message.html_text.removeprefix('/alert').removeprefix('/ping').lstrip(' '):
@@ -541,7 +541,7 @@ async def alert(
         text += f'Сообщение отправлено всем пользователям в группе {chat_title}\n'
     else:
         text = (
-            f'<b>✍🏻 Отправка сообщения в группы</b>\n'
+            f'<b>📝 Отправка сообщения в группы</b>\n'
             f'\n'
         )
         if message.html_text.removeprefix('/alert').removeprefix('/ping').lstrip(' '):

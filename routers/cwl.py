@@ -118,7 +118,7 @@ async def cwl_attacks(dm: DatabaseManager, cwl_day: Optional[int] = None):
             )
             for row in rows
         }
-        clan_map_position_by_player = dm.of.load_map_positions(cwlw['clan']['members'])
+        clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
         cwlw_member_lines = [''] * len(clan_map_position_by_player)
         for member in cwlw['clan']['members']:
             cwlw_member_lines[clan_map_position_by_player[member['tag']] - 1] = (
@@ -141,8 +141,8 @@ async def cwl_attacks(dm: DatabaseManager, cwl_day: Optional[int] = None):
         if dm.of.war_state(cwlw) == 'warEnded':
             text += dm.of.war_result(cwlw)
         text += f'\n'
-        clan_map_position_by_player = dm.of.load_map_positions(cwlw['clan']['members'])
-        opponent_map_position_by_player = dm.of.load_map_positions(cwlw['opponent']['members'])
+        clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
+        opponent_map_position_by_player = dm.of.calculate_map_positions(cwlw['opponent']['members'])
         cwlw_member_lines = [''] * len(clan_map_position_by_player)
         for member in cwlw['clan']['members']:
             cwlw_member_lines[clan_map_position_by_player[member['tag']] - 1] += (
@@ -232,7 +232,7 @@ async def cwl_map(
             )
             for row in rows
         }
-        clan_map_position_by_player = dm.of.load_map_positions(cwlw['clan']['members'])
+        clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
         cwlw_member_lines = [''] * len(clan_map_position_by_player)
         for member in cwlw['clan']['members']:
             cwlw_member_lines[clan_map_position_by_player[member['tag']] - 1] = (
@@ -254,8 +254,8 @@ async def cwl_map(
         if dm.of.war_state(cwlw) == 'warEnded':
             text += dm.of.war_result(cwlw)
         text += f'\n'
-        clan_map_position_by_player = dm.of.load_map_positions(cwlw['clan']['members'])
-        opponent_map_position_by_player = dm.of.load_map_positions(cwlw['opponent']['members'])
+        clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
+        opponent_map_position_by_player = dm.of.calculate_map_positions(cwlw['opponent']['members'])
         opponent_member_lines = [''] * len(clan_map_position_by_player)
         for opponent_member in cwlw['opponent']['members']:
             if opponent_member.get('bestOpponentAttack'):

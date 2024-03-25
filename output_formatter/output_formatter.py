@@ -512,63 +512,39 @@ class OutputFormatter:
         return text
 
     @staticmethod
-    def get_next_trader_refresh() -> datetime:
+    def calculate_next_raid_weekend() -> Tuple[datetime, datetime]:
+        dt_now = datetime.now(UTC)
+        if (dt_now.weekday(), dt_now.hour) < (0, 7):
+            dt_end = datetime(year=dt_now.year, month=dt_now.month, day=dt_now.day, hour=7)
+            dt_begin = dt_end - timedelta(days=3)
+            return dt_begin, dt_end
+        else:
+            dt_now = datetime.now(UTC)
+            dt_friday = dt_now + timedelta(days=4 - dt_now.weekday())
+            dt_begin = datetime(year=dt_friday.year, month=dt_friday.month, day=dt_friday.day, hour=7)
+            return dt_begin, dt_begin + timedelta(days=3)
+
+    @staticmethod
+    def calculate_next_trader_refresh() -> datetime:
         dt_now = datetime.now(UTC)
         if dt_now.weekday() == 1 and dt_now.hour < 8:
-            return datetime(dt_now.year, dt_now.month, dt_now.day, 8)
+            return datetime(year=dt_now.year, month=dt_now.month, day=dt_now.day, hour=8)
         elif dt_now.weekday() == 1 and dt_now.hour >= 8:
             days_until_next_tuesday = 7
             next_tuesday = dt_now + timedelta(days=days_until_next_tuesday)
-            return datetime(next_tuesday.year, next_tuesday.month, next_tuesday.day, 8)
+            return datetime(year=next_tuesday.year, month=next_tuesday.month, day=next_tuesday.day, hour=8)
         else:
             days_until_next_tuesday = (1 - dt_now.weekday() + 7) % 7
             next_tuesday = dt_now + timedelta(days=days_until_next_tuesday)
-            return datetime(next_tuesday.year, next_tuesday.month, next_tuesday.day, 8)
+            return datetime(year=next_tuesday.year, month=next_tuesday.month, day=next_tuesday.day, hour=8)
 
     @staticmethod
-    def get_next_season_end() -> datetime:
-        dt_now = datetime.now(UTC)
-        if dt_now.day == 1 and dt_now.hour < 8:
-            return datetime(dt_now.year, dt_now.month, 1, 8)
-        else:
-            return datetime(
-                year=dt_now.year if dt_now.month < 12 else dt_now.year + 1,
-                month=dt_now.month + 1 if dt_now.month < 12 else 1,
-                day=1,
-                hour=8
-            )
-
-    @staticmethod
-    def get_next_cwl() -> Tuple[datetime, datetime]:
-        dt_now = datetime.now(UTC)
-        if (dt_now.day, dt_now.hour) < (11, 8):
-            return (
-                datetime(dt_now.year, dt_now.month, 1, 8),
-                datetime(dt_now.year, dt_now.month, 11, 8)
-            )
-        else:
-            return (
-                datetime(
-                    year=dt_now.year if dt_now.month < 12 else dt_now.year + 1,
-                    month=dt_now.month + 1 if dt_now.month < 12 else 1,
-                    day=1,
-                    hour=8
-                ),
-                datetime(
-                    year=dt_now.year if dt_now.month < 12 else dt_now.year + 1,
-                    month=dt_now.month + 1 if dt_now.month < 12 else 1,
-                    day=1,
-                    hour=8
-                )
-            )
-
-    @staticmethod
-    def get_next_clan_games() -> Tuple[datetime, datetime]:
+    def calculate_next_clan_games() -> Tuple[datetime, datetime]:
         dt_now = datetime.now(UTC)
         if (dt_now.day, dt_now.hour) < (28, 8):
             return (
-                datetime(dt_now.year, dt_now.month, 22, 8),
-                datetime(dt_now.year, dt_now.month, 28, 8)
+                datetime(year=dt_now.year, month=dt_now.month, day=22, hour=8),
+                datetime(year=dt_now.year, month=dt_now.month, day=28, hour=8)
             )
         else:
             return (
@@ -587,29 +563,65 @@ class OutputFormatter:
             )
 
     @staticmethod
-    def get_next_league_reset() -> datetime:
-        dt_now = datetime.now()
-        last_day_of_month = (dt_now.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-        days_until_last_monday = (last_day_of_month.weekday() - 0) % 7
-        last_monday = last_day_of_month - timedelta(days=days_until_last_monday)
-        return datetime(last_monday.year, last_monday.month, last_monday.day, 5)
-
-    @staticmethod
-    def get_next_raid_weekend() -> Tuple[datetime, datetime]:
+    def calculate_next_cwl() -> Tuple[datetime, datetime]:
         dt_now = datetime.now(UTC)
-        dt_wh = (dt_now.weekday(), dt_now.hour)
-        if dt_wh < (0, 7):
-            dt_end = datetime(year=dt_now.year, month=dt_now.month, day=dt_now.day, hour=7)
-            dt_begin = dt_end - timedelta(days=3)
-            return dt_begin, dt_end
+        if (dt_now.day, dt_now.hour) < (11, 8):
+            return (
+                datetime(year=dt_now.year, month=dt_now.month, day=1, hour=8),
+                datetime(year=dt_now.year, month=dt_now.month, day=11, hour=8)
+            )
         else:
-            dt_now = datetime.now(UTC)
-            dt_friday = dt_now + timedelta(days=4 - dt_now.weekday())
-            dt_begin = datetime(dt_friday.year, dt_friday.month, dt_friday.day, 7)
-            return dt_begin, dt_begin + timedelta(days=3)
+            return (
+                datetime(
+                    year=dt_now.year if dt_now.month < 12 else dt_now.year + 1,
+                    month=dt_now.month + 1 if dt_now.month < 12 else 1,
+                    day=1,
+                    hour=8
+                ),
+                datetime(
+                    year=dt_now.year if dt_now.month < 12 else dt_now.year + 1,
+                    month=dt_now.month + 1 if dt_now.month < 12 else 1,
+                    day=1,
+                    hour=8
+                )
+            )
 
     @staticmethod
-    def load_map_positions(war_clan_members: list) -> dict:
+    def calculate_next_season_end() -> datetime:
+        dt_now = datetime.now(UTC)
+        if (dt_now.day, dt_now.hour) < (1, 8):
+            return datetime(year=dt_now.year, month=dt_now.month, day=1, hour=8)
+        else:
+            return datetime(
+                year=dt_now.year if dt_now.month < 12 else dt_now.year + 1,
+                month=dt_now.month + 1 if dt_now.month < 12 else 1,
+                day=1,
+                hour=8
+            )
+
+    @staticmethod
+    def calculate_next_league_reset(dt_now: Optional[datetime]) -> datetime:
+        dt_now = dt_now or datetime.now(UTC)
+        last_day_of_month = (dt_now.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+        days_after_last_monday = last_day_of_month.weekday() % 7
+        last_monday = last_day_of_month - timedelta(days=days_after_last_monday)
+        last_monday = datetime(year=last_monday.year, month=last_monday.month, day=last_monday.day, hour=5)
+        if dt_now.replace(tzinfo=None) < last_monday:
+            return last_monday
+        else:
+            dt = datetime(
+                year=dt_now.year if dt_now.month < 12 else dt_now.year + 1,
+                month=dt_now.month + 1 if dt_now.month < 12 else 1,
+                day=dt_now.day,
+                hour=dt_now.hour
+            )
+            last_day_of_month = (dt.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
+            days_after_last_monday = last_day_of_month.weekday() % 7
+            last_monday = last_day_of_month - timedelta(days=days_after_last_monday)
+            return datetime(year=last_monday.year, month=last_monday.month, day=last_monday.day, hour=5)
+
+    @staticmethod
+    def calculate_map_positions(war_clan_members: list) -> dict:
         map_position = {}
         for member in war_clan_members:
             map_position[member['tag']] = member['mapPosition']

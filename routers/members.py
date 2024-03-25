@@ -408,28 +408,28 @@ async def events(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[InlineKe
         f'\n'
     )
     datetimes_and_lines = [(
-        dm.of.get_next_trader_refresh(),
-        f'{dm.of.event_datetime(Event.TR, None, None, False, dm.of.get_next_trader_refresh())}\n'
+        dm.of.get_event_datetime(*dm.of.calculate_next_raid_weekend()),
+        f'{dm.of.event_datetime(Event.RW, *map(dm.of.from_datetime, dm.of.calculate_next_raid_weekend()), False)}\n'
         f'\n'
     ), (
-        dm.of.get_next_season_end(),
-        f'{dm.of.event_datetime(Event.SE, None, None, False, dm.of.get_next_season_end())}\n'
+        dm.of.calculate_next_trader_refresh(),
+        f'{dm.of.event_datetime(Event.TR, None, None, False, dm.of.calculate_next_trader_refresh())}\n'
         f'\n'
     ), (
-        dm.of.get_event_datetime(*dm.of.get_next_cwl()),
-        f'{dm.of.event_datetime(Event.CWL, *map(dm.of.from_datetime, dm.of.get_next_cwl()), False)}\n'
+        dm.of.get_event_datetime(*dm.of.calculate_next_clan_games()),
+        f'{dm.of.event_datetime(Event.CG, *map(dm.of.from_datetime, dm.of.calculate_next_clan_games()), False)}\n'
         f'\n'
     ), (
-        dm.of.get_event_datetime(*dm.of.get_next_clan_games()),
-        f'{dm.of.event_datetime(Event.CG, *map(dm.of.from_datetime, dm.of.get_next_clan_games()), False)}\n'
+        dm.of.get_event_datetime(*dm.of.calculate_next_cwl()),
+        f'{dm.of.event_datetime(Event.CWL, *map(dm.of.from_datetime, dm.of.calculate_next_cwl()), False)}\n'
         f'\n'
     ), (
-        dm.of.get_next_league_reset(),
-        f'{dm.of.event_datetime(Event.LR, None, None, False, dm.of.get_next_league_reset())}\n'
+        dm.of.calculate_next_season_end(),
+        f'{dm.of.event_datetime(Event.SE, None, None, False, dm.of.calculate_next_season_end())}\n'
         f'\n'
     ), (
-        dm.of.get_event_datetime(*dm.of.get_next_raid_weekend()),
-        f'{dm.of.event_datetime(Event.RW, *map(dm.of.from_datetime, dm.of.get_next_raid_weekend()), False)}\n'
+        dm.of.calculate_next_league_reset(),
+        f'{dm.of.event_datetime(Event.LR, None, None, False, dm.of.calculate_next_league_reset())}\n'
         f'\n'
     )]
     datetimes_and_lines.sort(key=lambda item: item[0])

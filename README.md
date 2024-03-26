@@ -27,7 +27,7 @@ $ pip install -r requirements.txt
 ```
 ### Create PostgreSQL database
 
-Use ```schema.sql``` to create ```clashwardenbot``` schema and ```update_chat_members.py``` to insert group members to database _(Telegram client required)_
+Use ```schema.sql``` to create schema and ```insert_group_members.py``` to insert group members to database _(Telegram client required)_
 
 
 ### Create and configure `.env` file

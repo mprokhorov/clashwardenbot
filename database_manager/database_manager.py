@@ -542,8 +542,8 @@ class DatabaseManager:
         ''', self.clan_tag, 'clan_war', self.of.to_datetime(cw['startTime']))
         texts = []
         pings = []
-        if (not row['end_message_sent'] and self.of.war_state(cw) == 'warEnded'
-                and self.of.war_state(old_cw) != self.of.war_state(cw)):
+        if (not row['end_message_sent'] and self.of.state(cw) == 'warEnded'
+                and self.of.state(old_cw) != self.of.state(cw)):
             texts.append(
                 f'<b>💬 КВ закончилась</b>\n'
                 f'\n'
@@ -554,7 +554,7 @@ class DatabaseManager:
                 self.clan_tag, 'clan_war', self.of.to_datetime(cw['startTime'])
             )
         elif (not row['half_time_remaining_message_sent']
-              and self.of.war_state(cw) == 'inWar'
+              and self.of.state(cw) == 'inWar'
               and 8 * SECONDS_IN_HOUR <= (
                       self.of.to_datetime(cw['endTime']) - self.of.utc_now()
               ).seconds <= 12 * SECONDS_IN_HOUR):
@@ -567,8 +567,8 @@ class DatabaseManager:
             await self.set_activity_half_time_remaining_message_sent(
                 self.clan_tag, 'clan_war', self.of.to_datetime(cw['startTime'])
             )
-        elif (not row['start_message_sent'] and self.of.war_state(cw) == 'inWar'
-              and self.of.war_state(old_cw) != self.of.war_state(cw)):
+        elif (not row['start_message_sent'] and self.of.state(cw) == 'inWar'
+              and self.of.state(old_cw) != self.of.state(cw)):
             texts.append(
                 f'<b>📣 КВ началась</b>\n'
                 f'\n'
@@ -578,7 +578,7 @@ class DatabaseManager:
             await self.set_activity_start_message_sent(
                 self.clan_tag, 'clan_war', self.of.to_datetime(cw['startTime'])
             )
-        elif (not row['preparation_message_sent'] and self.of.war_state(cw) == 'preparation'
+        elif (not row['preparation_message_sent'] and self.of.state(cw) == 'preparation'
               and old_cw['startTime'] != cw['startTime']):
             texts.append(
                 f'<b>💬 КВ найдена</b>\n'
@@ -769,13 +769,13 @@ class DatabaseManager:
         if clan_war_league_wars is None:
             return None, None
         for day, clan_war_league_war in (list(enumerate(clan_war_league_wars)))[::-1]:
-            if self.of.war_state(clan_war_league_war) == 'inWar':
+            if self.of.state(clan_war_league_war) == 'inWar':
                 return day, clan_war_league_war
         for day, clan_war_league_war in (list(enumerate(clan_war_league_wars)))[::-1]:
-            if self.of.war_state(clan_war_league_war) == 'preparation':
+            if self.of.state(clan_war_league_war) == 'preparation':
                 return day, clan_war_league_war
         for day, clan_war_league_war in (list(enumerate(clan_war_league_wars)))[::-1]:
-            if self.of.war_state(clan_war_league_war) == 'warEnded':
+            if self.of.state(clan_war_league_war) == 'warEnded':
                 return day, clan_war_league_war
         for day, clan_war_league_war in enumerate(clan_war_league_wars):
             return day, clan_war_league_war
@@ -832,41 +832,41 @@ class DatabaseManager:
         ''', self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['startTime']))
         texts = []
         pings = []
-        if (not row['end_message_sent'] and self.of.war_state(cwlw) == 'warEnded'
-                and self.of.war_state(old_cwlw) != self.of.war_state(cwlw)):
+        if (not row['end_message_sent'] and self.of.state(cwlw) == 'warEnded'
+                and self.of.state(old_cwlw) != self.of.state(cwlw)):
             texts.append(
                 f'<b>💬 День ЛВК закончился</b>\n'
                 f'\n'
-                f'{self.of.cwlw_war_ended(cwlw, cwl_season, cwl_day)}'
+                f'{self.of.cwlw_in_war_or_ended(cwlw, cwl_season, cwl_day)}'
             )
             pings.append(False)
             await self.set_activity_end_message_sent(
                 self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['startTime'])
             )
         elif (not row['half_time_remaining_message_sent']
-              and self.of.war_state(cwlw) == 'inWar'
+              and self.of.state(cwlw) == 'inWar'
               and 8 * HOUR <= (self.of.to_datetime(cwlw['endTime']) - self.of.utc_now()).seconds <= 12 * HOUR):
             texts.append(
                 f'<b>📣 До конца дня ЛВК осталось менее 12 часов</b>\n'
                 f'\n'
-                f'{self.of.cwlw_in_war(cwlw, cwl_season, cwl_day)}'
+                f'{self.of.cwlw_in_war_or_ended(cwlw, cwl_season, cwl_day)}'
             )
             pings.append(True)
             await self.set_activity_half_time_remaining_message_sent(
                 self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['startTime'])
             )
-        elif (not row['start_message_sent'] and self.of.war_state(cwlw) == 'inWar'
-              and self.of.war_state(old_cwlw) != self.of.war_state(cwlw)):
+        elif (not row['start_message_sent'] and self.of.state(cwlw) == 'inWar'
+              and self.of.state(old_cwlw) != self.of.state(cwlw)):
             texts.append(
                 f'<b>📣 День ЛВК начался</b>\n'
                 f'\n'
-                f'{self.of.cwlw_in_war(cwlw, cwl_season, cwl_day)}'
+                f'{self.of.cwlw_in_war_or_ended(cwlw, cwl_season, cwl_day)}'
             )
             pings.append(True)
             await self.set_activity_start_message_sent(
                 self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['startTime'])
             )
-        elif (not row['preparation_message_sent'] and self.of.war_state(cwlw) == 'preparation'
+        elif (not row['preparation_message_sent'] and self.of.state(cwlw) == 'preparation'
               and old_cwlw['startTime'] != cwlw['startTime']):
             texts.append(
                 f'<b>💬 Подготовка ко дню ЛВК началась</b>\n'
@@ -1042,7 +1042,7 @@ class DatabaseManager:
                 player
                 JOIN player_bot_user USING (clan_tag, player_tag)
                 JOIN bot_user USING (clan_tag, chat_id, user_id)
-            WHERE clan_tag = $1 AND is_player_in_clan AND chat_id = $2 AND user_id = $3 AND is_user_in_chat
+            WHERE (clan_tag, chat_id, user_id) IN (($1, $2, $3), ($1, $3, $3)) AND is_player_in_clan AND is_user_in_chat
         ''', self.clan_tag, chat_id, user_id)
         return player_tag in [row['player_tag'] for row in rows]
 

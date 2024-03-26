@@ -18,11 +18,10 @@ async def raids_info(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[Inli
         f'\n'
     )
     raid = await dm.load_raid_weekend()
-    if raid and raid['state'] in ['ongoing', 'ended']:
+    if dm.of.state(raid) in ['ongoing', 'ended']:
         text += dm.of.raid_ongoing_or_ended(raid)
     else:
         text += 'Информация о рейдах отсутствует\n'
-        return text, ParseMode.HTML, None
     return text, ParseMode.HTML, None
 
 
@@ -32,14 +31,7 @@ async def raids_attacks(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[I
         f'\n'
     )
     raid = await dm.load_raid_weekend()
-    if raid is None:
-        text += f'Информация о рейдах отсутствует'
-        return text, ParseMode.HTML, None
-    if raid['state'] in ['ongoing', 'ended']:
-        text += (
-            f'{dm.of.raid_ongoing_or_ended(raid)}'
-            f'\n'
-        )
+    if dm.of.state(raid) in ['ongoing', 'ended']:
         RaidMember = namedtuple(
             typename='AllegedRaidMember', field_names='player_tag attacks_spent attacks_limit gold_looted'
         )
@@ -67,8 +59,11 @@ async def raids_attacks(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[I
                 raid_members.append(
                     RaidMember(player_tag=row['player_tag'], attacks_spent=0, attacks_limit=6, gold_looted=0)
                 )
-
         raid_members.sort(key=lambda rm: (-rm.gold_looted, dm.load_name(rm.player_tag)))
+        text += (
+            f'{dm.of.raid_ongoing_or_ended(raid)}'
+            f'\n'
+        )
         for i, raid_member in enumerate(raid_members):
             text += (
                 f'{i + 1}) {dm.of.to_html(dm.load_name(raid_member.player_tag))}: '
@@ -82,7 +77,7 @@ async def raids_attacks(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[I
     return text, ParseMode.HTML, None
 
 
-async def raids_skips(
+async def raids_skips_raids_ping(
         dm: DatabaseManager, message: Message, ping: bool
 ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     if ping:
@@ -96,14 +91,7 @@ async def raids_skips(
             f'\n'
         )
     raid = await dm.load_raid_weekend()
-    if raid is None:
-        text += 'Информация о рейдах отсутствует'
-        return text, ParseMode.HTML, None
-    if raid['state'] in ['ongoing', 'ended']:
-        text += (
-            f'{dm.of.event_datetime(Event.RW, raid['startTime'], raid['endTime'], True)}\n'
-            f'\n'
-        )
+    if dm.of.state(raid) in ['ongoing', 'ended']:
         AllegedRaidMember = namedtuple(
             typename='AllegedRaidMember', field_names='player_tag attacks_spent attacks_limit'
         )
@@ -130,6 +118,10 @@ async def raids_skips(
             alleged_raid_members.append(
                 AllegedRaidMember(player_tag=row['player_tag'], attacks_spent=0, attacks_limit=6)
             )
+        text += (
+            f'{dm.of.event_datetime(Event.RW, raid['startTime'], raid['endTime'], False)}\n'
+            f'\n'
+        )
         text += await dm.print_skips(message, alleged_raid_members, ping, attacks_limit=5 if ping else 6)
     else:
         text += 'Информация о рейдах отсутствует\n'
@@ -142,10 +134,7 @@ async def raids_analysis(dm: DatabaseManager) -> Tuple[str, ParseMode, Optional[
         f'<b>📊 Анализ атак в рейдах</b>\n'
         f'\n'
     )
-    if raid is None:
-        text += f'Информация о рейдах отсутствует'
-        return text, ParseMode.HTML, None
-    if raid['state'] in ['ongoing', 'ended']:
+    if dm.of.state(raid) in ['ongoing', 'ended']:
         text += (
             f'{dm.of.event_datetime(Event.RW, raid['startTime'], raid['endTime'], True)}\n'
             f'\n'
@@ -221,7 +210,7 @@ async def command_raids_attacks(message: Message, dm: DatabaseManager) -> None:
 
 @router.message(Command('raids_skips'))
 async def command_raids_skips(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, keyboard = await raids_skips(dm, message, ping=False)
+    text, parse_mode, keyboard = await raids_skips_raids_ping(dm, message, ping=False)
     await message.reply(text=text, parse_mode=parse_mode, keyboard=keyboard)
 
 
@@ -233,7 +222,7 @@ async def command_raids_ping(message: Message, dm: DatabaseManager) -> None:
     elif not user_can_ping_group_members:
         await message.reply(text=f'Эта команда не работает для вас')
     else:
-        text, parse_mode, keyboard = await raids_skips(dm, message, ping=True)
+        text, parse_mode, keyboard = await raids_skips_raids_ping(dm, message, ping=True)
         await message.reply(text=text, parse_mode=parse_mode, keyboard=keyboard)
 
 

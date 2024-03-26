@@ -85,24 +85,6 @@ class OutputFormatter:
         return district_in_russian[district_data]
 
     @staticmethod
-    def next_clan_games_datetime() -> datetime:
-        dt_now = datetime.now(UTC)
-        if dt_now.day > 22 or dt_now.day == 22 and dt_now.hour >= 7:
-            return datetime(
-                year=dt_now.year if dt_now.month < 12 else dt_now.year + 1,
-                month=dt_now.month + 1 if dt_now.month < 12 else 1,
-                day=22,
-                hour=7
-            )
-        else:
-            return datetime(
-                year=dt_now.year,
-                month=dt_now.month,
-                day=22,
-                hour=7
-            )
-
-    @staticmethod
     def get_capital_gold_emoji():
         return f'<tg-emoji emoji-id="{config.capital_gold_emoji_id.get_secret_value()}">🟡</tg-emoji>'
 
@@ -415,15 +397,26 @@ class OutputFormatter:
             return dt_end
 
     @staticmethod
-    def war_state(war: dict) -> str:
-        return war['state']
+    def state(event: Optional[dict]) -> Optional[str]:
+        return event['state'] if event else None
+
+    @staticmethod
+    def war_result(war: dict) -> str:
+        clan_result = (war['clan']['stars'], war['clan']['destructionPercentage'])
+        opponent_result = (war['opponent']['stars'], war['opponent']['destructionPercentage'])
+        if clan_result > opponent_result:
+            return f'🎉 Победа!\n'
+        elif clan_result < opponent_result:
+            return f'😢 Поражение\n'
+        else:
+            return f'⚖️ Ничья\n'
 
     def cw_preparation(self, cw: dict) -> str:
         text = (
-            f'{self.event_datetime(Event.CW, cw['startTime'], cw['endTime'], True)}\n'
-            f'\n'
             f'{self.to_html(cw['clan']['name'])} vs {self.to_html(cw['opponent']['name'])}\n'
             f'{cw['teamSize']} 🪖 vs {cw['teamSize']} 🪖\n'
+            f'\n'
+            f'{self.event_datetime(Event.CW, cw['startTime'], cw['endTime'], False)}\n'
         )
         return text
 
@@ -438,34 +431,21 @@ class OutputFormatter:
             f'{format(cw['clan']['destructionPercentage'], '.2f')}% vs '
             f'{format(cw['opponent']['destructionPercentage'], '.2f')}%\n'
         )
-        if self.war_state(cw) == 'warEnded':
+        if self.state(cw) == 'warEnded':
             text += self.war_result(cw)
         return text
 
-    @staticmethod
-    def war_result(war: dict) -> str:
-        if (war['clan']['stars'], war['clan']['destructionPercentage']) > (
-                war['opponent']['stars'], war['opponent']['destructionPercentage']
-        ):
-            return f'🎉 Победа!\n'
-        elif (war['clan']['stars'], war['clan']['destructionPercentage']) < (
-                war['opponent']['stars'], war['opponent']['destructionPercentage']
-        ):
-            return f'😢 Поражение\n'
-        else:
-            return f'⚖️ Ничья\n'
-
     def cwlw_preparation(self, cwlw: dict, cwl_season: str, cwl_day: int) -> str:
         text = (
-            f'{self.event_datetime(Event.CWLW, cwlw['startTime'], cwlw['endTime'], True)}\n'
-            f'\n'
             f'Сезон ЛВК: {self.season(cwl_season)}, день {cwl_day + 1}\n'
             f'{self.to_html(cwlw['clan']['name'])} vs {self.to_html(cwlw['opponent']['name'])}\n'
             f'{cwlw['teamSize']} 🪖 vs {cwlw['teamSize']} 🪖\n'
+            f'\n'
+            f'{self.event_datetime(Event.CW, cwlw['startTime'], cwlw['endTime'], False)}\n'
         )
         return text
 
-    def cwlw_in_war(self, cwlw: dict, cwl_season: str, cwl_day: int) -> str:
+    def cwlw_in_war_or_ended(self, cwlw: dict, cwl_season: str, cwl_day: int) -> str:
         text = (
             f'{self.event_datetime(Event.CWLW, cwlw['startTime'], cwlw['endTime'], True)}\n'
             f'\n'
@@ -477,18 +457,8 @@ class OutputFormatter:
             f'{format(cwlw['clan']['destructionPercentage'], '.2f')}% vs '
             f'{format(cwlw['opponent']['destructionPercentage'], '.2f')}%\n'
         )
-        return text
-
-    def cwlw_war_ended(self, cwlw: dict, cwl_season: str, cwl_day: int) -> str:
-        text = self.cwlw_in_war(cwlw, cwl_season, cwl_day)
-        if (cwlw['clan']['stars'], cwlw['clan']['destructionPercentage']) > (
-                cwlw['opponent']['stars'], cwlw['opponent']['destructionPercentage']):
-            text += f'🎉 Победа!'
-        elif (cwlw['clan']['stars'], cwlw['clan']['destructionPercentage']) < (
-                cwlw['opponent']['stars'], cwlw['opponent']['destructionPercentage']):
-            text += f'😢 Поражение'
-        else:
-            text += f'⚖️ Ничья'
+        if self.state(cwlw) == 'warEnded':
+            text += self.war_result(cwlw)
         return text
 
     def raid_ongoing_or_ended(self, raid: dict) -> str:
@@ -600,8 +570,8 @@ class OutputFormatter:
             )
 
     @staticmethod
-    def calculate_next_league_reset(dt_now: Optional[datetime]) -> datetime:
-        dt_now = dt_now or datetime.now(UTC)
+    def calculate_next_league_reset() -> datetime:
+        dt_now = datetime.now(UTC)
         last_day_of_month = (dt_now.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
         days_after_last_monday = last_day_of_month.weekday() % 7
         last_monday = last_day_of_month - timedelta(days=days_after_last_monday)

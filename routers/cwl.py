@@ -32,9 +32,9 @@ class CWLCallbackFactory(CallbackData, prefix='cwl'):
     cwl_day: Optional[int] = None
 
 
-async def cwl_info(dm: DatabaseManager,
-                   cwl_day: Optional[int] = None
-                   ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+async def cwl_info(
+        dm: DatabaseManager, cwl_day: Optional[int] = None
+) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = (
         f'<b>⚔️ Информация о ЛВК</b>\n'
         f'\n'
@@ -44,149 +44,41 @@ async def cwl_info(dm: DatabaseManager,
     else:
         cwl_day, cwlw = cwl_day, (await dm.load_clan_war_league_own_wars())[cwl_day]
     cwl_season, _ = await dm.load_clan_war_league()
-    if cwlw and dm.of.war_state(cwlw) == 'preparation':
+    if cwlw and dm.of.state(cwlw) == 'preparation':
         text += dm.of.cwlw_preparation(cwlw, cwl_season, cwl_day)
-    elif cwlw and dm.of.war_state(cwlw) == 'inWar':
-        text += dm.of.cwlw_in_war(cwlw, cwl_season, cwl_day)
-    elif cwlw and dm.of.war_state(cwlw) == 'warEnded':
-        text += dm.of.cwlw_war_ended(cwlw, cwl_season, cwl_day)
+    elif cwlw and dm.of.state(cwlw) == 'inWar':
+        text += dm.of.cwlw_in_war_or_ended(cwlw, cwl_season, cwl_day)
+    elif cwlw and dm.of.state(cwlw) == 'warEnded':
+        text += dm.of.cwlw_in_war_or_ended(cwlw, cwl_season, cwl_day)
     else:
         text += f'Информация о ЛВК отсутствует\n'
-        return text, ParseMode.HTML, None
-    previous_cwl_day_button = InlineKeyboardButton(
-        text='⬅️',
-        callback_data=CWLCallbackFactory(
-            action=Action.cwl_info_day,
-            cwl_day=cwl_day - 1
-        ).pack())
-    next_cwl_day_button = InlineKeyboardButton(
-        text='➡️',
-        callback_data=CWLCallbackFactory(
-            action=Action.cwl_info_day,
-            cwl_day=cwl_day + 1
-        ).pack())
-    all_cwl_days_button = InlineKeyboardButton(
-        text='🧾 Все дни',
-        callback_data=CWLCallbackFactory(
-            action=Action.cwl_info_days_list,
-        ).pack())
-    keyboard_row = []
-    if cwl_day > 0:
-        keyboard_row.append(previous_cwl_day_button)
-    if cwl_day < len(await dm.load_clan_war_league_own_wars()) - 1:
-        keyboard_row.append(next_cwl_day_button)
-    keyboard_row.append(all_cwl_days_button)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[keyboard_row])
-    return text, ParseMode.HTML, keyboard
-
-
-async def cwl_attacks(dm: DatabaseManager, cwl_day: Optional[int] = None):
-    if cwl_day is None:
-        cwl_day, cwlw = await dm.load_clan_war_league_own_war()
+    if cwlw:
+        previous_cwl_day_button = InlineKeyboardButton(
+            text='⬅️',
+            callback_data=CWLCallbackFactory(
+                action=Action.cwl_info_day,
+                cwl_day=cwl_day - 1
+            ).pack())
+        next_cwl_day_button = InlineKeyboardButton(
+            text='➡️',
+            callback_data=CWLCallbackFactory(
+                action=Action.cwl_info_day,
+                cwl_day=cwl_day + 1
+            ).pack())
+        all_cwl_days_button = InlineKeyboardButton(
+            text='🧾 Все дни',
+            callback_data=CWLCallbackFactory(
+                action=Action.cwl_info_days_list,
+            ).pack())
+        keyboard_row = []
+        if cwl_day > 0:
+            keyboard_row.append(previous_cwl_day_button)
+        if cwl_day < len(await dm.load_clan_war_league_own_wars()) - 1:
+            keyboard_row.append(next_cwl_day_button)
+        keyboard_row.append(all_cwl_days_button)
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[keyboard_row])
     else:
-        cwl_day, cwlw = cwl_day, (await dm.load_clan_war_league_own_wars())[cwl_day]
-    cwl_season, _ = await dm.load_clan_war_league()
-    text = (f'<b>🗡️ Атаки в ЛВК</b>\n'
-            f'\n')
-    if cwlw is None:
-        text += f'Информация о ЛВК отсутствует'
-        return text, ParseMode.HTML, None
-    if dm.of.war_state(cwlw) in ['preparation']:
-        text += (
-            f'{dm.of.event_datetime(Event.CWLW, cwlw['startTime'], cwlw['endTime'], True)}\n'
-            f'\n'
-            f'Сезон ЛВК: {dm.of.season(cwl_season)}, день {cwl_day + 1}\n'
-            f'{dm.of.to_html(cwlw['clan']['name'])} vs {dm.of.to_html(cwlw['opponent']['name'])}\n'
-            f'{cwlw['teamSize']} 🪖 vs {cwlw['teamSize']} 🪖\n'
-            f'\n'
-        )
-        rows = await dm.acquired_connection.fetch('''
-            SELECT player_tag, player_name, town_hall_level,
-                   barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
-            FROM player
-            WHERE clan_tag = $1
-        ''', dm.clan_tag)
-        cwlw_member_info = {
-            row['player_tag']: (
-                f'{dm.of.to_html(row['player_name'])} {dm.of.get_player_info_with_emoji(
-                    row['town_hall_level'],
-                    row['barbarian_king_level'],
-                    row['archer_queen_level'],
-                    row['grand_warden_level'],
-                    row['royal_champion_level']
-                )}'
-            )
-            for row in rows
-        }
-        clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
-        cwlw_member_lines = [''] * len(clan_map_position_by_player)
-        for member in cwlw['clan']['members']:
-            cwlw_member_lines[clan_map_position_by_player[member['tag']] - 1] = (
-                f'{clan_map_position_by_player[member['tag']]}) '
-                f'{cwlw_member_info.get(member['tag']) or dm.of.to_html(member['name'])}\n'
-            )
-        text += ''.join(cwlw_member_lines)
-    elif dm.of.war_state(cwlw) in ['inWar', 'warEnded']:
-        text += (
-            f'{dm.of.event_datetime(Event.CWLW, cwlw['startTime'], cwlw['endTime'], True)}\n'
-            f'\n'
-            f'Сезон ЛВК: {dm.of.season(cwl_season)}, день {cwl_day + 1}\n'
-            f'{dm.of.to_html(cwlw['clan']['name'])} vs {dm.of.to_html(cwlw['opponent']['name'])}\n'
-            f'{cwlw['teamSize']} 🪖 vs {cwlw['teamSize']} 🪖\n'
-            f'{cwlw['clan']['attacks']} 🗡 vs {cwlw['opponent']['attacks']} 🗡\n'
-            f'{cwlw['clan']['stars']} ⭐ vs {cwlw['opponent']['stars']} ⭐\n'
-            f'{format(cwlw['clan']['destructionPercentage'], '.2f')}% vs '
-            f'{format(cwlw['opponent']['destructionPercentage'], '.2f')}%\n'
-        )
-        if dm.of.war_state(cwlw) == 'warEnded':
-            text += dm.of.war_result(cwlw)
-        text += f'\n'
-        clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
-        opponent_map_position_by_player = dm.of.calculate_map_positions(cwlw['opponent']['members'])
-        cwlw_member_lines = [''] * len(clan_map_position_by_player)
-        for member in cwlw['clan']['members']:
-            cwlw_member_lines[clan_map_position_by_player[member['tag']] - 1] += (
-                f'{clan_map_position_by_player[member['tag']]}) '
-                f'{dm.of.to_html(member['name'])}: {len(member.get('attacks', []))} / 1\n'
-            )
-            for attack in member.get('attacks', []):
-                if attack['stars'] != 0:
-                    cwlw_member_lines[clan_map_position_by_player[member['tag']] - 1] += (
-                        f'{'⭐' * attack['stars']} ({attack['destructionPercentage']}%) '
-                        f'➡️ {opponent_map_position_by_player[attack['defenderTag']]}\n'
-                    )
-                else:
-                    cwlw_member_lines[clan_map_position_by_player[member['tag']] - 1] += (
-                        f'{attack['destructionPercentage']}% '
-                        f'➡️ {opponent_map_position_by_player[attack['defenderTag']]}\n'
-                    )
-        text += '\n'.join(cwlw_member_lines)
-    else:
-        text += f'Информация о ЛВК отсутствует\n'
-    previous_cwl_day_button = InlineKeyboardButton(
-        text='⬅️',
-        callback_data=CWLCallbackFactory(
-            action=Action.cwl_attacks_day,
-            cwl_day=cwl_day - 1
-        ).pack())
-    next_cwl_day_button = InlineKeyboardButton(
-        text='➡️',
-        callback_data=CWLCallbackFactory(
-            action=Action.cwl_attacks_day,
-            cwl_day=cwl_day + 1
-        ).pack())
-    all_cwl_days_button = InlineKeyboardButton(
-        text='🧾 Все дни',
-        callback_data=CWLCallbackFactory(
-            action=Action.cwl_attacks_days_list,
-        ).pack())
-    keyboard_row = []
-    if cwl_day > 0:
-        keyboard_row.append(previous_cwl_day_button)
-    if cwl_day < len(await dm.load_clan_war_league_own_wars()) - 1:
-        keyboard_row.append(next_cwl_day_button)
-    keyboard_row.append(all_cwl_days_button)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[keyboard_row])
+        keyboard = None
     return text, ParseMode.HTML, keyboard
 
 
@@ -202,58 +94,9 @@ async def cwl_map(
         f'<b>🗺️ Карта ЛВК</b>\n'
         f'\n'
     )
-    if cwlw is None:
-        text += f'Информация о ЛВК отсутствует'
-        return text, ParseMode.HTML, None
-    if dm.of.war_state(cwlw) in ['preparation']:
-        text += (
-            f'{dm.of.event_datetime(Event.CWLW, cwlw['startTime'], cwlw['endTime'], True)}\n'
-            f'\n'
-            f'Сезон ЛВК: {dm.of.season(cwl_season)}, день {cwl_day + 1}\n'
-            f'{dm.of.to_html(cwlw['clan']['name'])} vs {dm.of.to_html(cwlw['opponent']['name'])}\n'
-            f'{cwlw['teamSize']} 🪖 vs {cwlw['teamSize']} 🪖\n'
-            f'\n'
-        )
-        rows = await dm.acquired_connection.fetch('''
-            SELECT player_tag, player_name, town_hall_level,
-                   barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
-            FROM player
-            WHERE clan_tag = $1
-        ''', dm.clan_tag)
-        cwlw_member_info = {
-            row['player_tag']: (
-                f'{dm.of.to_html(row['player_name'])} {dm.of.get_player_info_with_emoji(
-                    row['town_hall_level'],
-                    row['barbarian_king_level'],
-                    row['archer_queen_level'],
-                    row['grand_warden_level'],
-                    row['royal_champion_level']
-                )}'
-            )
-            for row in rows
-        }
-        clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
-        cwlw_member_lines = [''] * len(clan_map_position_by_player)
-        for member in cwlw['clan']['members']:
-            cwlw_member_lines[clan_map_position_by_player[member['tag']] - 1] = (
-                f'{clan_map_position_by_player[member['tag']]}) '
-                f'{cwlw_member_info.get(member['tag']) or dm.of.to_html(member['name'])}\n'
-            )
-        text += ''.join(cwlw_member_lines)
-    elif dm.of.war_state(cwlw) in ['inWar', 'warEnded']:
-        text += (
-            f'{dm.of.event_datetime(Event.CWLW, cwlw['startTime'], cwlw['endTime'], True)}\n'
-            f'\n'
-            f'{dm.of.to_html(cwlw['clan']['name'])} vs {dm.of.to_html(cwlw['opponent']['name'])}\n'
-            f'{cwlw['teamSize']} 🪖 vs {cwlw['teamSize']} 🪖\n'
-            f'{cwlw['clan']['attacks']} 🗡 vs {cwlw['opponent']['attacks']} 🗡\n'
-            f'{cwlw['clan']['stars']} ⭐ vs {cwlw['opponent']['stars']} ⭐\n'
-            f'{format(cwlw['clan']['destructionPercentage'], '.2f')}% vs '
-            f'{format(cwlw['opponent']['destructionPercentage'], '.2f')}%\n'
-        )
-        if dm.of.war_state(cwlw) == 'warEnded':
-            text += dm.of.war_result(cwlw)
-        text += f'\n'
+    if dm.of.state(cwlw) in ['preparation']:
+        text += dm.of.cwlw_preparation(cwlw, cwl_season, cwl_day)
+    elif dm.of.state(cwlw) in ['inWar', 'warEnded']:
         clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
         opponent_map_position_by_player = dm.of.calculate_map_positions(cwlw['opponent']['members'])
         opponent_member_lines = [''] * len(clan_map_position_by_player)
@@ -277,33 +120,139 @@ async def cwl_map(
                 opponent_member_lines[opponent_map_position_by_player[opponent_member['tag']] - 1] += (
                     f'{opponent_map_position_by_player[opponent_member['tag']]}) 0%'
                 )
-        text += '\n'.join(opponent_member_lines)
+        text += (
+            f'{dm.of.cwlw_in_war_or_ended(cwlw, cwl_season, cwl_day)}'
+            f'\n'
+            f'{'\n'.join(opponent_member_lines)}'
+        )
     else:
         text += f'Информация о ЛВК отсутствует\n'
-    previous_cwl_day_button = InlineKeyboardButton(
-        text='⬅️',
-        callback_data=CWLCallbackFactory(
-            action=Action.cwl_map_day,
-            cwl_day=cwl_day - 1
-        ).pack())
-    next_cwl_day_button = InlineKeyboardButton(
-        text='➡️',
-        callback_data=CWLCallbackFactory(
-            action=Action.cwl_map_day,
-            cwl_day=cwl_day + 1
-        ).pack())
-    all_cwl_days_button = InlineKeyboardButton(
-        text='🧾 Все дни',
-        callback_data=CWLCallbackFactory(
-            action=Action.cwl_map_days_list,
-        ).pack())
-    keyboard_row = []
-    if cwl_day > 0:
-        keyboard_row.append(previous_cwl_day_button)
-    if cwl_day < len(await dm.load_clan_war_league_own_wars()) - 1:
-        keyboard_row.append(next_cwl_day_button)
-    keyboard_row.append(all_cwl_days_button)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[keyboard_row])
+    if cwlw:
+        previous_cwl_day_button = InlineKeyboardButton(
+            text='⬅️',
+            callback_data=CWLCallbackFactory(
+                action=Action.cwl_map_day,
+                cwl_day=cwl_day - 1
+            ).pack())
+        next_cwl_day_button = InlineKeyboardButton(
+            text='➡️',
+            callback_data=CWLCallbackFactory(
+                action=Action.cwl_map_day,
+                cwl_day=cwl_day + 1
+            ).pack())
+        all_cwl_days_button = InlineKeyboardButton(
+            text='🧾 Все дни',
+            callback_data=CWLCallbackFactory(
+                action=Action.cwl_map_days_list,
+            ).pack())
+        keyboard_row = []
+        if cwl_day > 0:
+            keyboard_row.append(previous_cwl_day_button)
+        if cwl_day < len(await dm.load_clan_war_league_own_wars()) - 1:
+            keyboard_row.append(next_cwl_day_button)
+        keyboard_row.append(all_cwl_days_button)
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[keyboard_row])
+    else:
+        keyboard = None
+    return text, ParseMode.HTML, keyboard
+
+
+async def cwl_attacks(dm: DatabaseManager, cwl_day: Optional[int] = None):
+    if cwl_day is None:
+        cwl_day, cwlw = await dm.load_clan_war_league_own_war()
+    else:
+        cwl_day, cwlw = cwl_day, (await dm.load_clan_war_league_own_wars())[cwl_day]
+    cwl_season, _ = await dm.load_clan_war_league()
+    text = (
+        f'<b>🗡️ Атаки в ЛВК</b>\n'
+        f'\n'
+    )
+    if dm.of.state(cwlw) in ['preparation']:
+        rows = await dm.acquired_connection.fetch('''
+            SELECT player_tag, player_name, town_hall_level,
+                   barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+            FROM player
+            WHERE clan_tag = $1
+        ''', dm.clan_tag)
+        cwlw_member_info = {
+            row['player_tag']: (
+                f'{dm.of.to_html(row['player_name'])} {dm.of.get_player_info_with_emoji(
+                    row['town_hall_level'],
+                    row['barbarian_king_level'],
+                    row['archer_queen_level'],
+                    row['grand_warden_level'],
+                    row['royal_champion_level']
+                )}'
+            )
+            for row in rows
+        }
+        clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
+        cwlw_member_lines = [''] * len(clan_map_position_by_player)
+        for member in cwlw['clan']['members']:
+            cwlw_member_lines[clan_map_position_by_player[member['tag']] - 1] = (
+                f'{clan_map_position_by_player[member['tag']]}) '
+                f'{cwlw_member_info.get(member['tag']) or dm.of.to_html(member['name'])}'
+            )
+        text += (
+            f'{dm.of.cwlw_preparation(cwlw, cwl_season, cwl_day)}'
+            f'\n'
+            f'Список участников:\n'
+            f'{'\n'.join(cwlw_member_lines)}'
+        )
+    elif dm.of.state(cwlw) in ['inWar', 'warEnded']:
+        clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
+        opponent_map_position_by_player = dm.of.calculate_map_positions(cwlw['opponent']['members'])
+        cwlw_member_lines = [''] * len(clan_map_position_by_player)
+        for member in cwlw['clan']['members']:
+            cwlw_member_lines[clan_map_position_by_player[member['tag']] - 1] += (
+                f'{clan_map_position_by_player[member['tag']]}) '
+                f'{dm.of.to_html(member['name'])}: {len(member.get('attacks', []))} / 1\n'
+            )
+            for attack in member.get('attacks', []):
+                if attack['stars'] != 0:
+                    cwlw_member_lines[clan_map_position_by_player[member['tag']] - 1] += (
+                        f'{'⭐' * attack['stars']} ({attack['destructionPercentage']}%) '
+                        f'➡️ {opponent_map_position_by_player[attack['defenderTag']]}\n'
+                    )
+                else:
+                    cwlw_member_lines[clan_map_position_by_player[member['tag']] - 1] += (
+                        f'{attack['destructionPercentage']}% '
+                        f'➡️ {opponent_map_position_by_player[attack['defenderTag']]}\n'
+                    )
+        text += (
+            f'{dm.of.cwlw_in_war_or_ended(cwlw, cwl_season, cwl_day)}'
+            f'\n'
+            f'{'\n'.join(cwlw_member_lines)}'
+        )
+    else:
+        text += f'Информация о ЛВК отсутствует\n'
+    if cwlw:
+        previous_cwl_day_button = InlineKeyboardButton(
+            text='⬅️',
+            callback_data=CWLCallbackFactory(
+                action=Action.cwl_attacks_day,
+                cwl_day=cwl_day - 1
+            ).pack())
+        next_cwl_day_button = InlineKeyboardButton(
+            text='➡️',
+            callback_data=CWLCallbackFactory(
+                action=Action.cwl_attacks_day,
+                cwl_day=cwl_day + 1
+            ).pack())
+        all_cwl_days_button = InlineKeyboardButton(
+            text='🧾 Все дни',
+            callback_data=CWLCallbackFactory(
+                action=Action.cwl_attacks_days_list,
+            ).pack())
+        keyboard_row = []
+        if cwl_day > 0:
+            keyboard_row.append(previous_cwl_day_button)
+        if cwl_day < len(await dm.load_clan_war_league_own_wars()) - 1:
+            keyboard_row.append(next_cwl_day_button)
+        keyboard_row.append(all_cwl_days_button)
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[keyboard_row])
+    else:
+        keyboard = None
     return text, ParseMode.HTML, keyboard
 
 
@@ -343,20 +292,20 @@ async def cwl_days_list(dm: DatabaseManager, action: Action) -> Tuple[str, Parse
     cwl_day_titles = []
     for cwl_war in cwl_wars:
         cwl_clan, cwl_opponent = cwl_war['clan'], cwl_war['opponent']
-        if dm.of.war_state(cwl_war) == 'notInWar':
+        if dm.of.state(cwl_war) == 'notInWar':
             cwl_day_emoji = ''
-        elif dm.of.war_state(cwl_war) == 'warEnded':
-            if (cwl_clan['stars'], cwl_clan['destructionPercentage']) > (
-                    cwl_opponent['stars'], cwl_opponent['destructionPercentage']):
+        elif dm.of.state(cwl_war) == 'warEnded':
+            clan_result = (cwl_clan['stars'], cwl_clan['destructionPercentage'])
+            opponent_result = (cwl_opponent['stars'], cwl_opponent['destructionPercentage'])
+            if clan_result > opponent_result:
                 cwl_day_emoji = '✅ '
-            elif (cwl_clan['stars'], cwl_clan['destructionPercentage']) < (
-                    cwl_opponent['stars'], cwl_opponent['destructionPercentage']):
+            elif clan_result < opponent_result:
                 cwl_day_emoji = '❌ '
             else:
                 cwl_day_emoji = '🟰 '
-        elif dm.of.war_state(cwl_war) == 'inWar':
+        elif dm.of.state(cwl_war) == 'inWar':
             cwl_day_emoji = '🗡 '
-        elif dm.of.war_state(cwl_war) == 'preparation':
+        elif dm.of.state(cwl_war) == 'preparation':
             cwl_day_emoji = '⚙️ '
         else:
             cwl_day_emoji = '❓ '
@@ -367,14 +316,15 @@ async def cwl_days_list(dm: DatabaseManager, action: Action) -> Tuple[str, Parse
             callback_data=CWLCallbackFactory(
                 action=button_action,
                 cwl_day=i
-            ).pack())] for i, cwl_day_title in enumerate(cwl_day_titles)
+            ).pack())]
+        for i, cwl_day_title in enumerate(cwl_day_titles)
     ])
     return text, ParseMode.HTML, keyboard
 
 
-async def cwl_skips(
+async def cwl_skips_cwl_ping(
         dm: DatabaseManager, message: Message, ping: bool
-                    ) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+) -> Tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     if ping:
         text = (
             f'<b>🔔 Напоминание об атаках в ЛВК</b>\n'
@@ -386,16 +336,10 @@ async def cwl_skips(
             f'\n'
         )
     cwl_day, cwlw = await dm.load_clan_war_league_own_war()
-    if cwlw is None:
-        text += 'Информация о ЛВК отсутствует'
-        return text, ParseMode.HTML, None
-    if dm.of.war_state(cwlw) in ['inWar', 'warEnded']:
+    if dm.of.state(cwlw) in ['preparation']:
+        text += f'{dm.of.event_datetime(Event.CWLW, cwlw['startTime'], cwlw['endTime'], False)}\n'
+    if dm.of.state(cwlw) in ['inWar', 'warEnded']:
         cwl_season, _ = await dm.load_clan_war_league()
-        text += (
-            f'Сезон: {dm.of.season(cwl_season)}, день {cwl_day + 1}\n'
-            f'{dm.of.event_datetime(Event.CWLW, cwlw['startTime'], cwlw['endTime'], False)}\n'
-            f'\n'
-        )
         CWLWMember = namedtuple(typename='CWLWMember', field_names='player_tag attacks_spent attacks_limit')
         cwlw_members = []
         for cwlw_member in cwlw['clan']['members']:
@@ -406,9 +350,14 @@ async def cwl_skips(
                     attacks_limit=1
                 )
             )
-        text += await dm.print_skips(message, cwlw_members, ping, attacks_limit=1)
+        text += (
+            f'Сезон: {dm.of.season(cwl_season)}, день {cwl_day + 1}\n'
+            f'{dm.of.event_datetime(Event.CWLW, cwlw['startTime'], cwlw['endTime'], False)}\n'
+            f'\n'
+            f'{await dm.print_skips(message, cwlw_members, ping, attacks_limit=1)}'
+        )
     else:
-        text += 'ЛВК сейчас не идёт'
+        text += 'Информация о ЛВК отсутствует'
     return text, ParseMode.HTML, None
 
 
@@ -498,41 +447,6 @@ async def callback_cwl_info_days_list(
     await callback_query.answer()
 
 
-@router.message(Command('cwl_attacks'))
-async def command_cwl_attacks(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, reply_markup = await cwl_attacks(dm)
-    reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-    await dm.dump_message_owner(reply_from_bot, message.from_user)
-
-
-@router.callback_query(CWLCallbackFactory.filter(F.action == Action.cwl_attacks_day))
-async def callback_cwl_attacks_day(
-        callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
-) -> None:
-    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
-        await callback_query.answer('Эта кнопка не работает для вас')
-    else:
-        text, parse_mode, reply_markup = await cwl_attacks(dm, callback_data.cwl_day)
-        with suppress(TelegramBadRequest):
-            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-    await callback_query.answer()
-
-
-@router.callback_query(CWLCallbackFactory.filter(F.action == Action.cwl_attacks_days_list))
-async def callback_cwl_attacks_days_list(
-        callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
-) -> None:
-    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
-        await callback_query.answer('Эта кнопка не работает для вас')
-    else:
-        text, parse_mode, reply_markup = await cwl_days_list(dm, callback_data.action)
-        with suppress(TelegramBadRequest):
-            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-    await callback_query.answer()
-
-
 @router.message(Command('cwl_map'))
 async def command_cwl_map(message: Message, dm: DatabaseManager) -> None:
     text, parse_mode, reply_markup = await cwl_map(dm)
@@ -568,9 +482,44 @@ async def callback_cwl_map_days_list(
     await callback_query.answer()
 
 
+@router.message(Command('cwl_attacks'))
+async def command_cwl_attacks(message: Message, dm: DatabaseManager) -> None:
+    text, parse_mode, reply_markup = await cwl_attacks(dm)
+    reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+    await dm.dump_message_owner(reply_from_bot, message.from_user)
+
+
+@router.callback_query(CWLCallbackFactory.filter(F.action == Action.cwl_attacks_day))
+async def callback_cwl_attacks_day(
+        callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    if not user_is_message_owner:
+        await callback_query.answer('Эта кнопка не работает для вас')
+    else:
+        text, parse_mode, reply_markup = await cwl_attacks(dm, callback_data.cwl_day)
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+    await callback_query.answer()
+
+
+@router.callback_query(CWLCallbackFactory.filter(F.action == Action.cwl_attacks_days_list))
+async def callback_cwl_attacks_days_list(
+        callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    if not user_is_message_owner:
+        await callback_query.answer('Эта кнопка не работает для вас')
+    else:
+        text, parse_mode, reply_markup = await cwl_days_list(dm, callback_data.action)
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+    await callback_query.answer()
+
+
 @router.message(Command('cwl_skips'))
 async def command_cwl_skips(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, reply_markup = await cwl_skips(dm, message, ping=False)
+    text, parse_mode, reply_markup = await cwl_skips_cwl_ping(dm, message, ping=False)
     await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
 
 
@@ -582,7 +531,7 @@ async def command_cwl_ping(message: Message, dm: DatabaseManager) -> None:
     elif not user_can_ping_group_members:
         await message.reply(text=f'Эта команда не работает для вас')
     else:
-        text, parse_mode, reply_markup = await cwl_skips(dm, message, ping=True)
+        text, parse_mode, reply_markup = await cwl_skips_cwl_ping(dm, message, ping=True)
         await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
 
 

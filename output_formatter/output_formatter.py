@@ -441,7 +441,7 @@ class OutputFormatter:
             f'{self.to_html(cwlw['clan']['name'])} vs {self.to_html(cwlw['opponent']['name'])}\n'
             f'{cwlw['teamSize']} 🪖 vs {cwlw['teamSize']} 🪖\n'
             f'\n'
-            f'{self.event_datetime(Event.CW, cwlw['startTime'], cwlw['endTime'], False)}\n'
+            f'{self.event_datetime(Event.CWLW, cwlw['startTime'], cwlw['endTime'], False)}\n'
         )
         return text
 
@@ -582,8 +582,8 @@ class OutputFormatter:
             dt = datetime(
                 year=dt_now.year if dt_now.month < 12 else dt_now.year + 1,
                 month=dt_now.month + 1 if dt_now.month < 12 else 1,
-                day=dt_now.day,
-                hour=dt_now.hour
+                day=1,
+                hour=0
             )
             last_day_of_month = (dt.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
             days_after_last_monday = last_day_of_month.weekday() % 7

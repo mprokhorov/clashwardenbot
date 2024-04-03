@@ -338,7 +338,7 @@ async def cwl_skips_cwl_ping(
     cwl_day, cwlw = await dm.load_clan_war_league_own_war()
     if dm.of.state(cwlw) in ['preparation']:
         text += f'{dm.of.event_datetime(Event.CWLW, cwlw['startTime'], cwlw['endTime'], False)}\n'
-    if dm.of.state(cwlw) in ['inWar', 'warEnded']:
+    elif dm.of.state(cwlw) in ['inWar', 'warEnded']:
         cwl_season, _ = await dm.load_clan_war_league()
         CWLWMember = namedtuple(typename='CWLWMember', field_names='player_tag attacks_spent attacks_limit')
         cwlw_members = []

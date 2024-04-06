@@ -254,7 +254,15 @@ class DatabaseManager:
                     if clan_member_tag in left_clan_member_tags:
                         message_text += f'больше не состоит в клане\n'
                     elif clan_member_tag in joined_clan_member_tags:
-                        message_text += f'вступил в клан\n'
+                        clan_member_was_in_clan = await self.acquired_connection.fetchrow('''
+                            SELECT clan_tag, player_tag
+                            FROM player
+                            WHERE (clan_tag, player_tag) = ($1, $2)
+                        ''', self.clan_tag, clan_member_tag)
+                        if clan_member_was_in_clan:
+                            message_text += f'вернулся в клан\n'
+                        else:
+                            message_text += f'вступил в клан\n'
                 message_text += (
                     f'\n'
                     f'Количество участников: {len(retrieved_clan_members['items'])} / 50 🪖\n'
@@ -600,7 +608,7 @@ class DatabaseManager:
                     user_id=None,
                     chat_id=row['chat_id'],
                     message_text=text,
-                    user_ids_to_ping=await self.get_war_member_user_ids(row['chat_id'], cw) if ping else None
+                    user_ids_to_ping=await self.get_war_member_user_ids(row['chat_id'], cw, 2) if ping else None
                 )
 
     async def dump_raid_weekends(self) -> bool:
@@ -888,7 +896,7 @@ class DatabaseManager:
                     user_id=None,
                     chat_id=row['chat_id'],
                     message_text=text,
-                    user_ids_to_ping=await self.get_war_member_user_ids(row['chat_id'], cwlw) if ping else None
+                    user_ids_to_ping=await self.get_war_member_user_ids(row['chat_id'], cwlw, 1) if ping else None
                 )
 
     async def dump_user(self, chat: Chat, user: User) -> None:
@@ -1096,10 +1104,10 @@ class DatabaseManager:
         ''', self.clan_tag, chat_id)
         return [row['user_id'] for row in rows]
 
-    async def get_war_member_user_ids(self, chat_id: int, war: dict) -> list[int]:
+    async def get_war_member_user_ids(self, chat_id: int, war: dict, attacks_required: int) -> list[int]:
         war_member_tags = []
         for war_member in war['clan']['members']:
-            if len(war_member.get('attacks', [])) < 2:
+            if len(war_member.get('attacks', [])) < attacks_required:
                 war_member_tags.append(war_member['tag'])
         rows = await self.acquired_connection.fetch('''
             SELECT DISTINCT user_id, first_name

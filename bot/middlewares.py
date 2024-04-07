@@ -35,6 +35,10 @@ class MessageMiddleware(BaseMiddleware):
         clan_name = await dm.get_clan_name()
         bot_username = (await dm.bot.me()).username
 
+        if message.from_user.id in dm.blocked_user_ids:
+            logging.info(f'Message {{{message_info}}} was not propagated')
+            return None
+
         if message.chat.type in (ChatType.PRIVATE, ChatType.GROUP, ChatType.SUPERGROUP):
             if not message.from_user.is_bot:
                 await dm.dump_chat(message.chat)

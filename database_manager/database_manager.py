@@ -75,6 +75,8 @@ class DatabaseManager:
         self.full_name_and_username = None
 
         self.is_privacy_mode_enabled = None
+        self.blocked_user_ids = None
+        self.ingore_updates_player_tags = None
 
     async def establish_connections(self) -> None:
         self.connection_pool = await asyncpg.create_pool(
@@ -126,7 +128,10 @@ class DatabaseManager:
         self.print_ram_usage()
 
     async def infrequent_jobs(self) -> None:
+        await self.load_privacy_mode()
         await self.set_actual_commands()
+        await self.load_blocked_users()
+        await self.load_ingore_updates_players()
         await self.dump_clan()
         were_clan_members_dumped = await self.check_clan_members()
         old_contributions = await self.load_capital_contributions()
@@ -198,6 +203,22 @@ class DatabaseManager:
 
         return True
 
+    async def load_blocked_users(self):
+        rows = await self.acquired_connection.fetch('''
+            SELECT user_id
+            FROM blocked_user
+            WHERE clan_tag = $1
+        ''', self.clan_tag)
+        self.blocked_user_ids = [row['user_id'] for row in rows]
+
+    async def load_ingore_updates_players(self):
+        rows = await self.acquired_connection.fetch('''
+            SELECT player_tag
+            FROM ingore_updates_player
+            WHERE clan_tag = $1
+        ''', self.clan_tag)
+        self.ingore_updates_player_tags = [row['player_tag'] for row in rows]
+
     async def check_clan_members(self) -> bool:
         were_clan_members_dumped = False
         retrieved_clan_members = await self.api_client.get_clan_members(clan_tag=self.clan_tag)
@@ -220,10 +241,16 @@ class DatabaseManager:
             for clan_member_tag in loaded_clan_member_tags
             if clan_member_tag not in retrieved_clan_member_tags
         ]
-        if left_clan_member_tags or joined_clan_member_tags:
+        not_ignored_player_tags = [
+            player_tag
+            for player_tag in left_clan_member_tags + joined_clan_member_tags
+            if player_tag not in self.ingore_updates_player_tags
+        ]
+        if left_clan_member_tags + joined_clan_member_tags:
             were_clan_members_dumped = True
             await self.dump_clan_members()
             await self.load_and_cache_names()
+        if not_ignored_player_tags:
             rows = await self.acquired_connection.fetch('''
                 SELECT chat_id
                 FROM clan_chat
@@ -235,7 +262,7 @@ class DatabaseManager:
                     f'<b>💬 Список участников клана изменился</b>\n'
                     f'\n'
                 )
-                for clan_member_tag in left_clan_member_tags + joined_clan_member_tags:
+                for clan_member_tag in not_ignored_player_tags:
                     rows = await self.acquired_connection.fetch('''
                         SELECT user_id
                         FROM
@@ -254,15 +281,7 @@ class DatabaseManager:
                     if clan_member_tag in left_clan_member_tags:
                         message_text += f'больше не состоит в клане\n'
                     elif clan_member_tag in joined_clan_member_tags:
-                        clan_member_was_in_clan = await self.acquired_connection.fetchrow('''
-                            SELECT clan_tag, player_tag
-                            FROM player
-                            WHERE (clan_tag, player_tag) = ($1, $2)
-                        ''', self.clan_tag, clan_member_tag)
-                        if clan_member_was_in_clan:
-                            message_text += f'вернулся в клан\n'
-                        else:
-                            message_text += f'вступил в клан\n'
+                        message_text += f'вступил в клан\n'
                 message_text += (
                     f'\n'
                     f'Количество участников: {len(retrieved_clan_members['items'])} / 50 🪖\n'

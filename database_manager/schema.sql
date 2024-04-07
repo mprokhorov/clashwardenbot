@@ -24,7 +24,7 @@ create table activity
         primary key (clan_tag, name, start_time)
 );
 
-create table banned
+create table blacklisted
 (
     chat_id    bigint,
     user_id    bigint,
@@ -34,6 +34,17 @@ create table banned
         foreign key (clan_tag, chat_id, user_id) references bot_user,
     constraint banned_player_clan_tag_player_tag_fk
         foreign key (clan_tag, player_tag) references player
+);
+
+create table blocked_user
+(
+    clan_tag varchar(16) not null,
+    chat_id  bigint      not null,
+    user_id  bigint      not null,
+    constraint blocked_user_pk
+        primary key (clan_tag, chat_id, user_id),
+    constraint blocked_user_bot_user_clan_tag_chat_id_user_id_fk
+        foreign key (clan_tag, chat_id, user_id) references bot_user
 );
 
 create table bot_user
@@ -154,6 +165,16 @@ create table clan_war_league_war
     data     jsonb       not null,
     constraint clan_war_league_war_pk
         primary key (clan_tag, war_tag)
+);
+
+create table ingore_updates_player
+(
+    clan_tag   varchar(16) not null,
+    player_tag varchar(16) not null,
+    constraint ingore_updates_player_pk
+        primary key (clan_tag, player_tag),
+    constraint ingore_updates_player_player_clan_tag_player_tag_fk
+        foreign key (clan_tag, player_tag) references player
 );
 
 create table message_bot_user

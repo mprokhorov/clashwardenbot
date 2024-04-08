@@ -78,7 +78,7 @@ class DatabaseManager:
         self.blocked_user_ids = None
         self.ingore_updates_player_tags = None
 
-    async def establish_connections(self) -> None:
+    async def connect_to_pool(self) -> None:
         self.connection_pool = await asyncpg.create_pool(
             host=config.postgres_host.get_secret_value(),
             database=config.postgres_database.get_secret_value(),
@@ -90,7 +90,7 @@ class DatabaseManager:
 
     async def start_scheduler(self, bot_number: int) -> None:
         SECONDS_IN_MINUTE = 60
-        scheduler = AsyncIOScheduler()
+        self.scheduler = AsyncIOScheduler()
         infrequent_jobs_minutes = [
             minute * self.infrequent_jobs_frequency_minutes
             for minute in range(0, SECONDS_IN_MINUTE // self.infrequent_jobs_frequency_minutes)
@@ -102,19 +102,19 @@ class DatabaseManager:
         ]
         infrequent_jobs_minutes_str = ','.join(map(str, infrequent_jobs_minutes))
         frequent_jobs_minutes_str = ','.join(map(str, frequent_jobs_minutes))
-        scheduler.add_job(
+        self.scheduler.add_job(
             self.frequent_jobs,
             'cron',
             minute=frequent_jobs_minutes_str,
             second=str(bot_number * self.job_timespan_seconds)
         )
-        scheduler.add_job(
+        self.scheduler.add_job(
             self.infrequent_jobs,
             'cron',
             minute=infrequent_jobs_minutes_str,
             second=str(bot_number * self.job_timespan_seconds)
         )
-        scheduler.start()
+        self.scheduler.start()
 
     async def frequent_jobs(self) -> None:
         were_clan_members_dumped = await self.check_clan_members()
@@ -159,7 +159,7 @@ class DatabaseManager:
         print(f'RAM used by process: {bytes2human(process.memory_info().rss)}')
 
     async def load_privacy_mode(self) -> bool:
-        self.is_privacy_mode_enabled = self.acquired_connection.fetchval('''
+        self.is_privacy_mode_enabled = await self.acquired_connection.fetchval('''
             SELECT privacy_mode_enabled
             FROM clan
             WHERE clan_tag = $1

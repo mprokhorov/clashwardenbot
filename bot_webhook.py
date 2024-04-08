@@ -25,7 +25,7 @@ router = Router()
 async def on_startup(bot: Bot, webhook_url: str, dm: DatabaseManager, bot_number: int):
     await bot.set_webhook(webhook_url)
 
-    await dm.establish_connections()
+    await dm.connect_to_pool()
     await dm.frequent_jobs()
     await dm.infrequent_jobs()
 

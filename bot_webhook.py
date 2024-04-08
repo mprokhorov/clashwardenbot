@@ -26,7 +26,6 @@ async def on_startup(bot: Bot, webhook_url: str, dm: DatabaseManager, bot_number
     await bot.set_webhook(webhook_url)
 
     await dm.connect_to_pool()
-    await dm.frequent_jobs()
     await dm.infrequent_jobs()
 
     await dm.start_scheduler(bot_number)

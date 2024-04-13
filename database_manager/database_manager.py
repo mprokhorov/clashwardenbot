@@ -206,7 +206,7 @@ class DatabaseManager:
     async def load_blocked_users(self):
         rows = await self.acquired_connection.fetch('''
             SELECT user_id
-            FROM blocked_user
+            FROM blocked_bot_user
             WHERE clan_tag = $1
         ''', self.clan_tag)
         self.blocked_user_ids = [row['user_id'] for row in rows]

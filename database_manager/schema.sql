@@ -36,14 +36,14 @@ create table blacklisted
         foreign key (clan_tag, player_tag) references player
 );
 
-create table blocked_user
+create table blocked_bot_user
 (
     clan_tag varchar(16) not null,
     chat_id  bigint      not null,
     user_id  bigint      not null,
-    constraint blocked_user_pk
+    constraint blocked_bot_user_pk
         primary key (clan_tag, chat_id, user_id),
-    constraint blocked_user_bot_user_clan_tag_chat_id_user_id_fk
+    constraint blocked_bot_user_bot_user_clan_tag_chat_id_user_id_fk
         foreign key (clan_tag, chat_id, user_id) references bot_user
 );
 

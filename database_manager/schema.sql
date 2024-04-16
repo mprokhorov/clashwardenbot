@@ -5,7 +5,7 @@ create table action
     user_id          bigint,
     action_timestamp timestamp not null,
     description      text      not null,
-    constraint admin_action_fk
+    constraint action_bot_user_clan_tag_chat_id_user_id_fk
         foreign key (clan_tag, chat_id, user_id) references bot_user
 );
 
@@ -30,9 +30,9 @@ create table blacklisted
     user_id    bigint,
     clan_tag   varchar(16),
     player_tag varchar(16),
-    constraint banned_bot_user_clan_tag_chat_id_user_id_fk
+    constraint blacklisted_bot_user_clan_tag_chat_id_user_id_fk
         foreign key (clan_tag, chat_id, user_id) references bot_user,
-    constraint banned_player_clan_tag_player_tag_fk
+    constraint blacklisted_player_clan_tag_player_tag_fk
         foreign key (clan_tag, player_tag) references player
 );
 

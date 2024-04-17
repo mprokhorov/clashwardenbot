@@ -207,7 +207,7 @@ class DatabaseManager:
         rows = await self.acquired_connection.fetch('''
             SELECT user_id
             FROM blocked_bot_user
-            WHERE clan_tag = $1
+            WHERE clan_tag = $1 OR clan_tag IS NULL
         ''', self.clan_tag)
         self.blocked_user_ids = [row['user_id'] for row in rows]
 

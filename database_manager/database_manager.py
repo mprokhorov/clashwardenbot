@@ -943,8 +943,7 @@ class DatabaseManager:
                     can_edit_cw_list,
                     can_send_messages_from_bot)
                 VALUES 
-                    ($1, $2, $3, $4, $5, $6, TRUE, NOW() AT TIME ZONE 'UTC', NOW() AT TIME ZONE 'UTC',
-                    FALSE, FALSE, FALSE, FALSE, FALSE)
+                    ($1, $2, $3, $4, $5, $6, TRUE, NOW() AT TIME ZONE 'UTC', NOW() AT TIME ZONE 'UTC')
                 ON CONFLICT
                 (clan_tag, chat_id, user_id)
                 DO UPDATE SET

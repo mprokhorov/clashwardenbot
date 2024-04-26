@@ -936,12 +936,7 @@ class DatabaseManager:
             await self.acquired_connection.execute('''
                 INSERT INTO bot_user
                     (clan_tag, chat_id, user_id,
-                    username, first_name, last_name, is_user_in_chat, first_seen, last_seen,
-                    can_use_bot_without_clan_group,
-                    can_ping_group_members,
-                    can_link_group_members,
-                    can_edit_cw_list,
-                    can_send_messages_from_bot)
+                    username, first_name, last_name, is_user_in_chat, first_seen, last_seen)
                 VALUES 
                     ($1, $2, $3, $4, $5, $6, TRUE, NOW() AT TIME ZONE 'UTC', NOW() AT TIME ZONE 'UTC')
                 ON CONFLICT

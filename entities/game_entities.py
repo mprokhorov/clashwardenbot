@@ -15,7 +15,6 @@ class ClanMember:
 @dataclass
 class WarMember:
     player_tag: str
-    # player_name: str
     attacks_spent: int
     attacks_limit: int
 
@@ -30,7 +29,6 @@ class RaidsAttack:
 @dataclass
 class RaidsMember:
     player_tag: str
-    # player_name: str
     attacks_spent: int
     attacks_limit: int
     gold_looted: Optional[int] = None

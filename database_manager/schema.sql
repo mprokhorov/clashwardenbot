@@ -30,6 +30,7 @@ create table blacklisted
     user_id    bigint,
     clan_tag   varchar(16),
     player_tag varchar(16),
+    reason     text not null,
     constraint blacklisted_bot_user_clan_tag_chat_id_user_id_fk
         foreign key (clan_tag, chat_id, user_id) references bot_user,
     constraint blacklisted_player_clan_tag_player_tag_fk
@@ -167,6 +168,14 @@ create table clan_war_league_war
         primary key (clan_tag, war_tag)
 );
 
+create table clan_war_log
+(
+    clan_tag varchar(16) not null
+        constraint clan_war_log_pk
+            primary key,
+    data     jsonb       not null
+);
+
 create table ingore_updates_player
 (
     clan_tag   varchar(16) not null,
@@ -183,8 +192,24 @@ create table message_bot_user
     chat_id    bigint      not null,
     message_id bigint      not null,
     user_id    bigint,
+    constraint message_bot_user_pk
+        unique (clan_tag, chat_id, message_id, user_id),
     constraint message_bot_user_bot_user_clan_tag_chat_id_user_id_fk
         foreign key (clan_tag, chat_id, user_id) references bot_user
+);
+
+create table opponent_player
+(
+    clan_tag             varchar(16) not null,
+    player_tag           varchar(16) not null,
+    player_name          varchar(16) not null,
+    town_hall_level      integer     not null,
+    barbarian_king_level integer     not null,
+    archer_queen_level   integer     not null,
+    grand_warden_level   integer     not null,
+    royal_champion_level integer     not null,
+    constraint opponent_player_pk
+        primary key (clan_tag, player_tag)
 );
 
 create table player
@@ -237,4 +262,12 @@ create table raid_weekend
     data       jsonb       not null,
     constraint raid_weekend_pk
         primary key (clan_tag, start_time)
+);
+
+create table war_win_streak
+(
+    clan_tag       varchar(16) not null
+        constraint war_win_streak_pk
+            primary key,
+    war_win_streak integer     not null
 );

@@ -7,7 +7,7 @@ from aiogram import Bot, Dispatcher
 from bot.middlewares import MessageMiddleware, CallbackQueryMiddleware
 from config import config
 from database_manager import DatabaseManager
-from routers import admin, cw, cwl, members, raids
+from routers import admin, cw, cwl, miscellaneous, raids
 
 
 async def main():
@@ -34,7 +34,7 @@ async def main():
     dp = Dispatcher(dm=dm)
     dp.message.outer_middleware(MessageMiddleware())
     dp.callback_query.outer_middleware(CallbackQueryMiddleware())
-    dp.include_routers(cw.router, raids.router, cwl.router, members.router, admin.router)
+    dp.include_routers(cw.router, raids.router, cwl.router, miscellaneous.router, admin.router)
 
     await dm.start_scheduler(bot_number)
 

@@ -1,8 +1,7 @@
 import asyncio
 import json
-from collections import namedtuple
 from datetime import datetime, UTC
-from typing import Optional, Tuple, Any
+from typing import Optional, Any
 
 import asyncpg
 import psutil
@@ -16,6 +15,7 @@ from psutil._common import bytes2human
 from async_client import AsyncClient
 from bot.commands import bot_cmd_list, get_shown_bot_commands
 from config import config
+from entities import ClanWarLeagueWar, BotUser, RaidsMember, WarMember
 from output_formatter import OutputFormatter
 
 
@@ -72,6 +72,7 @@ class DatabaseManager:
         self.name_and_tag = None
         self.first_name = None
         self.full_name = None
+        self.username = None
         self.full_name_and_username = None
 
         self.is_privacy_mode_enabled = None
@@ -203,7 +204,7 @@ class DatabaseManager:
 
         return True
 
-    async def load_blocked_users(self):
+    async def load_blocked_users(self) -> None:
         rows = await self.acquired_connection.fetch('''
             SELECT user_id
             FROM blocked_bot_user
@@ -211,7 +212,7 @@ class DatabaseManager:
         ''', self.clan_tag)
         self.blocked_user_ids = [row['user_id'] for row in rows]
 
-    async def load_ingore_updates_players(self):
+    async def load_ingore_updates_players(self) -> None:
         rows = await self.acquired_connection.fetch('''
             SELECT player_tag
             FROM ingore_updates_player
@@ -277,7 +278,22 @@ class DatabaseManager:
                         mentions += f' ({', '.join(
                             '👤 ' + self.of.to_html(self.load_full_name(chat_id, user_id)) for user_id in user_ids
                         )})'
-                    message_text += f'🪖 <b>{self.of.to_html(self.load_name(clan_member_tag))}</b>{mentions} '
+                    row = await self.acquired_connection.fetchrow('''
+                        SELECT
+                            town_hall_level,
+                            barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+                        FROM player
+                        WHERE clan_tag = $1 AND player_tag = $2
+                    ''', self.clan_tag, clan_member_tag)
+                    message_text += (
+                        f'🪖 <b>{self.of.to_html(self.load_name(clan_member_tag))}</b> '
+                        f'{self.of.get_player_info_with_custom_emoji(
+                            row['town_hall_level'],
+                            row['barbarian_king_level'],
+                            row['archer_queen_level'],
+                            row['grand_warden_level'],
+                            row['royal_champion_level']
+                        )}{mentions} ')
                     if clan_member_tag in left_clan_member_tags:
                         message_text += f'больше не состоит в клане\n'
                     elif clan_member_tag in joined_clan_member_tags:
@@ -403,6 +419,10 @@ class DatabaseManager:
                 row['first_name'] + (f' {row['last_name']}' if row['last_name'] else '')
             for row in rows
         }
+        self.username = {
+            (row['chat_id'], row['user_id']): f'@{row['username']}' if row['username'] is not None else None
+            for row in rows
+        }
         self.full_name_and_username = {
             (row['chat_id'], row['user_id']):
                 (f'{row['first_name']}{(' ' + row['last_name']) if row['last_name'] else ''}'
@@ -420,7 +440,8 @@ class DatabaseManager:
 
     async def dump_capital_contributions(self, old_contributions, new_contributions) -> None:
         for player_tag in old_contributions:
-            if new_contributions.get(player_tag) and new_contributions[player_tag] > old_contributions[player_tag]:
+            has_player_contributed = new_contributions[player_tag] > old_contributions[player_tag]
+            if new_contributions.get(player_tag) is not None and has_player_contributed:
                 await self.acquired_connection.execute('''
                     INSERT INTO capital_contribution (clan_tag, player_tag, gold_amount, contribution_timestamp)
                     VALUES ($1, $2, $3, NOW() AT TIME ZONE 'UTC')
@@ -436,6 +457,10 @@ class DatabaseManager:
                 'endTime': self.of.from_datetime(datetime(dt_now.year, dt_now.month, *clan_games_end)),
                 'state': 'ongoing'
             }
+        cg = await self.load_clan_games()
+        if cg is not None:
+            cg['state'] = 'ended'
+            return cg
         else:
             return None
 
@@ -534,8 +559,14 @@ class DatabaseManager:
         ''', self.clan_tag, self.of.to_datetime(retrieved_clan_war['startTime']), json.dumps(retrieved_clan_war))
 
         new_clan_war = await self.load_clan_war()
-
-        await self.clan_war_alert(old_clan_war, new_clan_war)
+        await asyncio.gather(
+            self.dump_war_win_streak(clan_tag=new_clan_war['opponent']['tag']),
+            self.dump_clan_war_log(clan_tag=new_clan_war['opponent']['tag']),
+            self.dump_opponent_players(war=new_clan_war)
+        )
+        war_win_streak = await self.load_war_win_streak(clan_tag=new_clan_war['opponent']['tag'])
+        clan_war_log = await self.load_clan_war_log(clan_tag=new_clan_war['opponent']['tag'])
+        await self.clan_war_alert(old_clan_war, new_clan_war, war_win_streak, clan_war_log)
 
         return True
 
@@ -550,7 +581,94 @@ class DatabaseManager:
             return None
         return json.loads(row['data'])
 
-    async def clan_war_alert(self, old_cw: dict, cw: dict) -> None:
+    async def dump_clan_war_log(self, clan_tag: str) -> bool:
+        retrieved_clan_war_log = await self.api_client.get_war_log(clan_tag=clan_tag)
+        if retrieved_clan_war_log is None:
+            return False
+        await self.acquired_connection.execute('''
+            INSERT INTO clan_war_log (clan_tag, data)
+            VALUES ($1, $2)
+            ON CONFLICT (clan_tag)
+            DO UPDATE SET data = $2
+        ''', clan_tag, json.dumps(retrieved_clan_war_log))
+        return True
+
+    async def load_clan_war_log(self, clan_tag: str) -> Optional[dict]:
+        row = await self.acquired_connection.fetchrow('''
+            SELECT data
+            FROM clan_war_log
+            WHERE clan_tag = $1
+        ''', clan_tag)
+        if row is None:
+            return None
+        return json.loads(row['data'])
+
+    async def dump_war_win_streak(self, clan_tag: str) -> bool:
+        retrieved_clan = await self.api_client.get_clan(clan_tag=clan_tag)
+        if retrieved_clan is None:
+            return False
+        await self.acquired_connection.execute('''
+            INSERT INTO war_win_streak
+            VALUES ($1, $2)
+            ON CONFLICT (clan_tag)
+            DO UPDATE SET war_win_streak = $2
+        ''', clan_tag, retrieved_clan['warWinStreak'])
+
+    async def load_war_win_streak(self, clan_tag: str) -> Optional[int]:
+        val = await self.acquired_connection.fetchval('''
+            SELECT war_win_streak
+            FROM war_win_streak
+            WHERE clan_tag = $1
+        ''', clan_tag)
+        return val
+
+    async def dump_opponent_players(self, war: dict) -> bool:
+        opponent_player_tasks = [
+            self.api_client.get_player(player_tag=member['tag'])
+            for member in war['opponent']['members']
+        ]
+        retrieved_opponent_players = list(await asyncio.gather(*opponent_player_tasks))
+        if None in retrieved_opponent_players:
+            return False
+        rows = []
+        for opponent_player in retrieved_opponent_players:
+            player_heroes = opponent_player.get('heroes', [])
+            barbarian_king_level = 0
+            archer_queen_level = 0
+            grand_warden_level = 0
+            royal_champion_level = 0
+            for player_hero in player_heroes:
+                if player_hero['name'] == 'Barbarian King':
+                    barbarian_king_level = player_hero['level']
+                elif player_hero['name'] == 'Archer Queen':
+                    archer_queen_level = player_hero['level']
+                elif player_hero['name'] == 'Grand Warden':
+                    grand_warden_level = player_hero['level']
+                elif player_hero['name'] == 'Royal Champion':
+                    royal_champion_level = player_hero['level']
+            rows.append((
+                war['opponent']['tag'], opponent_player['tag'],
+                opponent_player['name'], opponent_player['townHallLevel'],
+                barbarian_king_level, archer_queen_level,
+                grand_warden_level, royal_champion_level
+            ))
+        await self.acquired_connection.executemany('''
+            INSERT INTO opponent_player
+                (clan_tag, player_tag,
+                player_name, town_hall_level,
+                barbarian_king_level, archer_queen_level,
+                grand_warden_level, royal_champion_level)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+            ON CONFLICT (clan_tag, player_tag)
+            DO UPDATE SET
+                (player_name, town_hall_level,
+                barbarian_king_level, archer_queen_level,
+                grand_warden_level, royal_champion_level) =
+                ($3, $4, $5, $6, $7, $8)
+        ''', rows)
+        return True
+
+    async def clan_war_alert(self, old_cw: dict, cw: dict, war_win_streak: int, cw_log: Optional[dict]) -> None:
         SECONDS_IN_HOUR = 3600
         await self.acquired_connection.execute('''
             INSERT INTO activity
@@ -569,48 +687,44 @@ class DatabaseManager:
         ''', self.clan_tag, 'clan_war', self.of.to_datetime(cw['startTime']))
         texts = []
         pings = []
-        if (not row['end_message_sent'] and self.of.state(cw) == 'warEnded'
-                and self.of.state(old_cw) != self.of.state(cw)):
+        is_cw_updated = old_cw['startTime'] != cw['startTime']
+        is_cw_state_updated = self.of.state(old_cw) != self.of.state(cw)
+        is_cw_midpoint_passed = (self.of.to_datetime(cw['endTime']) - self.of.utc_now()).seconds <= 12 * SECONDS_IN_HOUR
+        if not row['end_message_sent'] and self.of.state(cw) == 'warEnded' and is_cw_state_updated:
             texts.append(
                 f'<b>💬 КВ закончилась</b>\n'
                 f'\n'
-                f'{self.of.cw_in_war_or_ended(cw)}'
+                f'{self.of.cw_in_war_or_war_ended(cw, False, None, None)}'
             )
             pings.append(False)
             await self.set_activity_end_message_sent(
                 self.clan_tag, 'clan_war', self.of.to_datetime(cw['startTime'])
             )
-        elif (not row['half_time_remaining_message_sent']
-              and self.of.state(cw) == 'inWar'
-              and 8 * SECONDS_IN_HOUR <= (
-                      self.of.to_datetime(cw['endTime']) - self.of.utc_now()
-              ).seconds <= 12 * SECONDS_IN_HOUR):
+        elif not row['half_time_remaining_message_sent'] and self.of.state(cw) == 'inWar' and is_cw_midpoint_passed:
             texts.append(
                 f'<b>📣 До конца КВ осталось менее 12 часов</b>\n'
                 f'\n'
-                f'{self.of.cw_in_war_or_ended(cw)}'
+                f'{self.of.cw_in_war_or_war_ended(cw, False, None, None)}'
             )
             pings.append(True)
             await self.set_activity_half_time_remaining_message_sent(
                 self.clan_tag, 'clan_war', self.of.to_datetime(cw['startTime'])
             )
-        elif (not row['start_message_sent'] and self.of.state(cw) == 'inWar'
-              and self.of.state(old_cw) != self.of.state(cw)):
+        elif not row['start_message_sent'] and self.of.state(cw) == 'inWar' and is_cw_state_updated:
             texts.append(
                 f'<b>📣 КВ началась</b>\n'
                 f'\n'
-                f'{self.of.cw_in_war_or_ended(cw)}'
+                f'{self.of.cw_in_war_or_war_ended(cw, False, None, None)}'
             )
             pings.append(True)
             await self.set_activity_start_message_sent(
                 self.clan_tag, 'clan_war', self.of.to_datetime(cw['startTime'])
             )
-        elif (not row['preparation_message_sent'] and self.of.state(cw) == 'preparation'
-              and old_cw['startTime'] != cw['startTime']):
+        elif not row['preparation_message_sent'] and self.of.state(cw) == 'preparation' and is_cw_updated:
             texts.append(
                 f'<b>💬 КВ найдена</b>\n'
                 f'\n'
-                f'{self.of.cw_preparation(cw)}'
+                f'{self.of.cw_preparation(cw, True, war_win_streak, cw_log)}'
             )
             pings.append(False)
             await self.set_activity_preparation_message_sent(
@@ -631,7 +745,7 @@ class DatabaseManager:
                 )
 
     async def dump_raid_weekends(self) -> bool:
-        old_raid = await self.load_raid_weekend() or {'startTime': None, 'state': None}
+        old_raids = await self.load_raid_weekend() or {'startTime': None, 'state': None}
 
         retrieved_raid_weekends = await self.api_client.get_clan_capital_raid_seasons(clan_tag=self.clan_tag)
         if not retrieved_raid_weekends or not retrieved_raid_weekends['items']:
@@ -641,12 +755,14 @@ class DatabaseManager:
             VALUES ($1, $2, $3)
             ON CONFLICT (clan_tag, start_time)
             DO UPDATE SET data = $3
-        ''', [(self.clan_tag, self.of.to_datetime(item['startTime']), json.dumps(item))
-              for item in retrieved_raid_weekends['items']])
+        ''', [
+            (self.clan_tag, self.of.to_datetime(item['startTime']), json.dumps(item))
+            for item in retrieved_raid_weekends['items']
+        ])
 
-        new_raid = await self.load_raid_weekend()
+        new_raids = await self.load_raid_weekend()
 
-        await self.raid_weekend_alert(old_raid, new_raid)
+        await self.raid_weekend_alert(old_raids, new_raids)
 
         return True
 
@@ -661,7 +777,7 @@ class DatabaseManager:
             return None
         return json.loads(row['data'])
 
-    async def raid_weekend_alert(self, old_raid: dict, raid: dict) -> None:
+    async def raid_weekend_alert(self, old_raids: dict, raids: dict) -> None:
         await self.acquired_connection.execute('''
             INSERT INTO activity
                 (clan_tag, name, start_time,
@@ -669,36 +785,37 @@ class DatabaseManager:
             VALUES
                 ($1, $2, $3, NULL, FALSE, NULL, FALSE)
             ON CONFLICT (clan_tag, name, start_time) DO NOTHING;
-        ''', self.clan_tag, 'raid_weekend', self.of.to_datetime(raid['startTime']))
+        ''', self.clan_tag, 'raid_weekend', self.of.to_datetime(raids['startTime']))
         row = await self.acquired_connection.fetchrow('''
             SELECT
                 clan_tag, name, start_time,
                 preparation_message_sent, start_message_sent, half_time_remaining_message_sent, end_message_sent
             FROM activity
             WHERE (clan_tag, name, start_time) = ($1, $2, $3)
-        ''', self.clan_tag, 'raid_weekend', self.of.to_datetime(raid['startTime']))
+        ''', self.clan_tag, 'raid_weekend', self.of.to_datetime(raids['startTime']))
         texts = []
         pings = []
-        if not row['end_message_sent'] and raid['state'] == 'ended' and old_raid['state'] != raid['state']:
+        are_raids_updated = old_raids['startTime'] != raids['startTime']
+        is_raids_state_updated = self.of.state(old_raids) != self.of.state(raids)
+        if not row['end_message_sent'] and self.of.state(raids) == 'ended' and is_raids_state_updated:
             texts.append(
                 f'<b>💬 Рейды закончились</b>\n'
                 f'\n'
-                f'{self.of.raid_ongoing_or_ended(raid)}'
+                f'{self.of.raids_ongoing_or_ended(raids)}'
             )
             pings.append(False)
             await self.set_activity_end_message_sent(
-                self.clan_tag, 'raid_weekend', self.of.to_datetime(raid['startTime'])
+                self.clan_tag, 'raid_weekend', self.of.to_datetime(raids['startTime'])
             )
-        elif (not row['start_message_sent'] and old_raid['startTime'] != raid['startTime']
-              and raid['state'] == 'ongoing'):
+        elif not row['start_message_sent'] and are_raids_updated and self.of.state(raids) == 'ongoing':
             texts.append(
                 f'<b>📣 Рейды начались</b>\n'
                 f'\n'
-                f'{self.of.raid_ongoing_or_ended(raid)}'
+                f'{self.of.raids_ongoing_or_ended(raids)}'
             )
             pings.append(True)
             await self.set_activity_start_message_sent(
-                self.clan_tag, 'raid_weekend', self.of.to_datetime(raid['startTime'])
+                self.clan_tag, 'raid_weekend', self.of.to_datetime(raids['startTime'])
             )
         for text, ping in zip(texts, pings):
             rows = await self.acquired_connection.fetch('''
@@ -726,7 +843,7 @@ class DatabaseManager:
         ''', self.clan_tag, retrieved_clan_war_league['season'], json.dumps(retrieved_clan_war_league))
         return True
 
-    async def load_clan_war_league(self) -> Tuple[Optional[str], Optional[dict]]:
+    async def load_clan_war_league(self) -> tuple[Optional[str], Optional[dict]]:
         row = await self.acquired_connection.fetchrow('''
             SELECT season, data
             FROM clan_war_league
@@ -744,7 +861,6 @@ class DatabaseManager:
         loaded_clan_war_league_season, loaded_clan_war_league = await self.load_clan_war_league()
         if loaded_clan_war_league is None:
             return False
-        ClanWarLeagueWar = namedtuple(typename='ClanWarLeagueWar', field_names='clan_tag war_tag season day')
         clan_war_league_wars = [
             ClanWarLeagueWar(clan_tag=self.clan_tag, war_tag=war_tag, season=loaded_clan_war_league_season, day=day)
             for day, war_tags in enumerate(loaded_clan_war_league['rounds'])
@@ -783,15 +899,30 @@ class DatabaseManager:
 
         new_cwl_season, _ = await self.load_clan_war_league()
         new_cwlws = await self.load_clan_war_league_own_wars()
+        opponent_players_tasks = [
+            self.dump_opponent_players(war=new_cwlw)
+            for new_cwlw in new_cwlws
+        ]
+        clan_war_log_tasks = [
+            self.dump_clan_war_log(clan_tag=new_cwlw['opponent']['tag'])
+            for new_cwlw in new_cwlws
+        ]
+        war_win_streak_tasks = [
+            self.dump_war_win_streak(clan_tag=new_cwlw['opponent']['tag'])
+            for new_cwlw in new_cwlws
+        ]
+        await asyncio.gather(*opponent_players_tasks, *clan_war_log_tasks, *war_win_streak_tasks)
         if old_cwl_season != new_cwl_season:
             old_cwlws = []
         if len(old_cwlws) < len(new_cwlws):
             old_cwlws += [{'startTime': None, 'state': None}] * (len(new_cwlws) - len(old_cwlws))
         for cwl_day, (old_cwlw, new_cwlw) in enumerate(zip(old_cwlws, new_cwlws)):
-            await self.clan_war_league_war_alert(old_cwlw, new_cwlw, new_cwl_season, cwl_day)
+            war_win_streak = await self.load_war_win_streak(clan_tag=new_cwlw['opponent']['tag'])
+            cw_log = await self.load_clan_war_log(clan_tag=new_cwlw['opponent']['tag'])
+            await self.clan_war_league_war_alert(old_cwlw, new_cwlw, new_cwl_season, cwl_day, war_win_streak, cw_log)
         return True
 
-    async def load_clan_war_league_own_war(self) -> Tuple[Optional[int], Optional[dict]]:
+    async def load_clan_war_league_own_war(self) -> tuple[Optional[int], Optional[dict]]:
         clan_war_league_wars = await self.load_clan_war_league_own_wars()
         if clan_war_league_wars is None:
             return None, None
@@ -840,8 +971,10 @@ class DatabaseManager:
         ''', self.clan_tag, season)
         return [json.loads(row['data']) for row in rows]
 
-    async def clan_war_league_war_alert(self, old_cwlw: dict, cwlw: dict, cwl_season: str, cwl_day: int) -> None:
-        HOUR = 3600
+    async def clan_war_league_war_alert(
+            self, old_cwlw: dict, cwlw: dict, cwl_season: str, cwl_day: int, war_win_streak: int, cw_log: Optional[dict]
+    ) -> None:
+        SECONDS_IN_HOUR = 3600
         await self.acquired_connection.execute('''
             INSERT INTO activity
                 (clan_tag, name, start_time,
@@ -859,46 +992,45 @@ class DatabaseManager:
         ''', self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['startTime']))
         texts = []
         pings = []
-        if (not row['end_message_sent'] and self.of.state(cwlw) == 'warEnded'
-                and self.of.state(old_cwlw) != self.of.state(cwlw)):
+        is_cwlw_updated = old_cwlw['startTime'] != cwlw['startTime']
+        is_cwlw_state_updated = self.of.state(old_cwlw) != self.of.state(cwlw)
+        cwlw_remaining_time = (self.of.to_datetime(cwlw['endTime']) - self.of.utc_now()).seconds
+        is_cwlw_midpoint_passed = cwlw_remaining_time <= 12 * SECONDS_IN_HOUR
+        if not row['end_message_sent'] and self.of.state(cwlw) == 'warEnded' and is_cwlw_state_updated:
             texts.append(
                 f'<b>💬 День ЛВК закончился</b>\n'
                 f'\n'
-                f'{self.of.cwlw_in_war_or_ended(cwlw, cwl_season, cwl_day)}'
+                f'{self.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, cwl_day, False, None, None)}'
             )
             pings.append(False)
             await self.set_activity_end_message_sent(
                 self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['startTime'])
             )
-        elif (not row['half_time_remaining_message_sent']
-              and self.of.state(cwlw) == 'inWar'
-              and 8 * HOUR <= (self.of.to_datetime(cwlw['endTime']) - self.of.utc_now()).seconds <= 12 * HOUR):
+        elif not row['half_time_remaining_message_sent'] and self.of.state(cwlw) == 'inWar' and is_cwlw_midpoint_passed:
             texts.append(
                 f'<b>📣 До конца дня ЛВК осталось менее 12 часов</b>\n'
                 f'\n'
-                f'{self.of.cwlw_in_war_or_ended(cwlw, cwl_season, cwl_day)}'
+                f'{self.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, cwl_day, False, None, None)}'
             )
             pings.append(True)
             await self.set_activity_half_time_remaining_message_sent(
                 self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['startTime'])
             )
-        elif (not row['start_message_sent'] and self.of.state(cwlw) == 'inWar'
-              and self.of.state(old_cwlw) != self.of.state(cwlw)):
+        elif not row['start_message_sent'] and self.of.state(cwlw) == 'inWar' and is_cwlw_state_updated:
             texts.append(
                 f'<b>📣 День ЛВК начался</b>\n'
                 f'\n'
-                f'{self.of.cwlw_in_war_or_ended(cwlw, cwl_season, cwl_day)}'
+                f'{self.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, cwl_day, False, None, None)}'
             )
             pings.append(True)
             await self.set_activity_start_message_sent(
                 self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['startTime'])
             )
-        elif (not row['preparation_message_sent'] and self.of.state(cwlw) == 'preparation'
-              and old_cwlw['startTime'] != cwlw['startTime']):
+        elif not row['preparation_message_sent'] and self.of.state(cwlw) == 'preparation' and is_cwlw_updated:
             texts.append(
                 f'<b>💬 Подготовка ко дню ЛВК началась</b>\n'
                 f'\n'
-                f'{self.of.cwlw_preparation(cwlw, cwl_season, cwl_day)}'
+                f'{self.of.cwlw_preparation(cwlw, cwl_season, cwl_day, True, war_win_streak, cw_log)}'
             )
             pings.append(False)
             await self.set_activity_preparation_message_sent(
@@ -971,31 +1103,52 @@ class DatabaseManager:
             ''', self.clan_tag, chat.id, chat.type, chat.username, chat.first_name, chat.last_name)
 
     def load_name(self, player_tag: str) -> str:
-        return self.name.get(player_tag, 'UNKNOWN')
+        return self.name.get(player_tag, player_tag)
 
     def load_name_and_tag(self, player_tag: str) -> str:
-        return self.name_and_tag.get(player_tag, f'UNKNOWN ({player_tag})')
+        return self.name_and_tag.get(player_tag, player_tag)
 
     def load_first_name(self, chat_id: int, user_id: int) -> str:
-        return self.first_name.get((chat_id, user_id), 'UNKNOWN')
+        return self.first_name.get((chat_id, user_id), f'{chat_id}:{user_id}')
 
     def load_full_name(self, chat_id: int, user_id: int) -> str:
-        return self.full_name.get((chat_id, user_id), 'UNKNOWN')
+        return self.full_name.get((chat_id, user_id), f'{chat_id}:{user_id}')
+
+    def load_username(self, chat_id: int, user_id: int) -> Optional[str]:
+        return self.username.get((chat_id, user_id), f'{chat_id}:{user_id}')
 
     def load_full_name_and_username(self, chat_id: int, user_id: int) -> str:
-        return self.full_name_and_username.get((chat_id, user_id), 'UNKNOWN')
+        return self.full_name_and_username.get((chat_id, user_id), f'{chat_id}:{user_id}')
 
     def load_mentioned_first_name_to_html(self, chat_id: int, user_id: int) -> str:
-        return (f'<a href="tg://user?id={user_id}">'
-                f'{self.of.to_html(self.load_first_name(chat_id, user_id))}</a>')
+        return (
+            f'<a href="tg://user?id={user_id}">'
+            f'{self.of.to_html(self.load_first_name(chat_id, user_id))}</a>'
+        )
 
     def load_mentioned_full_name_to_html(self, chat_id: int, user_id: int) -> str:
-        return (f'<a href="tg://user?id={user_id}">'
-                f'{self.of.to_html(self.load_full_name(chat_id, user_id))}</a>')
+        return (
+            f'<a href="tg://user?id={user_id}">'
+            f'{self.of.to_html(self.load_full_name(chat_id, user_id))}</a>'
+        )
+
+    def load_mentioned_first_name_and_username_to_html(self, chat_id: int, user_id: int) -> str:
+        text = (
+            f'<a href="tg://user?id={user_id}">'
+            f'{self.of.to_html(self.load_first_name(chat_id, user_id))}</a>'
+        )
+        if self.load_username(chat_id, user_id) is not None:
+            text += f' {self.of.to_html(self.load_username(chat_id, user_id))}'
+        return text
 
     def load_mentioned_full_name_and_username_to_html(self, chat_id: int, user_id: int) -> str:
-        return (f'<a href="tg://user?id={user_id}">'
-                f'{self.of.to_html(self.load_full_name_and_username(chat_id, user_id))}</a>')
+        text = (
+            f'<a href="tg://user?id={user_id}">'
+            f'{self.of.to_html(self.load_full_name(chat_id, user_id))}</a>'
+        )
+        if self.load_username(chat_id, user_id) is not None:
+            text += f' {self.of.to_html(self.load_username(chat_id, user_id))}'
+        return text
 
     async def dump_message_owner(self, message: Message, user: User) -> None:
         await self.acquired_connection.execute('''
@@ -1009,7 +1162,21 @@ class DatabaseManager:
             FROM message_bot_user
             WHERE (clan_tag, chat_id, message_id) = ($1, $2, $3)
         ''', self.clan_tag, message.chat.id, message.message_id)
-        return row and row['user_id'] == user.id
+        return row is not None and row['user_id'] == user.id
+
+    async def get_message_owner(self, message: Message) -> BotUser:
+        row = await self.acquired_connection.fetchrow('''
+            SELECT chat_id, user_id
+            FROM message_bot_user
+            WHERE (clan_tag, chat_id, message_id) = ($1, $2, $3)
+        ''', self.clan_tag, message.chat.id, message.message_id)
+        return BotUser(chat_id=row['chat_id'], user_id=row['user_id'])
+
+    async def get_group_chat_id(self, message: Message) -> int:
+        if message.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
+            return message.chat.id
+        else:
+            return await self.get_main_chat_id()
 
     async def can_user_use_bot(self, user_id: int) -> bool:
         row = await self.acquired_connection.fetchrow('''
@@ -1022,39 +1189,47 @@ class DatabaseManager:
                      OR can_use_bot_without_clan_group)
                 AND user_id = $2
         ''', self.clan_tag, user_id)
-        return row
+        return row is not None
 
     async def can_user_ping_group_members(self, chat_id: int, user_id: int) -> bool:
         row = await self.acquired_connection.fetchrow('''
             SELECT clan_tag, chat_id, user_id
             FROM bot_user
-            WHERE (clan_tag, chat_id, user_id) IN (($1, $2, $3), ($1, $3, $3)) AND can_ping_group_members
+            WHERE
+                ((clan_tag, chat_id, user_id) = ($1, $2, $3) OR (clan_tag, chat_id, user_id) = ($1, $3, $3))
+                AND can_ping_group_members
         ''', self.clan_tag, chat_id, user_id)
-        return row
+        return row is not None
 
     async def can_user_link_group_members(self, chat_id: int, user_id: int) -> bool:
         row = await self.acquired_connection.fetchrow('''
             SELECT clan_tag, chat_id, user_id
             FROM bot_user
-            WHERE (clan_tag, chat_id, user_id) IN (($1, $2, $3), ($1, $3, $3)) AND can_link_group_members
+            WHERE
+                ((clan_tag, chat_id, user_id) = ($1, $2, $3) OR (clan_tag, chat_id, user_id) = ($1, $3, $3))
+                AND can_link_group_members
         ''', self.clan_tag, chat_id, user_id)
-        return row
+        return row is not None
 
     async def can_user_edit_cw_list(self, chat_id: int, user_id: int) -> bool:
         row = await self.acquired_connection.fetchrow('''
             SELECT clan_tag, chat_id, user_id
             FROM bot_user
-            WHERE (clan_tag, chat_id, user_id) IN (($1, $2, $3), ($1, $3, $3)) AND can_edit_cw_list
+            WHERE
+                ((clan_tag, chat_id, user_id) = ($1, $2, $3) OR (clan_tag, chat_id, user_id) = ($1, $3, $3))
+                AND can_edit_cw_list
         ''', self.clan_tag, chat_id, user_id)
-        return row
+        return row is not None
 
     async def can_user_send_messages_from_bot(self, chat_id: int, user_id: int) -> bool:
         row = await self.acquired_connection.fetchrow('''
             SELECT clan_tag, chat_id, user_id
             FROM bot_user
-            WHERE (clan_tag, chat_id, user_id) IN (($1, $2, $3), ($1, $3, $3)) AND can_send_messages_from_bot
+            WHERE
+                ((clan_tag, chat_id, user_id) = ($1, $2, $3) OR (clan_tag, chat_id, user_id) = ($1, $3, $3))
+                AND can_send_messages_from_bot
         ''', self.clan_tag, chat_id, user_id)
-        return row
+        return row is not None
 
     async def is_player_linked_to_user(self, player_tag: str, chat_id: int, user_id: int) -> bool:
         rows = await self.acquired_connection.fetch('''
@@ -1063,7 +1238,10 @@ class DatabaseManager:
                 player
                 JOIN player_bot_user USING (clan_tag, player_tag)
                 JOIN bot_user USING (clan_tag, chat_id, user_id)
-            WHERE (clan_tag, chat_id, user_id) IN (($1, $2, $3), ($1, $3, $3)) AND is_player_in_clan AND is_user_in_chat
+            WHERE
+                ((clan_tag, chat_id, user_id) = ($1, $2, $3) OR (clan_tag, chat_id, user_id) = ($1, $3, $3))
+                AND is_player_in_clan
+                AND is_user_in_chat
         ''', self.clan_tag, chat_id, user_id)
         return player_tag in [row['player_tag'] for row in rows]
 
@@ -1152,7 +1330,7 @@ class DatabaseManager:
             message_text += (
                 f'\n'
                 f'{', '.join(
-                    self.load_mentioned_first_name_to_html(chat_id, user_id_to_ping)
+                    self.load_mentioned_first_name_and_username_to_html(chat_id, user_id_to_ping)
                     for user_id_to_ping in user_ids_to_ping
                 )}\n')
         log_text = f'Message "{message_text}" was sent to group {chat_title} ({chat_id})'
@@ -1197,11 +1375,7 @@ class DatabaseManager:
             WHERE (clan_tag, name, start_time) = ($1, $2, $3)
         ''', clan_tag, name, start_time)
 
-    async def print_skips(self, message: Message, members: list, ping: bool, attacks_limit: int) -> str:
-        if message.chat.type == ChatType.PRIVATE:
-            chat_id = await self.get_main_chat_id()
-        else:
-            chat_id = message.chat.id
+    async def skips(self, chat_id: int, players: list[WarMember | RaidsMember], ping: bool, attacks_limit: int) -> str:
         rows = await self.acquired_connection.fetch('''
             SELECT player.player_tag, bot_user.user_id
             FROM
@@ -1217,23 +1391,37 @@ class DatabaseManager:
                     AND is_user_in_chat
             WHERE player.clan_tag = $1 AND bot_user.chat_id = $2
         ''', self.clan_tag, chat_id)
-        members_by_user_to_mention = {}
-        unlinked_members = []
+        players_by_user_to_mention = {}
+        unlinked_players = []
         users_by_player = {player_tag: [] for player_tag in [row['player_tag'] for row in rows]}
         for row in rows:
             users_by_player[row['player_tag']].append(row['user_id'])
-        for member in members:
-            if member.attacks_spent < attacks_limit or member.attacks_spent < member.attacks_limit:
-                for user_id in users_by_player.get(member.player_tag, []):
-                    if members_by_user_to_mention.get(user_id) is None:
-                        members_by_user_to_mention[user_id] = []
-                    members_by_user_to_mention[user_id].append(member)
-                if users_by_player.get(member.player_tag) is None:
-                    unlinked_members.append(member)
+        for player in players:
+            if player.attacks_spent < attacks_limit or player.attacks_spent < player.attacks_limit:
+                for user_id in users_by_player.get(player.player_tag, []):
+                    if players_by_user_to_mention.get(user_id) is None:
+                        players_by_user_to_mention[user_id] = []
+                    players_by_user_to_mention[user_id].append(player)
+                if users_by_player.get(player.player_tag) is None:
+                    unlinked_players.append(player)
+        for user, players in players_by_user_to_mention.items():
+            players.sort(
+                key=lambda player_: (
+                    -(player_.attacks_limit - player_.attacks_spent),
+                    self.load_name(player_.player_tag)
+                )
+            )
+
         text = ''
-        for user_id, players in members_by_user_to_mention.items():
+        for user_id, players in sorted(
+            players_by_user_to_mention.items(),
+            key=lambda item: (
+                -sum(player_.attacks_limit - player_.attacks_spent for player_ in item[1]),
+                self.load_full_name(chat_id, user_id)
+            )
+        ):
             if ping:
-                text += f'👤 {self.load_mentioned_full_name_to_html(chat_id, user_id)} — '
+                text += f'👤 {self.load_mentioned_full_name_and_username_to_html(chat_id, user_id)} — '
             else:
                 text += f'👤 {self.of.to_html(self.load_full_name(chat_id, user_id))} — '
             text += f'{', '.join(
@@ -1241,13 +1429,19 @@ class DatabaseManager:
                  f'{player.attacks_spent} / {player.attacks_limit}'
                  for player in players]
             )}\n'
-        if len(members_by_user_to_mention) > 0:
+        if len(players_by_user_to_mention) > 0:
             text += '\n'
-        for player in unlinked_members:
+        for player in sorted(
+            unlinked_players,
+            key=lambda player_: (
+                -(player_.attacks_limit - player_.attacks_spent),
+                self.load_name(player_.player_tag)
+            )
+        ):
             text += (
                 f'🪖 {self.of.to_html(self.load_name(player.player_tag))}: '
                 f'{player.attacks_spent} / {player.attacks_limit}\n'
             )
-        if len(members_by_user_to_mention) + len(unlinked_members) == 0:
-            text += f'Список пуст'
+        if len(players_by_user_to_mention) + len(unlinked_players) == 0:
+            text += f'Список пуст\n'
         return text

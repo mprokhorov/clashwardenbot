@@ -27,7 +27,7 @@ async def main():
         if dialog.chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:
             group_dialogs.append(dialog.chat)
     for i, group_dialog in enumerate(group_dialogs):
-        print(f'{i + 1}) {group_dialog.title}')
+        print(f'{i + 1}. {group_dialog.title}')
     chat_idx = input('Enter group chat number: ')
     updated_dialog = group_dialogs[int(chat_idx) - 1]
 

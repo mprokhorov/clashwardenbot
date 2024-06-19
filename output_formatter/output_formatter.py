@@ -1,19 +1,21 @@
 from datetime import datetime, timedelta, UTC
-from enum import Enum
-from typing import Optional, Tuple
+from enum import auto, IntEnum
+from typing import Optional
+
+from asyncpg import Record
 
 from config import config
 
 
-class Event(Enum):
-    CW = 1
-    RW = 2
-    CWL = 3
-    CWLW = 4
-    CG = 5
-    TR = 6
-    LR = 7
-    SE = 8
+class Event(IntEnum):
+    CW = auto()
+    RW = auto()
+    CWL = auto()
+    CWLW = auto()
+    CG = auto()
+    TR = auto()
+    LR = auto()
+    SE = auto()
 
 
 class OutputFormatter:
@@ -85,46 +87,46 @@ class OutputFormatter:
         return district_in_russian[district_data]
 
     @staticmethod
-    def get_capital_gold_emoji():
+    def get_capital_gold_emoji() -> str:
         return f'<tg-emoji emoji-id="{config.capital_gold_emoji_id.get_secret_value()}">🟡</tg-emoji>'
 
     @staticmethod
-    def get_raid_medal_emoji():
+    def get_raid_medal_emoji() -> str:
         return f'<tg-emoji emoji-id="{config.raid_medal_emoji_id.get_secret_value()}">⚪</tg-emoji>'
 
     @staticmethod
-    def get_town_hall_emoji(town_hall_level: int):
+    def get_town_hall_emoji(town_hall_level: int) -> str:
         return (
             f'<tg-emoji emoji-id="{config.town_hall_emoji_ids[town_hall_level - 1].get_secret_value()}">🛖</tg-emoji>'
         )
 
     @staticmethod
-    def get_builder_hall_emoji(builder_hall_level: int):
+    def get_builder_hall_emoji(builder_hall_level: int) -> str:
         return (
             f'<tg-emoji emoji-id="{config.builder_hall_emoji_ids[builder_hall_level - 1].get_secret_value()}">'
             f'🛖</tg-emoji>'
         )
 
     @staticmethod
-    def get_barbarian_king_emoji():
+    def get_barbarian_king_emoji() -> str:
         return (
             f'<tg-emoji emoji-id="{config.home_village_hero_emoji_ids[0].get_secret_value()}">🤴</tg-emoji>'
         )
 
     @staticmethod
-    def get_archer_queen_emoji():
+    def get_archer_queen_emoji() -> str:
         return (
             f'<tg-emoji emoji-id="{config.home_village_hero_emoji_ids[1].get_secret_value()}">👸</tg-emoji>'
         )
 
     @staticmethod
-    def get_grand_warden_emoji():
+    def get_grand_warden_emoji() -> str:
         return (
             f'<tg-emoji emoji-id="{config.home_village_hero_emoji_ids[2].get_secret_value()}">👴</tg-emoji>'
         )
 
     @staticmethod
-    def get_royal_champion_emoji():
+    def get_royal_champion_emoji() -> str:
         return (
             f'<tg-emoji emoji-id="{config.home_village_hero_emoji_ids[3].get_secret_value()}">🙍‍♀️</tg-emoji>'
         )
@@ -221,10 +223,79 @@ class OutputFormatter:
             11: 'ноября',
             12: 'декабря'
         }
-        if dt.day == dt_now.day:
+        if (dt.year, dt.month, dt.day) == (dt_now.year, dt_now.month, dt_now.day):
             return f'сегодня в {dt.hour}:{str(dt.minute).zfill(2)}'
         else:
             return f'{dt.day} {month_in_russian_genitive[dt.month]} в {dt.hour}:{str(dt.minute).zfill(2)}'
+
+    @staticmethod
+    def get_days_in_russian(days: int) -> str:
+        if 0 <= days < 20:
+            days_in_russian = [
+                '', '1 день', '2 дня', '3 дня', '4 дня',
+                '5 дней', '6 дней', '7 дней', '8 дней', '9 дней',
+                '10 дней', '11 дней', '12 дней', '13 дней', '14 дней',
+                '15 дней', '16 дней', '17 дней', '18 дней', '19 дней'
+            ]
+            return days_in_russian[days]
+        elif 20 <= days < 100:
+            word_in_russian = [
+                'дней', 'день', 'дня', 'дня', 'дня',
+                'дней', 'дней', 'дней', 'дней', 'дней'
+            ]
+            return f'{days} {word_in_russian[days % 10]}'
+        else:
+            if days % 100 == 0:
+                return f'{days} дней'
+            else:
+                return f'{days} {OutputFormatter.get_days_in_russian(days % 100).split(' ')[-1]}'
+
+    @staticmethod
+    def get_hours_in_russian(hours: int) -> str:
+        hours_in_russian = [
+            '', '1 час', '2 часа', '3 часа', '4 часа',
+            '5 часов', '6 часов', '7 часов', '8 часов', '9 часов',
+            '10 часов', '11 часов', '12 часов', '13 часов', '14 часов',
+            '15 часов', '16 часов', '17 часов', '18 часов', '19 часов',
+            '20 часов', '21 час', '22 часа', '23 часа'
+        ]
+        return hours_in_russian[hours]
+
+    @staticmethod
+    def get_minutes_in_russian(minutes: int) -> str:
+        minutes_in_russian = [
+            '', '1 минуту', '2 минуты', '3 минуты', '4 минуты',
+            '5 минут', '6 минут', '7 минут', '8 минут', '9 минут',
+            '10 минут', '11 минут', '12 минут', '13 минут', '14 минут',
+            '15 минут', '16 минут', '17 минут', '18 минут', '19 минут',
+            '20 минут', '21 минуту', '22 минуты', '23 минуты', '24 минуты',
+            '25 минут', '26 минут', '27 минут', '28 минут', '29 минут',
+            '30 минут', '31 минуту', '32 минуты', '33 минуты', '34 минуты',
+            '35 минут', '36 минут', '37 минут', '38 минут', '39 минут',
+            '40 минут', '41 минуту', '42 минуты', '43 минуты', '44 минуты',
+            '45 минут', '46 минут', '47 минут', '48 минут', '49 минут',
+            '50 минут', '51 минуту', '52 минуты', '53 минуты', '54 минуты',
+            '55 минут', '56 минут', '57 минут', '58 минут', '59 минут'
+        ]
+        return minutes_in_russian[minutes]
+
+    @staticmethod
+    def get_seconds_in_russian(seconds: int) -> str:
+        seconds_in_russian = [
+            '', '1 секунду', '2 секунды', '3 секунды', '4 секунды',
+            '5 секунд', '6 секунд', '7 секунд', '8 секунд', '9 секунд',
+            '10 секунд', '11 секунд', '12 секунд', '13 секунд', '14 секунд',
+            '15 секунд', '16 секунд', '17 секунд', '18 секунд', '19 секунд',
+            '20 секунд', '21 секунду', '22 секунды', '23 секунды', '24 секунды',
+            '25 секунд', '26 секунд', '27 секунд', '28 секунд', '29 секунд',
+            '30 секунд', '31 секунду', '32 секунды', '33 секунды', '34 секунды',
+            '35 секунд', '36 секунд', '37 секунд', '38 секунд', '39 секунд',
+            '40 секунд', '41 секунду', '42 секунды', '43 секунды', '44 секунды',
+            '45 секунд', '46 секунд', '47 секунд', '48 секунд', '49 секунд',
+            '50 секунд', '51 секунду', '52 секунды', '53 секунды', '54 секунды',
+            '55 секунд', '56 секунд', '57 секунд', '58 секунд', '59 секунд'
+        ]
+        return seconds_in_russian[seconds]
 
     def event_datetime(
             self,
@@ -250,54 +321,6 @@ class OutputFormatter:
         hours = dt_diff.seconds // 3600
         minutes = (dt_diff.seconds % 3600) // 60
         seconds = dt_diff.seconds % 60
-
-        day_in_russian = [
-            '', '1 день', '2 дня', '3 дня', '4 дня',
-            '5 дней', '6 дней', '7 дней', '8 дней', '9 дней',
-            '10 дней', '11 дней', '12 дней', '13 дней', '14 дней',
-            '15 дней', '16 дней', '17 дней', '18 дней', '19 дней',
-            '20 дней', '21 дней', '22 дня', '23 дня', '24 дня',
-            '25 дней', '26 дней', '27 дней', '28 дней', '29 дней',
-            '30 дней', '31 день', '32 дня', '33 дня', '34 дня'
-        ]
-
-        hour_in_russian = [
-            '', '1 час', '2 часа', '3 часа', '4 часа',
-            '5 часов', '6 часов', '7 часов', '8 часов', '9 часов',
-            '10 часов', '11 часов', '12 часов', '13 часов', '14 часов',
-            '15 часов', '16 часов', '17 часов', '18 часов', '19 часов',
-            '20 часов', '21 час', '22 часа', '23 часа'
-        ]
-
-        minute_in_russian = [
-            '', '1 минуту', '2 минуты', '3 минуты', '4 минуты',
-            '5 минут', '6 минут', '7 минут', '8 минут', '9 минут',
-            '10 минут', '11 минут', '12 минут', '13 минут', '14 минут',
-            '15 минут', '16 минут', '17 минут', '18 минут', '19 минут',
-            '20 минут', '21 минуту', '22 минуты', '23 минуты', '24 минуты',
-            '25 минут', '26 минут', '27 минут', '28 минут', '29 минут',
-            '30 минут', '31 минуту', '32 минуты', '33 минуты', '34 минуты',
-            '35 минут', '36 минут', '37 минут', '38 минут', '39 минут',
-            '40 минут', '41 минуту', '42 минуты', '43 минуты', '44 минуты',
-            '45 минут', '46 минут', '47 минут', '48 минут', '49 минут',
-            '50 минут', '51 минуту', '52 минуты', '53 минуты', '54 минуты',
-            '55 минут', '56 минут', '57 минут', '58 минут', '59 минут'
-        ]
-
-        second_in_russian = [
-            '', '1 секунду', '2 секунды', '3 секунды', '4 секунды',
-            '5 секунд', '6 секунд', '7 секунд', '8 секунд', '9 секунд',
-            '10 секунд', '11 секунд', '12 секунд', '13 секунд', '14 секунд',
-            '15 секунд', '16 секунд', '17 секунд', '18 секунд', '19 секунд',
-            '20 секунд', '21 секунду', '22 секунды', '23 секунды', '24 секунды',
-            '25 секунд', '26 секунд', '27 секунд', '28 секунд', '29 секунд',
-            '30 секунд', '31 секунду', '32 секунды', '33 секунды', '34 секунды',
-            '35 секунд', '36 секунд', '37 секунд', '38 секунд', '39 секунд',
-            '40 секунд', '41 секунду', '42 секунды', '43 секунды', '44 секунды',
-            '45 секунд', '46 секунд', '47 секунд', '48 секунд', '49 секунд',
-            '50 секунд', '51 секунду', '52 секунды', '53 секунды', '54 секунды',
-            '55 секунд', '56 секунд', '57 секунд', '58 секунд', '59 секунд'
-        ]
 
         event_name = {
             Event.CW: 'КВ',
@@ -336,19 +359,19 @@ class OutputFormatter:
         }
 
         if days != 0:
-            dt_diff_str = day_in_russian[days]
+            dt_diff_str = self.get_days_in_russian(days)
             if hours != 0:
-                dt_diff_str += ' и ' + hour_in_russian[hours]
+                dt_diff_str += ' и ' + self.get_hours_in_russian(hours)
         elif hours != 0:
-            dt_diff_str = hour_in_russian[hours]
+            dt_diff_str = self.get_hours_in_russian(hours)
             if minutes != 0:
-                dt_diff_str += ' и ' + minute_in_russian[minutes]
+                dt_diff_str += ' и ' + self.get_minutes_in_russian(minutes)
         elif minutes != 0:
-            dt_diff_str = minute_in_russian[minutes]
+            dt_diff_str = self.get_minutes_in_russian(minutes)
             if minutes < 10 and seconds != 0:
-                dt_diff_str += ' и ' + second_in_russian[seconds]
+                dt_diff_str += ' и ' + self.get_seconds_in_russian(seconds)
         elif seconds != 0:
-            dt_diff_str = second_in_russian[seconds]
+            dt_diff_str = self.get_seconds_in_russian(seconds)
         else:
             dt_diff_str = ''
 
@@ -396,6 +419,34 @@ class OutputFormatter:
         else:
             return dt_end
 
+    def event_remaining_or_passed(self, dt_data: str) -> str:
+        dt_now = datetime.now(UTC).replace(tzinfo=None) + self.utc_to_local_hours
+        dt_event = self.to_datetime(dt_data) + self.utc_to_local_hours
+
+        dt_diff = abs(dt_event - dt_now)
+        days = dt_diff.days
+        hours = dt_diff.seconds // 3600
+        minutes = (dt_diff.seconds % 3600) // 60
+        seconds = dt_diff.seconds % 60
+
+        if days != 0:
+            dt_diff_str = self.get_days_in_russian(days)
+        elif hours != 0:
+            dt_diff_str = self.get_hours_in_russian(hours)
+        elif minutes != 0:
+            dt_diff_str = self.get_minutes_in_russian(minutes)
+        elif seconds != 0:
+            dt_diff_str = self.get_seconds_in_russian(seconds)
+        else:
+            dt_diff_str = ''
+
+        if dt_now < dt_event:
+            return f'через {dt_diff_str}'
+        elif dt_now > dt_event:
+            return f'{dt_diff_str} назад'
+        else:
+            return 'только что'
+
     @staticmethod
     def state(event: Optional[dict]) -> Optional[str]:
         return event['state'] if event else None
@@ -411,16 +462,82 @@ class OutputFormatter:
         else:
             return f'⚖️ Ничья\n'
 
-    def cw_preparation(self, cw: dict) -> str:
+    def war_log(self, clan_war_log: dict) -> str:
+        text = f'Ход войны противника:\n'
+        only_clan_war_log = [
+            prev_clan_war
+            for prev_clan_war in clan_war_log['items']
+            if prev_clan_war.get('attacksPerMember', 0) == 2
+        ]
+        for prev_clan_war in only_clan_war_log[:10]:
+            clan_result = (prev_clan_war['clan']['stars'], prev_clan_war['clan']['destructionPercentage'])
+            opponent_result = (prev_clan_war['opponent']['stars'], prev_clan_war['opponent']['destructionPercentage'])
+            if clan_result > opponent_result:
+                text += '✅ '
+            elif clan_result < opponent_result:
+                text += '❌ '
+            else:
+                text += '🟰 '
+            text += (
+                f'{prev_clan_war['clan']['stars']} ⭐ vs {prev_clan_war['opponent']['stars']} ⭐, '
+                f'{prev_clan_war['teamSize']} 🪖 ({self.event_remaining_or_passed(prev_clan_war['endTime'])})\n'
+            )
+        if len(only_clan_war_log[:10]) == 0:
+            text += f'Список пуст\n'
+        return text
+
+    def opponent_info(self, war_win_streak: int, clan_war_log: Optional[dict]):
+        text = (
+            f'\n'
+            f'Серия побед противника: {war_win_streak}\n'
+            f'\n'
+        )
+        if clan_war_log is None:
+            text += f'Ход войны противника недоступен'
+        else:
+            text += f'{self.war_log(clan_war_log)}'
+        return text
+
+    def war_members(self, war_clan_members: list, clan_map_position_by_player: dict, rows: list[Record]) -> str:
+        war_member_info = {
+            row['player_tag']: (
+                f'{self.to_html(row['player_name'])} {self.get_player_info_with_emoji(
+                    row['town_hall_level'],
+                    row['barbarian_king_level'],
+                    row['archer_queen_level'],
+                    row['grand_warden_level'],
+                    row['royal_champion_level']
+                )}'
+            )
+            for row in rows
+        }
+        war_member_lines = [''] * len(clan_map_position_by_player)
+        for member in war_clan_members:
+            war_member_lines[clan_map_position_by_player[member['tag']] - 1] = (
+                f'{clan_map_position_by_player[member['tag']]}. '
+                f'{war_member_info.get(member['tag'], self.to_html(member['name']))}'
+            )
+        text = '\n'.join(war_member_lines)
+        return text
+
+    def cw_preparation(
+            self, cw: dict,
+            show_opponent_info: bool, war_win_streak: Optional[int], clan_war_log: Optional[dict]
+    ) -> str:
         text = (
             f'{self.to_html(cw['clan']['name'])} vs {self.to_html(cw['opponent']['name'])}\n'
             f'{cw['teamSize']} 🪖 vs {cw['teamSize']} 🪖\n'
             f'\n'
             f'{self.event_datetime(Event.CW, cw['startTime'], cw['endTime'], False)}\n'
         )
+        if show_opponent_info:
+            text += self.opponent_info(war_win_streak, clan_war_log)
         return text
 
-    def cw_in_war_or_ended(self, cw: dict) -> str:
+    def cw_in_war_or_war_ended(
+            self, cw: dict,
+            show_opponent_info: bool, war_win_streak: Optional[int], clan_war_log: Optional[dict]
+    ) -> str:
         text = (
             f'{self.event_datetime(Event.CW, cw['startTime'], cw['endTime'], True)}\n'
             f'\n'
@@ -433,9 +550,14 @@ class OutputFormatter:
         )
         if self.state(cw) == 'warEnded':
             text += self.war_result(cw)
+        if show_opponent_info:
+            text += self.opponent_info(war_win_streak, clan_war_log)
         return text
 
-    def cwlw_preparation(self, cwlw: dict, cwl_season: str, cwl_day: int) -> str:
+    def cwlw_preparation(
+            self, cwlw: dict, cwl_season: str, cwl_day: int,
+            show_opponent_info: bool, war_win_streak: Optional[int], clan_war_log: Optional[dict]
+    ) -> str:
         text = (
             f'Сезон ЛВК: {self.season(cwl_season)}, день {cwl_day + 1}\n'
             f'{self.to_html(cwlw['clan']['name'])} vs {self.to_html(cwlw['opponent']['name'])}\n'
@@ -443,9 +565,14 @@ class OutputFormatter:
             f'\n'
             f'{self.event_datetime(Event.CWLW, cwlw['startTime'], cwlw['endTime'], False)}\n'
         )
+        if show_opponent_info:
+            text += self.opponent_info(war_win_streak, clan_war_log)
         return text
 
-    def cwlw_in_war_or_ended(self, cwlw: dict, cwl_season: str, cwl_day: int) -> str:
+    def cwlw_in_war_or_war_ended(
+            self, cwlw: dict, cwl_season: str, cwl_day: int,
+            show_opponent_info: bool, war_win_streak: Optional[int], clan_war_log: Optional[dict]
+    ) -> str:
         text = (
             f'{self.event_datetime(Event.CWLW, cwlw['startTime'], cwlw['endTime'], True)}\n'
             f'\n'
@@ -459,20 +586,33 @@ class OutputFormatter:
         )
         if self.state(cwlw) == 'warEnded':
             text += self.war_result(cwlw)
+        if show_opponent_info:
+            text += self.opponent_info(war_win_streak, clan_war_log)
         return text
 
-    def raid_ongoing_or_ended(self, raid: dict) -> str:
-        districts_count = 9
+    def raids_ongoing_or_ended(self, raids: dict) -> str:
+        current_raid_districts = raids['attackLog'][-1]['districts']
         text = (
-            f'{self.event_datetime(Event.RW, raid['startTime'], raid['endTime'], True)}\n'
+            f'{self.event_datetime(Event.RW, raids['startTime'], raids['endTime'], True)}\n'
             f'\n'
-            f'Получено столичного золота: {raid['capitalTotalLoot']} {self.get_capital_gold_emoji()}\n'
-            f'Завершено рейдов: {raid['enemyDistrictsDestroyed'] // districts_count} ⚔️\n'
-            f'Сделано атак: {raid['totalAttacks']} / 300 🗡️\n'
         )
-        if raid.get('offensiveReward') and raid.get('defensiveReward'):
+        if self.state(raids) in ['ongoing']:
             text += (
-                f'Награда за 6 атак: {int(raid['offensiveReward']) * 6 + int(raid['defensiveReward'])} '
+                f'Уничтожено районов в текущем рейде: '
+                f'{len([district for district in current_raid_districts if district['destructionPercent'] == 100])} '
+            f'/ {len(current_raid_districts)}\n'
+            )
+        text += (
+            f'Завершено рейдов: {len([
+                raid for raid in raids['attackLog']
+                if all(district['destructionPercent'] == 100 for district in raid['districts'])
+            ])} ⚔️\n'
+            f'Получено столичного золота: {raids['capitalTotalLoot']} {self.get_capital_gold_emoji()}\n'
+            f'Сделано атак: {raids['totalAttacks']} / {6 * 50} 🗡️\n'
+        )
+        if raids.get('offensiveReward') is not None and raids.get('defensiveReward') is not None:
+            text += (
+                f'Награда за 6 атак: {int(raids['offensiveReward']) * 6 + int(raids['defensiveReward'])} '
                 f'{self.get_raid_medal_emoji()}\n'
             )
         return text
@@ -482,7 +622,7 @@ class OutputFormatter:
         return text
 
     @staticmethod
-    def calculate_next_raid_weekend() -> Tuple[datetime, datetime]:
+    def calculate_next_raid_weekend() -> tuple[datetime, datetime]:
         dt_now = datetime.now(UTC)
         if (dt_now.weekday(), dt_now.hour) < (0, 7):
             dt_end = datetime(year=dt_now.year, month=dt_now.month, day=dt_now.day, hour=7)
@@ -509,7 +649,7 @@ class OutputFormatter:
             return datetime(year=next_tuesday.year, month=next_tuesday.month, day=next_tuesday.day, hour=8)
 
     @staticmethod
-    def calculate_next_clan_games() -> Tuple[datetime, datetime]:
+    def calculate_next_clan_games() -> tuple[datetime, datetime]:
         dt_now = datetime.now(UTC)
         if (dt_now.day, dt_now.hour) < (28, 8):
             return (
@@ -533,7 +673,7 @@ class OutputFormatter:
             )
 
     @staticmethod
-    def calculate_next_cwl() -> Tuple[datetime, datetime]:
+    def calculate_next_cwl() -> tuple[datetime, datetime]:
         dt_now = datetime.now(UTC)
         if (dt_now.day, dt_now.hour) < (11, 8):
             return (
@@ -600,6 +740,74 @@ class OutputFormatter:
             for i, item in enumerate(sorted(map_position.items(), key=lambda item: item[1]))
         }
         return map_position
+
+    def get_map(
+            self,
+            clan_map_position_by_player: dict,
+            opponent_map_position_by_player: dict,
+            clan_data: dict,
+            opponent_data: dict
+    ) -> str:
+        clan_player_name_by_player_tag = {
+            clan_member['tag']: clan_member['name']
+            for clan_member
+            in clan_data['members']
+        }
+        opponent_member_lines = [''] * len(opponent_map_position_by_player)
+        for opponent_member in opponent_data['members']:
+            if opponent_member.get('bestOpponentAttack') is not None:
+                best_opponent_attack = opponent_member['bestOpponentAttack']
+                if best_opponent_attack['stars'] > 0:
+                    opponent_member_lines[opponent_map_position_by_player[opponent_member['tag']] - 1] += (
+                        f'{opponent_map_position_by_player[opponent_member['tag']]}. '
+                        f'{'⭐' * best_opponent_attack['stars']} '
+                        f'({best_opponent_attack['destructionPercentage']}%) '
+                        f'⬅️ '
+                        f'{clan_map_position_by_player[best_opponent_attack['attackerTag']]}. '
+                        f'{self.to_html(clan_player_name_by_player_tag[best_opponent_attack['attackerTag']])}'
+                    )
+                else:
+                    opponent_member_lines[opponent_map_position_by_player[opponent_member['tag']] - 1] += (
+                        f'{opponent_map_position_by_player[opponent_member['tag']]}. 0%'
+                    )
+            else:
+                opponent_member_lines[opponent_map_position_by_player[opponent_member['tag']] - 1] += (
+                    f'{opponent_map_position_by_player[opponent_member['tag']]}. 0%'
+                )
+        return '\n'.join(opponent_member_lines)
+
+    def get_attacks(
+            self,
+            clan_map_position_by_player: dict,
+            opponent_map_position_by_player: dict,
+            clan_data: dict,
+            opponent_data: dict
+    ) -> str:
+        opponent_player_name_by_player_tag = {
+            opponent_member['tag']: opponent_member['name']
+            for opponent_member
+            in opponent_data['members']
+        }
+        cw_member_lines = [''] * len(clan_map_position_by_player)
+        for member in clan_data['members']:
+            cw_member_lines[clan_map_position_by_player[member['tag']] - 1] += (
+                f'{clan_map_position_by_player[member['tag']]}. '
+                f'{self.to_html(member['name'])}: {len(member.get('attacks', []))} / 2\n'
+            )
+            for attack in member.get('attacks', []):
+                if attack['stars'] != 0:
+                    cw_member_lines[clan_map_position_by_player[member['tag']] - 1] += (
+                        f'{'⭐' * attack['stars']} ({attack['destructionPercentage']}%) '
+                        f'➡️ {opponent_map_position_by_player[attack['defenderTag']]}. '
+                        f'{self.to_html(opponent_player_name_by_player_tag[attack['defenderTag']])}\n'
+                    )
+                else:
+                    cw_member_lines[clan_map_position_by_player[member['tag']] - 1] += (
+                        f'{attack['destructionPercentage']}% '
+                        f'➡️ {opponent_map_position_by_player[attack['defenderTag']]}. '
+                        f'{self.to_html(opponent_player_name_by_player_tag[attack['defenderTag']])}\n'
+                    )
+        return '\n'.join(cw_member_lines)
 
     @staticmethod
     def attacks_count_to_text(attacks_count: int) -> str:

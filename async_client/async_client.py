@@ -5,6 +5,7 @@ import httpx
 import requests
 import urllib.parse
 
+from asyncio_throttle import Throttler
 from http import HTTPStatus
 from typing import Optional
 
@@ -35,12 +36,13 @@ class AsyncClient:
         self.key = key
 
         self.http_client = httpx.AsyncClient()
+        self.throttler = Throttler(rate_limit=20, period=1)
 
-        if None not in (self.email, self.password):
+        if self.email is not None and self.password is not None:
             self.update_key()
 
     def update_key(self) -> bool:
-        if None in (self.email, self.password):
+        if self.email is None or self.password is None:
             return False
         session = requests.Session()
         login = session.post(
@@ -96,18 +98,19 @@ class AsyncClient:
         return True
 
     async def get_data(self, url: str):
-        response = await self.http_client.get(
-            url=url,
-            headers={'authorization': f'Bearer {self.key}', 'accept': 'application/json'},
-            timeout=60
-        )
-        if response.status_code == HTTPStatus.FORBIDDEN and self.update_key():
+        async with self.throttler:
             response = await self.http_client.get(
                 url=url,
                 headers={'authorization': f'Bearer {self.key}', 'accept': 'application/json'},
                 timeout=60
             )
-        return response.json() if response.status_code == HTTPStatus.OK else None
+            if response.status_code == HTTPStatus.FORBIDDEN and self.update_key():
+                response = await self.http_client.get(
+                    url=url,
+                    headers={'authorization': f'Bearer {self.key}', 'accept': 'application/json'},
+                    timeout=60
+                )
+            return response.json() if response.status_code == HTTPStatus.OK else None
 
     async def get_clan(self, clan_tag: str):
         return await self.get_data(
@@ -142,4 +145,9 @@ class AsyncClient:
     async def get_player(self, player_tag: str):
         return await self.get_data(
             f'https://api.clashofclans.com/v1/players/{urllib.parse.quote(player_tag)}'
+        )
+
+    async def get_war_log(self, clan_tag: str):
+        return await self.get_data(
+            f'https://api.clashofclans.com/v1/clans/{urllib.parse.quote(clan_tag)}/warlog'
         )

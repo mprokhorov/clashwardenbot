@@ -9,7 +9,7 @@ from aiohttp.web_app import Application
 from bot.middlewares import MessageMiddleware, CallbackQueryMiddleware
 from config import config
 from database_manager import DatabaseManager
-from routers import admin, cw, cwl, members, raids
+from routers import admin, cw, cwl, miscellaneous, raids
 
 WEBHOOK_HOST = config.webhook_host.get_secret_value()
 WEBHOOK_PATH = config.webhook_path.get_secret_value()
@@ -61,7 +61,7 @@ def main():
     dispatcher['bot_number'] = bot_number
     dispatcher.message.outer_middleware(MessageMiddleware())
     dispatcher.callback_query.outer_middleware(CallbackQueryMiddleware())
-    dispatcher.include_routers(router, cw.router, raids.router, cwl.router, members.router, admin.router)
+    dispatcher.include_routers(router, cw.router, raids.router, cwl.router, miscellaneous.router, admin.router)
 
     app = Application()
     SimpleRequestHandler(dispatcher=dispatcher, bot=bot).register(app, path=WEBHOOK_PATH)

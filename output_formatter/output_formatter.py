@@ -595,22 +595,22 @@ class OutputFormatter:
         text = (
             f'{self.event_datetime(Event.RW, raids['startTime'], raids['endTime'], True)}\n'
             f'\n'
+            f'Завершено рейдов: {len([
+                raid for raid in raids['attackLog']
+                if all(district['destructionPercent'] == 100 for district in raid['districts'])
+            ])} ⚔️\n'
         )
         if self.state(raids) in ['ongoing']:
             text += (
                 f'Уничтожено районов в текущем рейде: '
                 f'{len([district for district in current_raid_districts if district['destructionPercent'] == 100])} '
-            f'/ {len(current_raid_districts)}\n'
+                f'/ {len(current_raid_districts)}\n'
             )
         text += (
-            f'Завершено рейдов: {len([
-                raid for raid in raids['attackLog']
-                if all(district['destructionPercent'] == 100 for district in raid['districts'])
-            ])} ⚔️\n'
-            f'Получено столичного золота: {raids['capitalTotalLoot']} {self.get_capital_gold_emoji()}\n'
             f'Сделано атак: {raids['totalAttacks']} / {6 * 50} 🗡️\n'
+            f'Получено столичного золота: {raids['capitalTotalLoot']} {self.get_capital_gold_emoji()}\n'
         )
-        if raids.get('offensiveReward') is not None and raids.get('defensiveReward') is not None:
+        if self.state(raids) in ['ended']:
             text += (
                 f'Награда за 6 атак: {int(raids['offensiveReward']) * 6 + int(raids['defensiveReward'])} '
                 f'{self.get_raid_medal_emoji()}\n'

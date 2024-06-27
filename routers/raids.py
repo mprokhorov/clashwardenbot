@@ -87,7 +87,7 @@ async def raids_attacks(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[I
                     RaidsMember(player_tag=row['player_tag'], attacks_spent=0, attacks_limit=6, gold_looted=0)
                 )
         raids_members.sort(
-            key=lambda raids_member_: (-raids_member_.gold_looted, dm.load_name(raids_member_.player_tag))
+            key=lambda _raids_member: (-_raids_member.gold_looted, dm.load_name(_raids_member.player_tag))
         )
         text += (
             f'{dm.of.raids_ongoing_or_ended(raids)}'
@@ -149,7 +149,7 @@ async def raids_skips(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode
             f'{dm.of.raids_ongoing_or_ended(raids)}'
             f'\n'
         )
-        text += await dm.skips(chat_id=chat_id, players=raids_members, ping=False, attacks_limit=5)
+        text += await dm.skips(chat_id=chat_id, players=raids_members, ping=False, desired_attacks_spent=6)
         button_row.append(update_button)
     else:
         text += 'Информация о рейдах отсутствует\n'
@@ -193,7 +193,7 @@ async def raids_ping(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode,
             f'{dm.of.raids_ongoing_or_ended(raids)}'
             f'\n'
         )
-        text += await dm.skips(chat_id=chat_id, players=raids_members, ping=True, attacks_limit=6)
+        text += await dm.skips(chat_id=chat_id, players=raids_members, ping=True, desired_attacks_spent=5)
     else:
         text += 'Информация о рейдах отсутствует\n'
     return text, ParseMode.HTML, None
@@ -235,7 +235,7 @@ async def raids_analysis(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[
             text += f'<b>{dm.of.district(district_name)}</b>\n'
             district_best_by_destruction = sorted(
                 district_attacks,
-                key=lambda district_attack_: (district_attack_.attacks_count, -district_attack_.average_destruction)
+                key=lambda _district_attack: (_district_attack.attacks_count, -_district_attack.average_destruction)
             )[0].district
             text += (
                 f'👍 Лучшее уничтожение '
@@ -254,7 +254,7 @@ async def raids_analysis(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[
                     )
             district_worst_by_destruction = sorted(
                 district_attacks,
-                key=lambda district_attack_: (district_attack_.attacks_count, -district_attack_.average_destruction)
+                key=lambda _district_attack: (_district_attack.attacks_count, -_district_attack.average_destruction)
             )[-1].district
             text += (
                 f'👎 Худшее уничтожение '

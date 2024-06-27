@@ -758,6 +758,7 @@ class DatabaseManager:
         ''', [
             (self.clan_tag, self.of.to_datetime(item['startTime']), json.dumps(item))
             for item in retrieved_raid_weekends['items']
+            if item.get('members') is not None
         ])
 
         new_raids = await self.load_raid_weekend()
@@ -1375,7 +1376,9 @@ class DatabaseManager:
             WHERE (clan_tag, name, start_time) = ($1, $2, $3)
         ''', clan_tag, name, start_time)
 
-    async def skips(self, chat_id: int, players: list[WarMember | RaidsMember], ping: bool, attacks_limit: int) -> str:
+    async def skips(
+            self, chat_id: int, players: list[WarMember | RaidsMember], ping: bool, desired_attacks_spent: int
+    ) -> str:
         rows = await self.acquired_connection.fetch('''
             SELECT player.player_tag, bot_user.user_id
             FROM
@@ -1397,7 +1400,7 @@ class DatabaseManager:
         for row in rows:
             users_by_player[row['player_tag']].append(row['user_id'])
         for player in players:
-            if player.attacks_spent < attacks_limit or player.attacks_spent < player.attacks_limit:
+            if player.attacks_spent < desired_attacks_spent or player.attacks_spent < player.attacks_limit:
                 for user_id in users_by_player.get(player.player_tag, []):
                     if players_by_user_to_mention.get(user_id) is None:
                         players_by_user_to_mention[user_id] = []
@@ -1406,9 +1409,9 @@ class DatabaseManager:
                     unlinked_players.append(player)
         for user, players in players_by_user_to_mention.items():
             players.sort(
-                key=lambda player_: (
-                    -(player_.attacks_limit - player_.attacks_spent),
-                    self.load_name(player_.player_tag)
+                key=lambda _player: (
+                    -(_player.attacks_limit - _player.attacks_spent),
+                    self.load_name(_player.player_tag)
                 )
             )
 
@@ -1416,7 +1419,7 @@ class DatabaseManager:
         for user_id, players in sorted(
             players_by_user_to_mention.items(),
             key=lambda item: (
-                -sum(player_.attacks_limit - player_.attacks_spent for player_ in item[1]),
+                -sum(_player.attacks_limit - _player.attacks_spent for _player in item[1]),
                 self.load_full_name(chat_id, user_id)
             )
         ):
@@ -1433,9 +1436,9 @@ class DatabaseManager:
             text += '\n'
         for player in sorted(
             unlinked_players,
-            key=lambda player_: (
-                -(player_.attacks_limit - player_.attacks_spent),
-                self.load_name(player_.player_tag)
+            key=lambda _player: (
+                -(_player.attacks_limit - _player.attacks_spent),
+                self.load_name(_player.player_tag)
             )
         ):
             text += (

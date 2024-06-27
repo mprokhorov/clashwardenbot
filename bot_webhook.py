@@ -45,10 +45,7 @@ def main():
     logging.basicConfig(
         level=logging.INFO,
         format='%(filename)s:%(lineno)d #%(levelname)s [%(asctime)s] - %(name)s - %(message)s',
-        handlers=[
-            logging.FileHandler(f'bot_polling ({bot_number}).log', 'w'),
-            logging.StreamHandler()
-        ]
+        handlers=[logging.FileHandler(f'bot_polling ({bot_number}).log', 'w'), logging.StreamHandler()]
     )
 
     bot = Bot(token=config.telegram_bot_api_tokens[bot_number].get_secret_value())

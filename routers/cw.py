@@ -43,6 +43,7 @@ class OutputView(IntEnum):
 class CWCallbackFactory(CallbackData, prefix='cw'):
     output_view: OutputView
     update: bool = False
+    show_opponent_info: Optional[bool] = None
     cw_map_side: Optional[CWMapSide] = None
     cw_attacks_side: Optional[CWAttacksSide] = None
     player_tag: Optional[str] = None
@@ -50,26 +51,46 @@ class CWCallbackFactory(CallbackData, prefix='cw'):
     cw_list_order: Optional[CWListOrder] = None
 
 
-async def cw_info(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+async def cw_info(
+        dm: DatabaseManager, callback_data: Optional[CWCallbackFactory]
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    if callback_data is not None and callback_data.show_opponent_info is not None:
+        show_opponent_info = callback_data.show_opponent_info
+    else:
+        show_opponent_info = False
     text = (
         f'<b>⚔️ Информация о КВ</b>\n'
         f'\n'
     )
     button_row = []
+    if show_opponent_info:
+        opponent_info_button = InlineKeyboardButton(
+            text='🔼 Свернуть',
+            callback_data=CWCallbackFactory(output_view=OutputView.cw_info, show_opponent_info=False).pack()
+        )
+    else:
+        opponent_info_button = InlineKeyboardButton(
+            text='🔽 Развернуть',
+            callback_data=CWCallbackFactory(output_view=OutputView.cw_info, show_opponent_info=True).pack()
+        )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=CWCallbackFactory(output_view=OutputView.cw_info, update=True).pack()
+        callback_data=CWCallbackFactory(
+            output_view=OutputView.cw_info, update=True, show_opponent_info=show_opponent_info
+        ).pack()
     )
     cw = await dm.load_clan_war()
     if dm.of.state(cw) in ['preparation']:
         war_win_streak = await dm.load_war_win_streak(cw['opponent']['tag'])
         cw_log = await dm.load_clan_war_log(cw['opponent']['tag'])
-        text += dm.of.cw_preparation(cw, True, war_win_streak, cw_log)
+        text += dm.of.cw_preparation(cw, show_opponent_info, war_win_streak, cw_log)
+        button_row.append(opponent_info_button)
         button_row.append(update_button)
     elif dm.of.state(cw) in ['inWar', 'warEnded']:
         war_win_streak = await dm.load_war_win_streak(cw['opponent']['tag'])
         cw_log = await dm.load_clan_war_log(cw['opponent']['tag'])
-        text += dm.of.cw_in_war_or_war_ended(cw, True, war_win_streak, cw_log)
+        text += dm.of.cw_in_war_or_war_ended(cw, show_opponent_info, war_win_streak, cw_log)
+        button_row.append(opponent_info_button)
         button_row.append(update_button)
     else:
         text += f'Информация о КВ отсутствует\n'
@@ -81,7 +102,6 @@ async def cw_info(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[InlineK
 async def cw_map(
         dm: DatabaseManager, callback_data: Optional[CWCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    cw = await dm.load_clan_war()
     if callback_data is not None and callback_data.cw_map_side is not None:
         cw_map_side = callback_data.cw_map_side
     else:
@@ -103,6 +123,7 @@ async def cw_map(
         text='↔️ Карта противника',
         callback_data=CWCallbackFactory(output_view=OutputView.cw_map, cw_map_side=CWMapSide.opponent).pack()
     )
+    cw = await dm.load_clan_war()
     if dm.of.state(cw) in ['preparation']:
         text += (
             f'{dm.of.cw_preparation(cw, False, None, None)}'
@@ -139,7 +160,6 @@ async def cw_map(
 async def cw_attacks(
         dm: DatabaseManager, callback_data: Optional[CWCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    cw = await dm.load_clan_war()
     if callback_data is not None and callback_data.cw_attacks_side is not None:
         cw_attacks_side = callback_data.cw_attacks_side
     else:
@@ -167,6 +187,7 @@ async def cw_attacks(
             output_view=OutputView.cw_attacks, cw_attacks_side=CWAttacksSide.clan
         ).pack()
     )
+    cw = await dm.load_clan_war()
     if dm.of.state(cw) in ['preparation']:
         if cw_attacks_side == CWAttacksSide.clan:
             rows = await dm.acquired_connection.fetch('''
@@ -259,7 +280,7 @@ async def cw_skips(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, O
         text += (
             f'{dm.of.cw_in_war_or_war_ended(cw, False, None, None)}'
             f'\n'
-            f'{await dm.skips(chat_id=chat_id, players=cw_members, ping=False, attacks_limit=2)}'
+            f'{await dm.skips(chat_id=chat_id, players=cw_members, ping=False, desired_attacks_spent=2)}'
         )
         button_row.append(update_button)
     else:
@@ -286,7 +307,7 @@ async def cw_ping(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, Op
         text += (
             f'{dm.of.cw_in_war_or_war_ended(cw, False, None, None)}'
             f'\n'
-            f'{await dm.skips(chat_id=chat_id, players=cw_members, ping=True, attacks_limit=2)}'
+            f'{await dm.skips(chat_id=chat_id, players=cw_members, ping=True, desired_attacks_spent=2)}'
         )
     else:
         text += 'Информация о КВ отсутствует'
@@ -432,7 +453,7 @@ async def cw_list(
 
 @router.message(Command('cw_info'))
 async def command_cw_info(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, reply_markup = await cw_info(dm)
+    text, parse_mode, reply_markup = await cw_info(dm, None)
     reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     await dm.dump_message_owner(reply_from_bot, message.from_user)
 
@@ -445,7 +466,7 @@ async def callback_cw_info(
     if not user_is_message_owner:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
-        text, parse_mode, reply_markup = await cw_info(dm)
+        text, parse_mode, reply_markup = await cw_info(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         if callback_data.update:

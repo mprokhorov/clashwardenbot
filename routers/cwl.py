@@ -41,6 +41,7 @@ class OutputView(IntEnum):
 class CWLCallbackFactory(CallbackData, prefix='cwl'):
     output_view: OutputView
     update: bool = False
+    show_opponent_info: Optional[bool] = None
     cwl_day: Optional[int] = None
     cwl_map_side: Optional[CWLMapSide] = None
     cwl_attacks_side: Optional[CWLAttacksSide] = None
@@ -53,26 +54,48 @@ async def cwl_info(
         cwl_day, cwlw = callback_data.cwl_day, (await dm.load_clan_war_league_own_wars())[callback_data.cwl_day]
     else:
         cwl_day, cwlw = await dm.load_clan_war_league_own_war()
+    if callback_data is not None and callback_data.show_opponent_info is not None:
+        show_opponent_info = callback_data.show_opponent_info
+    else:
+        show_opponent_info = False
     text = (
         f'<b>⚔️ Информация об ЛВК</b>\n'
         f'\n'
     )
     button_upper_row = []
     button_lower_row = []
+    if show_opponent_info:
+        opponent_info_button = InlineKeyboardButton(
+            text='🔼 Свернуть',
+            callback_data=CWLCallbackFactory(
+                output_view=OutputView.cwl_info_day, show_opponent_info=False, cwl_day=cwl_day
+            ).pack()
+        )
+    else:
+        opponent_info_button = InlineKeyboardButton(
+            text='🔽 Развернуть',
+            callback_data=CWLCallbackFactory(
+                output_view=OutputView.cwl_info_day, show_opponent_info=True, cwl_day=cwl_day
+            ).pack()
+        )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_info_day, update=True, cwl_day=cwl_day).pack()
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_info_day, update=True, show_opponent_info=show_opponent_info, cwl_day=cwl_day
+        ).pack()
     )
     cwl_season, _ = await dm.load_clan_war_league()
     if dm.of.state(cwlw) in ['preparation']:
         war_win_streak = await dm.load_war_win_streak(cwlw['opponent']['tag'])
         cw_log = await dm.load_clan_war_log(cwlw['opponent']['tag'])
-        text += dm.of.cwlw_preparation(cwlw, cwl_season, cwl_day, True, war_win_streak, cw_log)
+        text += dm.of.cwlw_preparation(cwlw, cwl_season, cwl_day, show_opponent_info, war_win_streak, cw_log)
+        button_upper_row.append(opponent_info_button)
         button_upper_row.append(update_button)
     elif dm.of.state(cwlw) in ['inWar', 'warEnded']:
         war_win_streak = await dm.load_war_win_streak(cwlw['opponent']['tag'])
         cw_log = await dm.load_clan_war_log(cwlw['opponent']['tag'])
-        text += dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, cwl_day, True, war_win_streak, cw_log)
+        text += dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, cwl_day, show_opponent_info, war_win_streak, cw_log)
+        button_upper_row.append(opponent_info_button)
         button_upper_row.append(update_button)
     else:
         text += f'Информация об ЛВК отсутствует\n'
@@ -80,15 +103,21 @@ async def cwl_info(
     if cwlw is not None:
         previous_cwl_day_button = InlineKeyboardButton(
             text=f'⬅️ День {cwl_day}',
-            callback_data=CWLCallbackFactory(output_view=OutputView.cwl_info_day, cwl_day=cwl_day - 1).pack()
+            callback_data=CWLCallbackFactory(
+                output_view=OutputView.cwl_info_day, show_opponent_info=show_opponent_info, cwl_day=cwl_day - 1
+            ).pack()
         )
         next_cwl_day_button = InlineKeyboardButton(
             text=f'➡️ День {cwl_day + 2}',
-            callback_data=CWLCallbackFactory(output_view=OutputView.cwl_info_day, cwl_day=cwl_day + 1).pack()
+            callback_data=CWLCallbackFactory(
+                output_view=OutputView.cwl_info_day, show_opponent_info=show_opponent_info, cwl_day=cwl_day + 1
+            ).pack()
         )
         all_cwl_days_button = InlineKeyboardButton(
             text='🧾 Все дни',
-            callback_data=CWLCallbackFactory(output_view=OutputView.cwl_info_all_days).pack()
+            callback_data=CWLCallbackFactory(
+                output_view=OutputView.cwl_info_all_days, show_opponent_info=show_opponent_info
+            ).pack()
         )
         if cwl_day > 0:
             button_lower_row.append(previous_cwl_day_button)
@@ -371,7 +400,7 @@ async def cwl_skips(
         text += (
             f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, cwl_day, False, None, None)}'
             f'\n'
-            f'{await dm.skips(chat_id=chat_id, players=cwlw_members, ping=False, attacks_limit=1)}'
+            f'{await dm.skips(chat_id=chat_id, players=cwlw_members, ping=False, desired_attacks_spent=1)}'
         )
         button_upper_row.append(update_button)
     else:
@@ -427,7 +456,7 @@ async def cwl_ping(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, O
         text += (
             f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, cwl_day, False, None, None)}'
             f'\n'
-            f'{await dm.skips(chat_id=chat_id, players=cwlw_members, ping=True, attacks_limit=1)}'
+            f'{await dm.skips(chat_id=chat_id, players=cwlw_members, ping=True, desired_attacks_spent=1)}'
         )
     else:
         text += 'Информация об ЛВК отсутствует'
@@ -475,7 +504,7 @@ async def cwl_clans(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[Inlin
                 average_town_hall_level=dm.of.avg([cwl_m.town_hall_level for cwl_m in cwl_members])
             )
         )
-    cwl_clans_to_sort.sort(key=lambda cwl_clan_: cwl_clan_.average_town_hall_level, reverse=True)
+    cwl_clans_to_sort.sort(key=lambda _cwl_clan: _cwl_clan.average_town_hall_level, reverse=True)
     for cwl_clan in cwl_clans_to_sort:
         text += (
             f'<b>{dm.of.to_html(cwl_clan.clan_name)}</b>\n'
@@ -555,6 +584,7 @@ async def cwl_days_list(
         callback_data=CWLCallbackFactory(
             output_view=callback_data.output_view,
             update=True,
+            show_opponent_info=callback_data.show_opponent_info,
             cwl_map_side=callback_data.cwl_map_side,
             cwl_attacks_side=callback_data.cwl_attacks_side
         ).pack()
@@ -564,6 +594,7 @@ async def cwl_days_list(
         callback_data=CWLCallbackFactory(
             output_view=button_output_view,
             cwl_day=i,
+            show_opponent_info=callback_data.show_opponent_info,
             cwl_map_side=callback_data.cwl_map_side,
             cwl_attacks_side=callback_data.cwl_attacks_side
         ).pack()

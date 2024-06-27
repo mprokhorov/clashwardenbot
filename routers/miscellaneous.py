@@ -383,12 +383,12 @@ async def donations(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, 
         LIMIT 20
     ''', dm.clan_tag)
     text = (
-        f'<b>🏅 Лучшие жертвователи</b>\n'
+        f'<b>🏅 Лучшие жертвователи (20 лучших)</b>\n'
         f'\n'
     )
     for i, row in enumerate(rows):
         text += (
-            f'🪖 {dm.of.to_html(row['player_name'])}, {dm.of.role(row['player_role'])}: '
+            f'{i + 1}. {dm.of.to_html(row['player_name'])}, {dm.of.role(row['player_role'])}: '
             f'{row['donations_given']}🏅\n'
         )
     consider_donations = await dm.acquired_connection.fetchval('''
@@ -412,13 +412,13 @@ async def donations(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, 
             text += (
                 f'\n'
                 f'<b>⬇️ Будет понижен</b>\n'
-                f'🪖 {dm.of.to_html(rows[0]['player_name'])}: {rows[0]['donations_given']}🏅\n'
+                f'{dm.of.to_html(rows[0]['player_name'])}: {rows[0]['donations_given']}🏅\n'
             )
         elif len(rows) > 1:
             text += (
                 f'\n'
                 f'<b>⬇️ Будут понижены</b>\n'
-                f'{', '.join(f'🪖 {dm.of.to_html(row['player_name'])}: {row['donations_given']}🏅' for row in rows)}\n'
+                f'{', '.join(f'{dm.of.to_html(row['player_name'])}: {row['donations_given']}🏅' for row in rows)}\n'
             )
 
         rows = await dm.acquired_connection.fetch('''
@@ -436,13 +436,13 @@ async def donations(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, 
             text += (
                 f'\n'
                 f'<b>⬆️ Будет повышен</b>\n'
-                f'🪖 {dm.of.to_html(rows[0]['player_name'])}: {rows[0]['donations_given']}🏅\n'
+                f'{dm.of.to_html(rows[0]['player_name'])}: {rows[0]['donations_given']}🏅\n'
             )
         elif len(rows) > 1:
             text += (
                 f'\n'
                 f'<b>⬆️ Будут повышены</b>\n'
-                f'{', '.join(f'🪖 {dm.of.to_html(row['player_name'])}: {row['donations_given']}🏅' for row in rows)}\n'
+                f'{', '.join(f'{dm.of.to_html(row['player_name'])}: {row['donations_given']}🏅' for row in rows)}\n'
             )
     button_row = []
     update_button = InlineKeyboardButton(

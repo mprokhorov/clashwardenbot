@@ -386,7 +386,7 @@ async def cwl_skips(
     )
     cwl_season, _ = await dm.load_clan_war_league()
     if dm.of.state(cwlw) in ['preparation']:
-        text += dm.of.cwlw_preparation(cwlw, False, None, None)
+        text += dm.of.cwlw_preparation(cwlw, cwl_season, cwl_day, False, None, None)
         button_upper_row.append(update_button)
     elif dm.of.state(cwlw) in ['inWar', 'warEnded']:
         cwl_season, _ = await dm.load_clan_war_league()
@@ -442,8 +442,9 @@ async def cwl_ping(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, O
         f'\n'
     )
     cwl_day, cwlw = await dm.load_clan_war_league_own_war()
+    cwl_season, _ = await dm.load_clan_war_league()
     if dm.of.state(cwlw) in ['preparation']:
-        text += dm.of.cwlw_preparation(cwlw, False, None, None)
+        text += dm.of.cwlw_preparation(cwlw, cwl_season, cwl_day, False, None, None)
     elif dm.of.state(cwlw) in ['inWar', 'warEnded']:
         cwl_season, _ = await dm.load_clan_war_league()
         cwlw_members = []

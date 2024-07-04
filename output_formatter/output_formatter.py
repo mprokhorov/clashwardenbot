@@ -781,7 +781,8 @@ class OutputFormatter:
             clan_map_position_by_player: dict,
             opponent_map_position_by_player: dict,
             clan_data: dict,
-            opponent_data: dict
+            opponent_data: dict,
+            desired_attacks_spent: int
     ) -> str:
         opponent_player_name_by_player_tag = {
             opponent_member['tag']: opponent_member['name']
@@ -792,7 +793,7 @@ class OutputFormatter:
         for member in clan_data['members']:
             cw_member_lines[clan_map_position_by_player[member['tag']] - 1] += (
                 f'{clan_map_position_by_player[member['tag']]}. '
-                f'{self.to_html(member['name'])}: {len(member.get('attacks', []))} / 2\n'
+                f'{self.to_html(member['name'])}: {len(member.get('attacks', []))} / {desired_attacks_spent}\n'
             )
             for attack in member.get('attacks', []):
                 if attack['stars'] != 0:

@@ -315,7 +315,7 @@ async def cwl_attacks(
                 '\n'
             )
             text += dm.of.get_attacks(
-                clan_map_position_by_player, opponent_map_position_by_player, cwlw['clan'], cwlw['opponent']
+                clan_map_position_by_player, opponent_map_position_by_player, cwlw['clan'], cwlw['opponent'], 1
             )
             button_upper_row.append(opponent_attacks_button)
         else:
@@ -324,7 +324,7 @@ async def cwl_attacks(
                 '\n'
             )
             text += dm.of.get_attacks(
-                opponent_map_position_by_player, clan_map_position_by_player, cwlw['opponent'], cwlw['clan']
+                opponent_map_position_by_player, clan_map_position_by_player, cwlw['opponent'], cwlw['clan'], 1
             )
             button_upper_row.append(clan_attacks_button)
         button_upper_row.append(update_button)

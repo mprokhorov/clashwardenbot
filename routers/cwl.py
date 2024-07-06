@@ -283,6 +283,7 @@ async def cwl_attacks(
             text += (
                 f'{dm.of.cwlw_preparation(cwlw, cwl_season, cwl_day, False, None, None)}'
                 f'\n'
+                f'Список участников дня ЛВК клана:\n'
                 f'{dm.of.war_members(cwlw['clan']['members'], clan_map_position_by_player, rows)}'
             )
             button_upper_row.append(opponent_attacks_button)
@@ -298,6 +299,7 @@ async def cwl_attacks(
             text += (
                 f'{dm.of.cwlw_preparation(cwlw, cwl_season, cwl_day, False, None, None)}'
                 f'\n'
+                f'Список участников дня ЛВК противника:\n'
                 f'{dm.of.war_members(cwlw['opponent']['members'], opponent_map_position_by_player, rows)}'
             )
             button_upper_row.append(clan_attacks_button)
@@ -311,20 +313,20 @@ async def cwl_attacks(
         )
         if cwl_attacks_side == CWLAttacksSide.clan:
             text += (
-                'Атаки клана:\n'
-                '\n'
-            )
-            text += dm.of.get_attacks(
+                f'Атаки клана:\n'
+                f'\n'
+                f'{dm.of.get_attacks(
                 clan_map_position_by_player, opponent_map_position_by_player, cwlw['clan'], cwlw['opponent'], 1
+                )}'
             )
             button_upper_row.append(opponent_attacks_button)
         else:
             text += (
-                'Атаки противника:\n'
-                '\n'
-            )
-            text += dm.of.get_attacks(
+                f'Атаки противника:\n'
+                f'\n'
+                f'{dm.of.get_attacks(
                 opponent_map_position_by_player, clan_map_position_by_player, cwlw['opponent'], cwlw['clan'], 1
+                )}'
             )
             button_upper_row.append(clan_attacks_button)
         button_upper_row.append(update_button)

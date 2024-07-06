@@ -233,20 +233,20 @@ async def cw_attacks(
         )
         if cw_attacks_side == CWAttacksSide.clan:
             text += (
-                'Атаки клана:\n'
-                '\n'
-            )
-            text += dm.of.get_attacks(
+                f'Атаки клана:\n'
+                f'\n'
+                f'{dm.of.get_attacks(
                 clan_map_position_by_player, opponent_map_position_by_player, cw['clan'], cw['opponent'], 2
+                )}'
             )
             button_row.append(opponent_attacks_button)
         else:
             text += (
-                'Атаки противника:\n'
-                '\n'
-            )
-            text += dm.of.get_attacks(
+                f'Атаки противника:\n'
+                f'\n'
+                f'{dm.of.get_attacks(
                 opponent_map_position_by_player, clan_map_position_by_player, cw['opponent'], cw['clan'], 2
+                )}'
             )
             button_row.append(clan_attacks_button)
         button_row.append(update_button)

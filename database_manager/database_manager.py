@@ -286,7 +286,7 @@ class DatabaseManager:
                         WHERE clan_tag = $1 AND player_tag = $2
                     ''', self.clan_tag, clan_member_tag)
                     message_text += (
-                        f'🪖 <b>{self.of.to_html(self.load_name(clan_member_tag))}</b> '
+                        f'<b>{self.of.to_html(self.load_name(clan_member_tag))}</b> '
                         f'{self.of.get_player_info_with_custom_emoji(
                             row['town_hall_level'],
                             row['barbarian_king_level'],
@@ -300,7 +300,7 @@ class DatabaseManager:
                         message_text += f'вступил в клан\n'
                 message_text += (
                     f'\n'
-                    f'Количество участников: {len(retrieved_clan_members['items'])} / 50 🪖\n'
+                    f'Количество участников: {len(retrieved_clan_members['items'])} / 50\n'
                 )
                 await self.send_message_to_chat(
                     user_id=None,
@@ -1428,7 +1428,7 @@ class DatabaseManager:
             else:
                 text += f'👤 {self.of.to_html(self.load_full_name(chat_id, user_id))} — '
             text += f'{', '.join(
-                [f'🪖 {self.of.to_html(self.load_name(player.player_tag))}: '
+                [f'{self.of.to_html(self.load_name(player.player_tag))}: '
                  f'{player.attacks_spent} / {player.attacks_limit}'
                  for player in players]
             )}\n'
@@ -1442,7 +1442,7 @@ class DatabaseManager:
             )
         ):
             text += (
-                f'🪖 {self.of.to_html(self.load_name(player.player_tag))}: '
+                f'{self.of.to_html(self.load_name(player.player_tag))}: '
                 f'{player.attacks_spent} / {player.attacks_limit}\n'
             )
         if len(players_by_user_to_mention) + len(unlinked_players) == 0:

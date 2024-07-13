@@ -122,7 +122,7 @@ async def members_players(dm: DatabaseManager) -> tuple[str, ParseMode, Optional
     text = (
         f'<b>🪖 Участники клана</b>\n'
         f'\n'
-        f'Количество участников: {len(rows)} / 50 🪖\n'
+        f'Количество участников: {len(rows)} / 50\n'
         f'\n'
     )
     for i, row in enumerate(rows):
@@ -202,7 +202,9 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
     ''', dm.clan_tag, chat_id)
     users_without_players = [row['user_id'] for row in rows]
     rows = await dm.acquired_connection.fetch('''
-        SELECT player_tag
+        SELECT
+            player_tag,
+            town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
         FROM player
         WHERE clan_tag = $1 AND is_player_in_clan AND player.player_tag NOT IN (
             SELECT player.player_tag
@@ -221,7 +223,14 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
         )
         ORDER BY player_name
     ''', dm.clan_tag, chat_id)
-    players_without_users = [row['player_tag'] for row in rows]
+    players_without_users = [
+        ClanMember(
+            row['player_tag'], row['town_hall_level'],
+            row['barbarian_king_level'], row['archer_queen_level'],
+            row['grand_warden_level'], row['royal_champion_level']
+        )
+        for row in rows
+    ]
     members_number = await dm.acquired_connection.fetchval('''
         SELECT COUNT(*)
         FROM player
@@ -230,26 +239,33 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
     text = (
         f'<b>👥 Участники клана</b>\n'
         f'\n'
-        f'Количество участников: {members_number} / 50 🪖\n'
+        f'Количество участников: {members_number} / 50\n'
         f'\n'
     )
     if len(players_by_user) > 0:
         text += '<b>Аккаунты пользователей:</b>\n'
     for user_id, players in sorted(
             players_by_user.items(),
-            key=lambda item: sum(
-                clan_member.town_hall_level
-                + clan_member.barbarian_king_level
-                + clan_member.archer_queen_level
-                + clan_member.grand_warden_level
-                + clan_member.royal_champion_level
-                for clan_member in item[1]
+            key=lambda item: (
+                    sum(clan_member.town_hall_level for clan_member in item[1]),
+                    sum(clan_member.hero_levels_sum() for clan_member in item[1]),
+                    dm.load_full_name(chat_id, item[0])
             ),
             reverse=True
     ):
         text += (
             f'👤 {dm.of.to_html(dm.load_full_name(chat_id, user_id))}: '
-            f'{', '.join('🪖 ' + dm.of.to_html(dm.load_name(player.player_tag)) for player in players)}\n'
+            f'{', '.join(
+                f'{dm.of.to_html(dm.load_name(player.player_tag))} '
+                f'{dm.of.get_player_info_with_custom_emoji(player.town_hall_level)}'
+                for player in sorted(
+                    players,
+                    key=lambda _player: (
+                        _player.town_hall_level, _player.hero_levels_sum(), dm.load_name(_player.player_tag)
+                    ),
+                    reverse=True
+                )
+            )}\n'
         )
     if len(players_by_user) > 0:
         text += '\n'
@@ -257,8 +273,15 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
         text += (
             f'<b>Неизвестные аккаунты:</b>\n'
             f'{'\n'.join(
-                '🪖 ' + dm.of.to_html(dm.load_name(player_tag))
-                for player_tag in sorted(players_without_users, key=lambda player_tag: dm.load_name(player_tag))
+                f'{dm.of.to_html(dm.load_name(player.player_tag))} '
+                f'{dm.of.get_player_info_with_custom_emoji(player.town_hall_level)}'
+                for player in sorted(
+                    players_without_users,
+                    key=lambda _player: (
+                        _player.town_hall_level, _player.hero_levels_sum(), dm.load_name(_player.player_tag)
+                    ),
+                    reverse=True
+                )
             )}\n'
             f'\n'
         )

@@ -134,52 +134,57 @@ class OutputFormatter:
     @staticmethod
     def get_player_info_with_emoji(
             town_hall_level: int,
-            barbarian_king_level: int,
-            archer_queen_level: int,
-            grand_warden_level: int,
-            royal_champion_level: int
+            barbarian_king_level: Optional[int] = None,
+            archer_queen_level: Optional[int] = None,
+            grand_warden_level: Optional[int] = None,
+            royal_champion_level: Optional[int] = None
     ) -> str:
         text = f'🛖{town_hall_level}'
-        if barbarian_king_level > 0:
+        if (barbarian_king_level or 0) > 0:
             text += f' 🤴{barbarian_king_level}'
-        if archer_queen_level > 0:
+        if (archer_queen_level or 0) > 0:
             text += f' 👸{archer_queen_level}'
-        if grand_warden_level > 0:
+        if (grand_warden_level or 0) > 0:
             text += f' 👴{grand_warden_level}'
-        if royal_champion_level > 0:
+        if (royal_champion_level or 0) > 0:
             text += f' 🙍‍♀️{royal_champion_level}'
         return text
 
     @staticmethod
     def get_player_info_for_callback_text(
             town_hall_level: int,
-            barbarian_king_level: int,
-            archer_queen_level: int,
-            grand_warden_level: int,
-            royal_champion_level: int
+            barbarian_king_level: Optional[int] = None,
+            archer_queen_level: Optional[int] = None,
+            grand_warden_level: Optional[int] = None,
+            royal_champion_level: Optional[int] = None
     ) -> str:
         text = f'🛖{town_hall_level}'
-        hero_levels = [barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level]
-        if any(hero_levels):
+        hero_levels = [
+            (barbarian_king_level or 0),
+            (archer_queen_level or 0),
+            (grand_warden_level or 0),
+            (royal_champion_level or 0)
+        ]
+        if any(hero_level > 0 for hero_level in hero_levels):
             text += f' 👑 {', '.join(str(hero_level or '–') for hero_level in hero_levels)}'
         return text
 
     def get_player_info_with_custom_emoji(
             self,
             town_hall_level: int,
-            barbarian_king_level: int,
-            archer_queen_level: int,
-            grand_warden_level: int,
-            royal_champion_level: int
+            barbarian_king_level: Optional[int] = None,
+            archer_queen_level: Optional[int] = None,
+            grand_warden_level: Optional[int] = None,
+            royal_champion_level: Optional[int] = None
     ) -> str:
         text = f'{self.get_town_hall_emoji(town_hall_level)}{town_hall_level}'
-        if barbarian_king_level > 0:
+        if (barbarian_king_level or 0) > 0:
             text += f' {self.get_barbarian_king_emoji()}{barbarian_king_level}'
-        if archer_queen_level > 0:
+        if (archer_queen_level or 0) > 0:
             text += f' {self.get_archer_queen_emoji()}{archer_queen_level}'
-        if grand_warden_level > 0:
+        if (grand_warden_level or 0) > 0:
             text += f' {self.get_grand_warden_emoji()}{grand_warden_level}'
-        if royal_champion_level > 0:
+        if (royal_champion_level or 0) > 0:
             text += f' {self.get_royal_champion_emoji()}{royal_champion_level}'
         return text
 

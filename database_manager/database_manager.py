@@ -1420,7 +1420,7 @@ class DatabaseManager:
             players_by_user_to_mention.items(),
             key=lambda item: (
                 -sum(_player.attacks_limit - _player.attacks_spent for _player in item[1]),
-                self.load_full_name(chat_id, user_id)
+                self.load_full_name(chat_id, item[0])
             )
         ):
             if ping:

@@ -249,7 +249,7 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
             key=lambda item: (
                     sum(clan_member.town_hall_level for clan_member in item[1]),
                     sum(clan_member.hero_levels_sum() for clan_member in item[1]),
-                    dm.load_full_name(chat_id, item[0])
+                    dm.of.str_sort_key(dm.load_full_name(chat_id, item[0]))
             ),
             reverse=True
     ):
@@ -261,7 +261,9 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
                 for player in sorted(
                     players,
                     key=lambda _player: (
-                        _player.town_hall_level, _player.hero_levels_sum(), dm.load_name(_player.player_tag)
+                        _player.town_hall_level,
+                        _player.hero_levels_sum(),
+                        dm.of.str_sort_key(dm.load_name(_player.player_tag))
                     ),
                     reverse=True
                 )
@@ -278,7 +280,9 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
                 for player in sorted(
                     players_without_users,
                     key=lambda _player: (
-                        _player.town_hall_level, _player.hero_levels_sum(), dm.load_name(_player.player_tag)
+                        _player.town_hall_level,
+                        _player.hero_levels_sum(),
+                        dm.of.str_sort_key(dm.load_name(_player.player_tag))
                     ),
                     reverse=True
                 )
@@ -290,7 +294,9 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
             f'<b>Неизвестные пользователи:</b>\n'
             f'{'\n'.join(
                 '👤 ' + dm.of.to_html(dm.load_full_name(chat_id, user_id))
-                for user_id in sorted(users_without_players, key=lambda user_id: dm.load_full_name(chat_id, user_id))
+                for user_id in sorted(
+                    users_without_players,
+                    key=lambda user_id: dm.of.str_sort_key(dm.load_full_name(chat_id, user_id)))
             )}\n'
         )
     button_row = []

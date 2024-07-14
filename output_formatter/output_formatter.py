@@ -834,3 +834,7 @@ class OutputFormatter:
     def avg(lst: list) -> float:
         average = round(sum(lst) / len(lst), 2)
         return int(average) if int(average) == average else average
+
+    @staticmethod
+    def str_sort_key(value: str) -> tuple[str, str]:
+        return str.lower(value), value

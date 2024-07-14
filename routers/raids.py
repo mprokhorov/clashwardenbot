@@ -87,7 +87,9 @@ async def raids_attacks(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[I
                     RaidsMember(player_tag=row['player_tag'], attacks_spent=0, attacks_limit=6, gold_looted=0)
                 )
         raids_members.sort(
-            key=lambda _raids_member: (-_raids_member.gold_looted, dm.load_name(_raids_member.player_tag))
+            key=lambda _raids_member: (
+                -_raids_member.gold_looted, dm.of.str_sort_key(dm.load_name(_raids_member.player_tag))
+            )
         )
         text += (
             f'{dm.of.raids_ongoing_or_ended(raids)}'

@@ -1411,7 +1411,7 @@ class DatabaseManager:
             players.sort(
                 key=lambda _player: (
                     -(_player.attacks_limit - _player.attacks_spent),
-                    self.load_name(_player.player_tag)
+                    self.of.str_sort_key(self.load_name(_player.player_tag))
                 )
             )
 
@@ -1420,7 +1420,7 @@ class DatabaseManager:
             players_by_user_to_mention.items(),
             key=lambda item: (
                 -sum(_player.attacks_limit - _player.attacks_spent for _player in item[1]),
-                self.load_full_name(chat_id, item[0])
+                self.of.str_sort_key(self.load_full_name(chat_id, item[0]))
             )
         ):
             if ping:
@@ -1438,7 +1438,7 @@ class DatabaseManager:
             unlinked_players,
             key=lambda _player: (
                 -(_player.attacks_limit - _player.attacks_spent),
-                self.load_name(_player.player_tag)
+                self.of.str_sort_key(self.load_name(_player.player_tag))
             )
         ):
             text += (

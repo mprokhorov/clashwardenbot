@@ -1115,7 +1115,7 @@ class DatabaseManager:
     def load_full_name(self, chat_id: int, user_id: int) -> str:
         return self.full_name.get((chat_id, user_id), f'{chat_id}:{user_id}')
 
-    def load_username(self, chat_id: int, user_id: int) -> Optional[str]:
+    def load_username(self, chat_id: int, user_id: int) -> str:
         return self.username.get((chat_id, user_id), f'{chat_id}:{user_id}')
 
     def load_full_name_and_username(self, chat_id: int, user_id: int) -> str:

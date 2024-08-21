@@ -812,9 +812,12 @@ class OutputFormatter:
             return f'кол-во атак: {attacks_count}'
 
     @staticmethod
-    def avg(lst: list) -> float:
+    def avg(lst: list[int]) -> float | int:
         average = round(sum(lst) / len(lst), 2)
-        return int(average) if int(average) == average else average
+        if average == int(average):
+            return int(average)
+        else:
+            return average
 
     @staticmethod
     def str_sort_key(value: str) -> tuple[str, str]:

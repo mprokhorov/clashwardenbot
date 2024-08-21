@@ -150,25 +150,6 @@ class OutputFormatter:
             text += f' 🙍‍♀️{royal_champion_level}'
         return text
 
-    @staticmethod
-    def get_player_info_for_callback_text(
-            town_hall_level: int,
-            barbarian_king_level: Optional[int] = None,
-            archer_queen_level: Optional[int] = None,
-            grand_warden_level: Optional[int] = None,
-            royal_champion_level: Optional[int] = None
-    ) -> str:
-        text = f'🛖{town_hall_level}'
-        hero_levels = [
-            (barbarian_king_level or 0),
-            (archer_queen_level or 0),
-            (grand_warden_level or 0),
-            (royal_champion_level or 0)
-        ]
-        if any(hero_level > 0 for hero_level in hero_levels):
-            text += f' 👑 {', '.join(str(hero_level or '–') for hero_level in hero_levels)}'
-        return text
-
     def get_player_info_with_custom_emoji(
             self,
             town_hall_level: int,

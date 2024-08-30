@@ -26,6 +26,11 @@ class CWLAttacksSide(IntEnum):
     opponent = auto()
 
 
+class CWLListOrder(IntEnum):
+    by_trophies = auto()
+    by_town_hall_and_heroes = auto()
+
+
 class OutputView(IntEnum):
     cwl_info_day = auto()
     cwl_info_all_days = auto()
@@ -35,6 +40,7 @@ class OutputView(IntEnum):
     cwl_map_all_days = auto()
     cwl_skips_day = auto()
     cwl_skips_all_days = auto()
+    cwl_list = auto()
     cwl_clans = auto()
 
 
@@ -45,6 +51,7 @@ class CWLCallbackFactory(CallbackData, prefix='cwl'):
     cwl_day: Optional[int] = None
     cwl_map_side: Optional[CWLMapSide] = None
     cwl_attacks_side: Optional[CWLAttacksSide] = None
+    cwl_list_order: Optional[CWLListOrder] = None
 
 
 async def cwl_info(
@@ -466,6 +473,79 @@ async def cwl_ping(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, O
     return text, ParseMode.HTML, None
 
 
+async def cwl_list(
+        dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory]
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    if callback_data is not None and callback_data.cwl_list_order is not None:
+        cwl_list_order = callback_data.cwl_list_order
+    else:
+        cwl_list_order = CWLListOrder.by_town_hall_and_heroes
+    button_row = []
+    update_button = InlineKeyboardButton(
+        text='🔄 Обновить',
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_list, update=True, cwl_list_order=cwl_list_order
+        ).pack()
+    )
+    order_by_town_hall_and_heroes_button = InlineKeyboardButton(
+        text='⬇️ по ТХ и героям',
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_list, cwl_list_order=CWLListOrder.by_town_hall_and_heroes
+        ).pack()
+    )
+    order_by_trophies_button = InlineKeyboardButton(
+        text='⬇️ по трофеям',
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_list, cwl_list_order=CWLListOrder.by_trophies
+        ).pack()
+    )
+    if cwl_list_order == CWLListOrder.by_town_hall_and_heroes:
+        rows = await dm.acquired_connection.fetch('''
+            SELECT
+                player_name,
+                town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+            FROM player
+            WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_war_league
+            ORDER BY
+                town_hall_level DESC,
+                (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC,
+                player_name
+        ''', dm.clan_tag)
+        text = (
+            f'<b>📋 Список участников ЛВК (⬇️ по ТХ и героям)</b>\n'
+            f'\n'
+        )
+        button_row.append(order_by_trophies_button)
+    else:
+        rows = await dm.acquired_connection.fetch('''
+            SELECT
+                player_name,
+                town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+            FROM player
+            WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_war_league
+            ORDER BY home_village_trophies DESC
+        ''', dm.clan_tag)
+        text = (
+            f'<b>📋 Список участников ЛВК (⬇️ по трофеям)</b>\n'
+            f'\n'
+        )
+        button_row.append(order_by_town_hall_and_heroes_button)
+    button_row.append(update_button)
+    if len(rows) > 0:
+        for i, row in enumerate(rows):
+            text += (f'{i + 1}. {dm.of.to_html(row['player_name'])} {dm.of.get_player_info_with_emoji(
+                row['town_hall_level'],
+                row['barbarian_king_level'],
+                row['archer_queen_level'],
+                row['grand_warden_level'],
+                row['royal_champion_level']
+            )}\n')
+    else:
+        text += 'Список пуст\n'
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[button_row])
+    return text, ParseMode.HTML, keyboard
+
+
 async def cwl_clans(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     cwl_wars = await dm.load_clan_war_league_last_day_wars()
     text = (
@@ -736,6 +816,30 @@ async def command_cwl_ping(message: Message, dm: DatabaseManager) -> None:
         chat_id = await dm.get_group_chat_id(message)
         text, parse_mode, reply_markup = await cwl_ping(dm, chat_id)
         await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+
+
+@router.message(Command('cwl_list'))
+async def command_cwl_list(message: Message, dm: DatabaseManager) -> None:
+    text, parse_mode, reply_markup = await cwl_list(dm, callback_data=None)
+    reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+    await dm.dump_message_owner(reply_from_bot, message.from_user)
+
+
+@router.callback_query(CWLCallbackFactory.filter(F.output_view == OutputView.cwl_list))
+async def callback_cwl_list(
+        callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    if not user_is_message_owner:
+        await callback_query.answer('Эта кнопка не работает для вас')
+    else:
+        text, parse_mode, reply_markup = await cwl_list(dm, callback_data)
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        if callback_data.update:
+            await callback_query.answer('Сообщение обновлено')
+        else:
+            await callback_query.answer()
 
 
 @router.message(Command('cwl_clans'))

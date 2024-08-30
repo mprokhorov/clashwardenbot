@@ -36,6 +36,7 @@ class OutputView(IntEnum):
     link = auto()
     unlink = auto()
     edit_cw_list = auto()
+    edit_cwl_list = auto()
 
 
 class AdminCallbackFactory(CallbackData, prefix='admin'):
@@ -46,6 +47,7 @@ class AdminCallbackFactory(CallbackData, prefix='admin'):
     player_tag: Optional[str] = None
     user_id: Optional[int] = None
     is_player_set_for_clan_wars: Optional[bool] = None
+    is_player_set_for_clan_war_league: Optional[bool] = None
 
 
 def opposite_folding(folding: Link) -> Link:
@@ -78,6 +80,10 @@ async def admin(
         text='📝 Изменить список участников КВ',
         callback_data=AdminCallbackFactory(output_view=OutputView.edit_cw_list).pack()
     )
+    edit_cwl_list_button = InlineKeyboardButton(
+        text='📝 Изменить список участников ЛВК',
+        callback_data=AdminCallbackFactory(output_view=OutputView.edit_cwl_list).pack()
+    )
     link_button = InlineKeyboardButton(
         text='🔗 Привязать аккаунт к пользователю',
         callback_data=AdminCallbackFactory(output_view=OutputView.link, link=Link.select_chat).pack()
@@ -95,6 +101,7 @@ async def admin(
     else:
         if can_edit_cw_list:
             button_rows.append([edit_cw_list_button])
+            button_rows.append([edit_cwl_list_button])
         if can_link_members:
             button_rows.append([link_button])
             button_rows.append([unlink_button])
@@ -524,6 +531,66 @@ async def edit_cw_list(
     return text, ParseMode.HTML, keyboard
 
 
+async def edit_cwl_list(
+        dm: DatabaseManager, callback_query: Optional[CallbackQuery], callback_data: Optional[AdminCallbackFactory]
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    text = (
+        f'<b>📝 Изменение списка участников ЛВК</b>\n'
+        f'\n'
+    )
+    if callback_data is not None and callback_data.player_tag is not None:
+        await dm.acquired_connection.execute('''
+            UPDATE player
+            SET is_player_set_for_clan_war_league = $1
+            WHERE clan_tag = $2 and player_tag = $3
+        ''', callback_data.is_player_set_for_clan_war_league, dm.clan_tag, callback_data.player_tag)
+        description = (
+            f'Player {dm.load_name_and_tag(callback_data.player_tag)} '
+            f'CWL status was set to {callback_data.is_player_set_for_clan_war_league}'
+        )
+        await dm.acquired_connection.execute('''
+            INSERT INTO action (clan_tag, chat_id, user_id, action_timestamp, description)
+            VALUES ($1, $2, $3, NOW() AT TIME ZONE 'UTC', $4)
+        ''', dm.clan_tag, callback_query.message.chat.id, callback_query.from_user.id, description)
+    rows = await dm.acquired_connection.fetch('''
+        SELECT
+            player_tag, is_player_set_for_clan_war_league,
+            town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+        FROM player
+        WHERE clan_tag = $1 AND is_player_in_clan
+        ORDER BY
+            town_hall_level DESC,
+            (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC,
+            player_name
+    ''', dm.clan_tag)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text=f'{'✅' if row['is_player_set_for_clan_war_league'] else '❌'} '
+                 f'{dm.load_name(row['player_tag'])} {dm.of.get_player_info_with_emoji(
+                     row['town_hall_level'],
+                     row['barbarian_king_level'],
+                     row['archer_queen_level'],
+                     row['grand_warden_level'],
+                     row['royal_champion_level']
+                 )}',
+            callback_data=AdminCallbackFactory(
+                output_view=OutputView.edit_cwl_list,
+                player_tag=row['player_tag'],
+                is_player_set_for_clan_war_league=not row['is_player_set_for_clan_war_league']
+            ).pack()
+        )] for row in rows
+    ] + [[InlineKeyboardButton(
+            text='⬅️ Назад',
+            callback_data=AdminCallbackFactory(output_view=OutputView.menu).pack()
+        ),
+        InlineKeyboardButton(
+            text='🔄 Обновить',
+            callback_data=AdminCallbackFactory(output_view=OutputView.edit_cwl_list).pack()
+        )]
+    ])
+    return text, ParseMode.HTML, keyboard
+
+
 async def alert(
         dm: DatabaseManager, chat_id: int, message: Message
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
@@ -788,6 +855,21 @@ async def callback_edit_cw_list(
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await edit_cw_list(dm, callback_query, callback_data)
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        await callback_query.answer()
+
+
+@router.callback_query(AdminCallbackFactory.filter(F.output_view == OutputView.edit_cwl_list))
+async def callback_edit_cwl_list(
+        callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    can_user_edit_cwl_list = await dm.can_user_edit_cw_list(callback_query.message.chat.id, callback_query.from_user.id)
+    if not user_is_message_owner or not can_user_edit_cwl_list:
+        await callback_query.answer('Эта кнопка не работает для вас')
+    else:
+        text, parse_mode, reply_markup = await edit_cwl_list(dm, callback_query, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         await callback_query.answer()

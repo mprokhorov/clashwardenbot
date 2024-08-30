@@ -251,7 +251,7 @@ class DatabaseManager:
             were_clan_members_dumped = True
             await self.dump_clan_members()
             await self.load_and_cache_names()
-        if not_ignored_player_tags:
+        if len(not_ignored_player_tags) > 0:
             rows = await self.acquired_connection.fetch('''
                 SELECT chat_id
                 FROM clan_chat
@@ -350,7 +350,8 @@ class DatabaseManager:
                     royal_champion_level = player_hero['level']
             rows.append((
                 self.clan_tag, player['tag'],
-                player['name'], True, False,
+                player['name'], True,
+                False, False,
                 barbarian_king_level, archer_queen_level,
                 grand_warden_level, royal_champion_level,
                 player['townHallLevel'], player.get('builderHallLevel', 0),
@@ -366,7 +367,8 @@ class DatabaseManager:
         await self.acquired_connection.executemany('''
             INSERT INTO player
                 (clan_tag, player_tag,
-                player_name, is_player_in_clan, is_player_set_for_clan_wars,
+                player_name, is_player_in_clan,
+                is_player_set_for_clan_wars, is_player_set_for_clan_war_league,
                 barbarian_king_level, archer_queen_level,
                 grand_warden_level, royal_champion_level,
                 town_hall_level, builder_hall_level,
@@ -376,7 +378,7 @@ class DatabaseManager:
                 first_seen, last_seen)
             VALUES
                 ($1, $2,
-                $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
                 NOW() AT TIME ZONE 'UTC', NOW() AT TIME ZONE 'UTC')
             ON CONFLICT (clan_tag, player_tag)
             DO UPDATE SET
@@ -388,7 +390,7 @@ class DatabaseManager:
                 player_role, capital_gold_contributed,
                 donations_given, donations_received,
                 last_seen) =
-                ($3, $4, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17,
+                ($3, $4, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18,
                 NOW() AT TIME ZONE 'UTC')
         ''', rows)
         return True

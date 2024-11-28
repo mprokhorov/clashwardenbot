@@ -193,7 +193,7 @@ async def cw_attacks(
             rows = await dm.acquired_connection.fetch('''
                 SELECT
                     player_tag, player_name,
-                    town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
                 FROM player
                 WHERE clan_tag = $1
             ''', dm.clan_tag)
@@ -209,7 +209,7 @@ async def cw_attacks(
             rows = await dm.acquired_connection.fetch('''
                 SELECT
                     player_tag, player_name,
-                    town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
                 FROM opponent_player
                 WHERE clan_tag = $1
             ''', cw['opponent']['tag'])
@@ -343,7 +343,7 @@ async def cw_status(
     rows = await dm.acquired_connection.fetch('''
         SELECT
             player_tag, player_name, is_player_set_for_clan_wars,
-            town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+            town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
         FROM
             player
             JOIN player_bot_user USING (clan_tag, player_tag)
@@ -351,7 +351,7 @@ async def cw_status(
         WHERE clan_tag = $1 AND is_player_in_clan AND chat_id = $2 AND user_id = $3 AND is_user_in_chat
         ORDER BY
             town_hall_level DESC,
-            (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC,
+            (barbarian_king_level + archer_queen_level + minion_prince_level, grand_warden_level + royal_champion_level) DESC,
             player_name
     ''', dm.clan_tag, chat_id, bot_user.user_id)
     if len(rows) == 0:
@@ -366,6 +366,7 @@ async def cw_status(
                          row['town_hall_level'],
                          row['barbarian_king_level'],
                          row['archer_queen_level'],
+                         row['minion_prince_level'],
                          row['grand_warden_level'],
                          row['royal_champion_level'])}',
                 callback_data=CWCallbackFactory(
@@ -408,7 +409,7 @@ async def cw_list(
         rows = await dm.acquired_connection.fetch('''
             SELECT
                 player_name,
-                town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+                town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
             FROM player
             WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_wars
             ORDER BY home_village_trophies DESC
@@ -422,12 +423,12 @@ async def cw_list(
         rows = await dm.acquired_connection.fetch('''
             SELECT
                 player_name,
-                town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+                town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
             FROM player
             WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_wars
             ORDER BY
                 town_hall_level DESC,
-                (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC,
+                (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level) DESC,
                 player_name
         ''', dm.clan_tag)
         text = (
@@ -442,6 +443,7 @@ async def cw_list(
                 row['town_hall_level'],
                 row['barbarian_king_level'],
                 row['archer_queen_level'],
+                row['minion_prince_level'],
                 row['grand_warden_level'],
                 row['royal_champion_level']
             )}\n')

@@ -206,6 +206,7 @@ create table opponent_player
     town_hall_level      integer     not null,
     barbarian_king_level integer     not null,
     archer_queen_level   integer     not null,
+    minion_prince_level  integer     not null,
     grand_warden_level   integer     not null,
     royal_champion_level integer     not null,
     constraint opponent_player_pk
@@ -224,6 +225,7 @@ create table player
     is_player_set_for_clan_war_league boolean     not null,
     barbarian_king_level              integer     not null,
     archer_queen_level                integer     not null,
+    minion_prince_level               integer     not null,
     grand_warden_level                integer     not null,
     royal_champion_level              integer     not null,
     town_hall_level                   integer     not null,

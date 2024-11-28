@@ -282,7 +282,7 @@ async def cwl_attacks(
             rows = await dm.acquired_connection.fetch('''
                 SELECT
                     player_tag, player_name,
-                    town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
                 FROM player
                 WHERE clan_tag = $1
             ''', dm.clan_tag)
@@ -298,7 +298,7 @@ async def cwl_attacks(
             rows = await dm.acquired_connection.fetch('''
                 SELECT
                     player_tag, player_name,
-                    town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
                 FROM opponent_player
                 WHERE clan_tag = $1
             ''', cwlw['opponent']['tag'])
@@ -503,12 +503,12 @@ async def cwl_list(
         rows = await dm.acquired_connection.fetch('''
             SELECT
                 player_name,
-                town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+                town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
             FROM player
             WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_war_league
             ORDER BY
                 town_hall_level DESC,
-                (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC,
+                (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level) DESC,
                 player_name
         ''', dm.clan_tag)
         text = (
@@ -520,7 +520,7 @@ async def cwl_list(
         rows = await dm.acquired_connection.fetch('''
             SELECT
                 player_name,
-                town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+                town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
             FROM player
             WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_war_league
             ORDER BY home_village_trophies DESC
@@ -537,6 +537,7 @@ async def cwl_list(
                 row['town_hall_level'],
                 row['barbarian_king_level'],
                 row['archer_queen_level'],
+                row['minion_prince_level'],
                 row['grand_warden_level'],
                 row['royal_champion_level']
             )}\n')

@@ -8,11 +8,12 @@ class ClanMember:
     town_hall_level: int
     barbarian_king_level: int
     archer_queen_level: int
+    minion_prince_level: int
     grand_warden_level: int
     royal_champion_level: int
 
     def hero_levels_sum(self):
-        return self.barbarian_king_level + self.archer_queen_level + self.grand_warden_level + self.royal_champion_level
+        return self.barbarian_king_level + self.archer_queen_level + self.minion_prince_level + self.grand_warden_level + self.royal_champion_level
 
 
 @dataclass

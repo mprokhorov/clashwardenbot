@@ -96,16 +96,24 @@ class OutputFormatter:
 
     @staticmethod
     def get_town_hall_emoji(town_hall_level: int) -> str:
-        return (
-            f'<tg-emoji emoji-id="{config.town_hall_emoji_ids[town_hall_level - 1].get_secret_value()}">🛖</tg-emoji>'
-        )
+        if town_hall_level <= len(config.town_hall_emoji_ids):
+            return (
+                f'<tg-emoji emoji-id="{config.town_hall_emoji_ids[town_hall_level - 1].get_secret_value()}">'
+                f'🛖'
+                f'</tg-emoji>'
+            )
+        else:
+            return f'🛖'
 
     @staticmethod
     def get_builder_hall_emoji(builder_hall_level: int) -> str:
-        return (
-            f'<tg-emoji emoji-id="{config.builder_hall_emoji_ids[builder_hall_level - 1].get_secret_value()}">'
-            f'🛖</tg-emoji>'
-        )
+        if builder_hall_level <= len(config.builder_hall_emoji_ids):
+            return (
+                f'<tg-emoji emoji-id="{config.builder_hall_emoji_ids[builder_hall_level - 1].get_secret_value()}">'
+                f'🛖</tg-emoji>'
+            )
+        else:
+            return f'🛖'
 
     @staticmethod
     def get_barbarian_king_emoji() -> str:
@@ -136,6 +144,7 @@ class OutputFormatter:
             town_hall_level: int,
             barbarian_king_level: Optional[int] = None,
             archer_queen_level: Optional[int] = None,
+            minion_prince_level: Optional[int] = None,
             grand_warden_level: Optional[int] = None,
             royal_champion_level: Optional[int] = None
     ) -> str:
@@ -144,6 +153,8 @@ class OutputFormatter:
             text += f' 🤴{barbarian_king_level}'
         if (archer_queen_level or 0) > 0:
             text += f' 👸{archer_queen_level}'
+        if (minion_prince_level or 0) > 0:
+            text += f' 🦇{minion_prince_level}'
         if (grand_warden_level or 0) > 0:
             text += f' 👴{grand_warden_level}'
         if (royal_champion_level or 0) > 0:
@@ -155,6 +166,7 @@ class OutputFormatter:
             town_hall_level: int,
             barbarian_king_level: Optional[int] = None,
             archer_queen_level: Optional[int] = None,
+            minion_prince_level: Optional[int] = None,
             grand_warden_level: Optional[int] = None,
             royal_champion_level: Optional[int] = None
     ) -> str:
@@ -163,6 +175,8 @@ class OutputFormatter:
             text += f' {self.get_barbarian_king_emoji()}{barbarian_king_level}'
         if (archer_queen_level or 0) > 0:
             text += f' {self.get_archer_queen_emoji()}{archer_queen_level}'
+        if (minion_prince_level or 0) > 0:
+            text += f' {'🦇'}{minion_prince_level}'
         if (grand_warden_level or 0) > 0:
             text += f' {self.get_grand_warden_emoji()}{grand_warden_level}'
         if (royal_champion_level or 0) > 0:
@@ -491,6 +505,7 @@ class OutputFormatter:
                     row['town_hall_level'],
                     row['barbarian_king_level'],
                     row['archer_queen_level'],
+                    row['minion_prince_level'],
                     row['grand_warden_level'],
                     row['royal_champion_level']
                 )}'

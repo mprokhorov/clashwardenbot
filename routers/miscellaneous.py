@@ -49,7 +49,7 @@ async def player_info(dm: DatabaseManager, bot_user: BotUser) -> tuple[str, Pars
     rows = await dm.acquired_connection.fetch('''
         SELECT
             player_name, player.player_tag, is_player_set_for_clan_wars,
-            barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level,
+            barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level,
             town_hall_level, builder_hall_level, home_village_trophies, builder_base_trophies,
             player_role
         FROM
@@ -67,7 +67,7 @@ async def player_info(dm: DatabaseManager, bot_user: BotUser) -> tuple[str, Pars
                 AND (bot_user.chat_id, bot_user.user_id) = ($2, $3)
         ORDER BY
             town_hall_level DESC,
-            (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC,
+            (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level) DESC,
             player_name
     ''', dm.clan_tag, bot_user.chat_id, bot_user.user_id)
     if len(rows) > 1:
@@ -88,6 +88,7 @@ async def player_info(dm: DatabaseManager, bot_user: BotUser) -> tuple[str, Pars
                 row['town_hall_level'],
                 row['barbarian_king_level'],
                 row['archer_queen_level'],
+                row['minion_prince_level'],
                 row['grand_warden_level'],
                 row['royal_champion_level']
             )}\n'
@@ -111,12 +112,12 @@ async def members_players(dm: DatabaseManager) -> tuple[str, ParseMode, Optional
     rows = await dm.acquired_connection.fetch('''
         SELECT
             player_name,
-            town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+            town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
         FROM player
         WHERE clan_tag = $1 AND is_player_in_clan
         ORDER BY
             town_hall_level DESC,
-            (barbarian_king_level + archer_queen_level + grand_warden_level + royal_champion_level) DESC,
+            (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level) DESC,
             player_name
     ''', dm.clan_tag)
     text = (
@@ -131,6 +132,7 @@ async def members_players(dm: DatabaseManager) -> tuple[str, ParseMode, Optional
                 row['town_hall_level'],
                 row['barbarian_king_level'],
                 row['archer_queen_level'],
+                row['minion_prince_level'],
                 row['grand_warden_level'],
                 row['royal_champion_level']
             )}\n')
@@ -159,7 +161,7 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
     rows = await dm.acquired_connection.fetch('''
         SELECT
             bot_user.user_id, player.player_tag,
-            town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+            town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
         FROM
             player_bot_user
             JOIN player ON
@@ -177,7 +179,7 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
     for row in rows:
         players_by_user[row['user_id']].append(ClanMember(
             row['player_tag'], row['town_hall_level'],
-            row['barbarian_king_level'], row['archer_queen_level'],
+            row['barbarian_king_level'], row['archer_queen_level'], row['minion_prince_level'],
             row['grand_warden_level'], row['royal_champion_level']
         ))
     rows = await dm.acquired_connection.fetch('''
@@ -204,7 +206,7 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
     rows = await dm.acquired_connection.fetch('''
         SELECT
             player_tag,
-            town_hall_level, barbarian_king_level, archer_queen_level, grand_warden_level, royal_champion_level
+            town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
         FROM player
         WHERE clan_tag = $1 AND is_player_in_clan AND player.player_tag NOT IN (
             SELECT player.player_tag
@@ -226,7 +228,7 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
     players_without_users = [
         ClanMember(
             row['player_tag'], row['town_hall_level'],
-            row['barbarian_king_level'], row['archer_queen_level'],
+            row['barbarian_king_level'], row['archer_queen_level'], row['minion_prince_level'],
             row['grand_warden_level'], row['royal_champion_level']
         )
         for row in rows

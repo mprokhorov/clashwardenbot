@@ -259,10 +259,6 @@ class DatabaseManager:
             ''', self.clan_tag)
             chat_ids = [row['chat_id'] for row in rows]
             for chat_id in chat_ids:
-                message_text = (
-                    f'<b>💬 Список участников клана изменился</b>\n'
-                    f'\n'
-                )
                 for clan_member_tag in not_ignored_player_tags:
                     rows = await self.acquired_connection.fetch('''
                         SELECT user_id
@@ -285,7 +281,7 @@ class DatabaseManager:
                         FROM player
                         WHERE clan_tag = $1 AND player_tag = $2
                     ''', self.clan_tag, clan_member_tag)
-                    message_text += (
+                    message_text = (
                         f'<b>{self.of.to_html(self.load_name(clan_member_tag))}</b> '
                         f'{self.of.get_player_info_with_custom_emoji(
                             row['town_hall_level'],
@@ -296,19 +292,16 @@ class DatabaseManager:
                             row['royal_champion_level']
                         )}{mentions} ')
                     if clan_member_tag in left_clan_member_tags:
-                        message_text += f'больше не состоит в клане\n'
+                        message_text += f'вышел из клана\n'
                     elif clan_member_tag in joined_clan_member_tags:
                         message_text += f'вступил в клан\n'
-                message_text += (
-                    f'\n'
-                    f'Количество участников: {len(retrieved_clan_members['items'])} / 50\n'
-                )
-                await self.send_message_to_chat(
-                    user_id=None,
-                    chat_id=chat_id,
-                    message_text=message_text,
-                    user_ids_to_ping=None
-                )
+                    message_text += f'{len(retrieved_clan_members['items'])} / 50 🪖\n'
+                    await self.send_message_to_chat(
+                        user_id=None,
+                        chat_id=chat_id,
+                        message_text=message_text,
+                        user_ids_to_ping=None
+                    )
         return were_clan_members_dumped
 
     async def dump_clan(self) -> bool:

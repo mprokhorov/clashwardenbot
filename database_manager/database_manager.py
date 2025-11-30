@@ -298,7 +298,7 @@ class DatabaseManager:
                             row['royal_champion_level']
                         )}{mentions} ')
                     if clan_member_tag in left_clan_member_tags:
-                        message_text += f'вышел из клана\n'
+                        message_text += f'покинул клан\n'
                     elif clan_member_tag in joined_clan_member_tags:
                         message_text += f'вступил в клан\n'
                     message_text += f'Количество участников: {len(retrieved_clan_members['items'])} / 50\n'

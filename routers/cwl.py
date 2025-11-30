@@ -390,7 +390,7 @@ async def cwl_rating_list(
     if not await dm.load_clan_war_league_rating_config():
         text += f'Рейтинг выключен'
         return text, ParseMode.HTML, None
-    if not await dm.load_clan_war_league_own_war():
+    if not await dm.load_clan_war_league_own_wars():
         text += f'Информация об ЛВК отсутствует\n'
         return text, ParseMode.HTML, None
     cwlws = await dm.load_clan_war_league_own_wars()
@@ -426,7 +426,7 @@ async def cwl_rating_choose(
     if not await dm.load_clan_war_league_rating_config():
         text += f'Рейтинг выключен'
         return text, ParseMode.HTML, None
-    if not await dm.load_clan_war_league_own_war():
+    if not await dm.load_clan_war_league_own_wars():
         text += f'Информация об ЛВК отсутствует\n'
         return text, ParseMode.HTML, None
     cwlws = await dm.load_clan_war_league_own_wars()
@@ -469,7 +469,7 @@ async def cwl_rating_details(
     if not await dm.load_clan_war_league_rating_config():
         text += f'Рейтинг выключен'
         return text, ParseMode.HTML, None
-    if not await dm.load_clan_war_league_own_war():
+    if not await dm.load_clan_war_league_own_wars():
         text += f'Информация об ЛВК отсутствует\n'
         return text, ParseMode.HTML, None
     cwlws = await dm.load_clan_war_league_own_wars()

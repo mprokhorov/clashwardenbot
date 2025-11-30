@@ -95,6 +95,16 @@ create table chat
         primary key (clan_tag, chat_id)
 );
 
+create table child_clan
+(
+    father_clan_tag varchar(16)
+        constraint child_clan_clan_clan_tag_fk
+            references clan,
+    child_clan_tag  varchar(16)
+        constraint child_clan_clan_clan_tag_fk_2
+            references clan
+);
+
 create table clan
 (
     clan_tag             varchar(16) not null
@@ -153,6 +163,38 @@ create table clan_war_league
     data     jsonb       not null,
     constraint clan_war_league_pk
         primary key (clan_tag, season)
+);
+
+create table clan_war_league_rating
+(
+    clan_tag         varchar(16) not null,
+    season           varchar(16) not null,
+    player_tag       varchar(16) not null,
+    chat_id          integer     not null,
+    user_id          integer     not null,
+    change_timestamp timestamp   not null,
+    points           integer     not null,
+    constraint clan_war_league_rating_bot_user_clan_tag_chat_id_user_id_fk
+        foreign key (clan_tag, chat_id, user_id) references bot_user,
+    constraint clan_war_league_rating_clan_war_league_clan_tag_season_fk
+        foreign key (clan_tag, season) references clan_war_league,
+    constraint clan_war_league_rating_player_clan_tag_player_tag_fk
+        foreign key (clan_tag, player_tag) references player
+);
+
+create table clan_war_league_rating_config
+(
+    clan_tag                   varchar(16) not null
+        constraint clan_war_league_rating_config_pk
+            primary key
+        constraint clan_war_league_rating_config_clan_clan_tag_fk
+            references clan,
+    attack_stars_points        double precision[],
+    attack_destruction_points  double precision,
+    attack_skip_points         double precision[],
+    defense_stars_points       double precision[],
+    defense_destruction_points double precision,
+    attack_map_position_points double precision
 );
 
 create table clan_war_league_war
@@ -215,7 +257,7 @@ create table opponent_player
 
 create table player
 (
-    clan_tag                    varchar(16) not null
+    clan_tag                          varchar(16) not null
         constraint player_clan_clan_tag_fk
             references clan,
     player_tag                        varchar(16) not null,
@@ -228,8 +270,10 @@ create table player
     minion_prince_level               integer     not null,
     grand_warden_level                integer     not null,
     royal_champion_level              integer     not null,
+    hero_equipment                    jsonb,
     town_hall_level                   integer     not null,
     builder_hall_level                integer     not null,
+    home_village_league_tier          integer,
     home_village_trophies             integer     not null,
     builder_base_trophies             integer     not null,
     player_role                       varchar(16) not null,

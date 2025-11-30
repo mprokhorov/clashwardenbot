@@ -42,6 +42,9 @@ class OutputView(IntEnum):
     cwl_skips_all_days = auto()
     cwl_list = auto()
     cwl_clans = auto()
+    cwl_rating_list = auto()
+    cwl_rating_choose = auto()
+    cwl_rating_details = auto()
 
 
 class CWLCallbackFactory(CallbackData, prefix='cwl'):
@@ -51,6 +54,7 @@ class CWLCallbackFactory(CallbackData, prefix='cwl'):
     cwl_day: Optional[int] = None
     cwl_map_side: Optional[CWLMapSide] = None
     cwl_attacks_side: Optional[CWLAttacksSide] = None
+    player_tag: Optional[str] = None
     cwl_list_order: Optional[CWLListOrder] = None
 
 
@@ -323,7 +327,7 @@ async def cwl_attacks(
                 f'Атаки клана:\n'
                 f'\n'
                 f'{dm.of.get_attacks(
-                clan_map_position_by_player, opponent_map_position_by_player, cwlw['clan'], cwlw['opponent'], 1
+                    clan_map_position_by_player, opponent_map_position_by_player, cwlw['clan'], cwlw['opponent'], 1
                 )}'
             )
             button_upper_row.append(opponent_attacks_button)
@@ -332,7 +336,7 @@ async def cwl_attacks(
                 f'Атаки противника:\n'
                 f'\n'
                 f'{dm.of.get_attacks(
-                opponent_map_position_by_player, clan_map_position_by_player, cwlw['opponent'], cwlw['clan'], 1
+                    opponent_map_position_by_player, clan_map_position_by_player, cwlw['opponent'], cwlw['clan'], 1
                 )}'
             )
             button_upper_row.append(clan_attacks_button)
@@ -373,6 +377,156 @@ async def cwl_attacks(
         keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     else:
         keyboard = None
+    return text, ParseMode.HTML, keyboard
+
+
+async def cwl_rating_list(
+        dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory]
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    text = (
+        f'<b>🪙 Рейтинг участников ЛВК</b>\n'
+        f'\n'
+    )
+    if not await dm.load_clan_war_league_rating_config():
+        text += f'Рейтинг выключен'
+        return text, ParseMode.HTML, None
+    if not await dm.load_clan_war_league_own_war():
+        text += f'Информация об ЛВК отсутствует\n'
+        return text, ParseMode.HTML, None
+    cwlws = await dm.load_clan_war_league_own_wars()
+    cwl_season, _ = await dm.load_clan_war_league()
+    player_tags = await dm.get_cwl_ratings(cwl_season, cwlws)
+    text += (
+        f'Сезон ЛВК: {dm.of.season(cwl_season)}\n'
+        f'\n'
+    )
+    details_button = InlineKeyboardButton(
+        text='📋 Подробнее',
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_choose).pack()
+    )
+    update_button = InlineKeyboardButton(
+        text='🔄 Обновить',
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_list, update=True).pack()
+    )
+    for i, (player_tag, r) in enumerate(sorted(player_tags.items(), key=lambda x: x[1].total_points, reverse=True)):
+        text += f'{i + 1}. {dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n'
+    if len(player_tags) == 0:
+        text += f'Список пуст\n'
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[details_button, update_button]])
+    return text, ParseMode.HTML, keyboard
+
+
+async def cwl_rating_choose(
+        dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory]
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    text = (
+        f'<b>🪙 Рейтинг участников ЛВК</b>\n'
+        f'\n'
+    )
+    if not await dm.load_clan_war_league_rating_config():
+        text += f'Рейтинг выключен'
+        return text, ParseMode.HTML, None
+    if not await dm.load_clan_war_league_own_war():
+        text += f'Информация об ЛВК отсутствует\n'
+        return text, ParseMode.HTML, None
+    cwlws = await dm.load_clan_war_league_own_wars()
+    cwl_season, _ = await dm.load_clan_war_league()
+    text += (
+        f'Сезон ЛВК: {dm.of.season(cwl_season)}\n'
+        f'\n'
+        f'Выберите участника ЛВК:'
+    )
+    player_tags = await dm.get_cwl_ratings(cwl_season, cwlws)
+    button_rows = [[
+        InlineKeyboardButton(
+            text=f'{dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n',
+            callback_data=CWLCallbackFactory(
+                output_view=OutputView.cwl_rating_details,
+                player_tag=player_tag
+            ).pack()
+        )] for i, (player_tag, r) in enumerate(sorted(player_tags.items(), key=lambda x: x[1].total_points, reverse=True))
+    ]
+    back_button = InlineKeyboardButton(
+        text='⬅️ Назад',
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_list).pack()
+    )
+    update_button = InlineKeyboardButton(
+        text='🔄 Обновить',
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_choose, update=True).pack()
+    )
+    button_rows.append([back_button, update_button])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
+    return text, ParseMode.HTML, keyboard
+
+
+async def cwl_rating_details(
+        dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory]
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    text = (
+        f'<b>🪙 Рейтинг игрока {dm.load_name(callback_data.player_tag)}</b>\n'
+        f'\n'
+    )
+    if not await dm.load_clan_war_league_rating_config():
+        text += f'Рейтинг выключен'
+        return text, ParseMode.HTML, None
+    if not await dm.load_clan_war_league_own_war():
+        text += f'Информация об ЛВК отсутствует\n'
+        return text, ParseMode.HTML, None
+    cwlws = await dm.load_clan_war_league_own_wars()
+    wars_ended = sum(dm.of.state(cwlw) == 'warEnded' for cwlw in cwlws)
+    cwl_season, _ = await dm.load_clan_war_league()
+    player_tags = await dm.get_cwl_ratings(cwl_season, cwlws)
+    r = player_tags[callback_data.player_tag]
+    text += (
+        f'Сезон ЛВК: {dm.of.season(cwl_season)}\n'
+        f'\n'
+        f'Итого баллов: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n\n'
+    )
+    if len(r.attack_new_stars) > 0:
+        text += (
+            f'Награды за атаки: {dm.of.format_and_rstrip(
+                r.total_attack_new_stars_points +
+                r.total_attack_destruction_percentage_points +
+                r.total_attack_map_position_points, 3
+            )} 🪙\n'
+            f'{dm.of.format_and_rstrip(r.total_attack_new_stars_points, 3)} 🪙 '
+            f'({', '.join(map(lambda x: f'{x} ⭐', r.attack_new_stars))})\n'
+            f'{dm.of.format_and_rstrip(r.total_attack_destruction_percentage_points, 3)} 🪙 '
+            f'({', '.join(map(lambda x: f'{x}%', r.attack_destruction_percentage))})\n'
+            f'{dm.of.format_and_rstrip(r.total_attack_map_position_points, 3)} 🪙 '
+            f'({', '.join(map(lambda x: f'#{x}', r.attack_map_position))})\n\n'
+        )
+    if r.total_attack_skips_points != 0:
+        text += (
+            f'Штраф за пропуски: {dm.of.format_and_rstrip(r.total_attack_skips_points, 3)} 🪙 '
+            f'({dm.of.skips_count_to_text(wars_ended - len(r.attack_new_stars))})\n\n'
+        )
+    if len(r.defense_stars) > 0:
+        text += (
+            f'Награды за оборону: {dm.of.format_and_rstrip(
+                r.total_defense_stars_points +
+                r.total_defense_destruction_percentage_points, 3
+            )} 🪙\n'
+            f'{dm.of.format_and_rstrip(r.total_defense_stars_points, 3)} 🪙 '
+            f'({', '.join(map(lambda x: f'{x} ⭐', r.defense_stars))})\n'
+            f'{dm.of.format_and_rstrip(r.total_defense_destruction_percentage_points, 3)} 🪙 '
+            f'({', '.join(map(lambda x: f'{x}%', r.defense_destruction_percentage))})\n\n'
+        )
+    if r.total_bonus_points != 0:
+        text += f'Бонусы: {dm.of.format_and_rstrip(r.total_bonus_points, 3)} 🪙'
+    back_button = InlineKeyboardButton(
+        text='⬅️ Назад',
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_choose).pack()
+    )
+    update_button = InlineKeyboardButton(
+        text='🔄 Обновить',
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_rating_details,
+            player_tag=callback_data.player_tag,
+            update=True
+        ).pack()
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[back_button, update_button]])
     return text, ParseMode.HTML, keyboard
 
 
@@ -576,9 +730,9 @@ async def cwl_clans(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[Inlin
         cwl_members = []
         for cwl_clan_cwl_member in cwl_clan['members']:
             cwl_members.append(ClanWarLeagueMember(
-                    town_hall_level=cwl_clan_cwl_member['townhallLevel'],
-                    map_position=cwl_clan_cwl_member['mapPosition']
-                )
+                town_hall_level=cwl_clan_cwl_member['townhallLevel'],
+                map_position=cwl_clan_cwl_member['mapPosition']
+            )
             )
         cwl_members.sort(key=lambda cwl_member: cwl_member.map_position)
         cwl_clans_to_sort.append(
@@ -798,6 +952,64 @@ async def callback_cwl_all_days_list(
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_days_list(dm, callback_data)
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+    if callback_data.update:
+        await callback_query.answer('Сообщение обновлено')
+    else:
+        await callback_query.answer()
+
+
+@router.message(Command('cwl_rating'))
+async def command_cwl_rating(message: Message, dm: DatabaseManager) -> None:
+    text, parse_mode, reply_markup = await cwl_rating_list(dm, None)
+    reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+    await dm.dump_message_owner(reply_from_bot, message.from_user)
+
+
+@router.callback_query(CWLCallbackFactory.filter(F.output_view == OutputView.cwl_rating_list))
+async def callback_cwl_rating_list(
+        callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    if not user_is_message_owner:
+        await callback_query.answer('Эта кнопка не работает для вас')
+    else:
+        text, parse_mode, reply_markup = await cwl_rating_list(dm, callback_data)
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+    if callback_data.update:
+        await callback_query.answer('Сообщение обновлено')
+    else:
+        await callback_query.answer()
+
+
+@router.callback_query(CWLCallbackFactory.filter(F.output_view == OutputView.cwl_rating_choose))
+async def callback_cwl_rating_choose(
+        callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    if not user_is_message_owner:
+        await callback_query.answer('Эта кнопка не работает для вас')
+    else:
+        text, parse_mode, reply_markup = await cwl_rating_choose(dm, callback_data)
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+    if callback_data.update:
+        await callback_query.answer('Сообщение обновлено')
+    else:
+        await callback_query.answer()
+
+
+@router.callback_query(CWLCallbackFactory.filter(F.output_view == OutputView.cwl_rating_details))
+async def callback_cwl_rating_details(
+        callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    if not user_is_message_owner:
+        await callback_query.answer('Эта кнопка не работает для вас')
+    else:
+        text, parse_mode, reply_markup = await cwl_rating_details(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     if callback_data.update:

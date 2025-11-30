@@ -31,23 +31,32 @@ class Unlink(IntEnum):
     finish = auto()
 
 
+class GiveBonus(IntEnum):
+    select_player = auto()
+    set_points = auto()
+    finish = auto()
+
+
 class OutputView(IntEnum):
     menu = auto()
     link = auto()
     unlink = auto()
     edit_cw_list = auto()
     edit_cwl_list = auto()
+    give_bonus = auto()
 
 
 class AdminCallbackFactory(CallbackData, prefix='admin'):
     output_view: OutputView
     link: Optional[Link] = None
     unlink: Optional[Unlink] = None
+    give_bonus: Optional[GiveBonus] = None
     chat_id: Optional[int] = None
     player_tag: Optional[str] = None
     user_id: Optional[int] = None
     is_player_set_for_clan_wars: Optional[bool] = None
     is_player_set_for_clan_war_league: Optional[bool] = None
+    bonus_points: Optional[float] = None
 
 
 def opposite_folding(folding: Link) -> Link:
@@ -92,6 +101,10 @@ async def admin(
         text='⛓️ Отвязать аккаунт от пользователя',
         callback_data=AdminCallbackFactory(output_view=OutputView.unlink, unlink=Unlink.select_chat).pack()
     )
+    give_bonus_button = InlineKeyboardButton(
+        text='🪙 Выдать бонус к рейтингу в ЛВК',
+        callback_data=AdminCallbackFactory(output_view=OutputView.give_bonus, give_bonus=GiveBonus.select_player).pack()
+    )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
         callback_data=AdminCallbackFactory(output_view=OutputView.menu).pack()
@@ -102,6 +115,7 @@ async def admin(
         if can_edit_cw_list:
             button_rows.append([edit_cw_list_button])
             button_rows.append([edit_cwl_list_button])
+            button_rows.append([give_bonus_button])
         if can_link_members:
             button_rows.append([link_button])
             button_rows.append([unlink_button])
@@ -556,12 +570,14 @@ async def edit_cwl_list(
     rows = await dm.acquired_connection.fetch('''
         SELECT
             player_tag, is_player_set_for_clan_war_league,
-            town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level + grand_warden_level, royal_champion_level
+            town_hall_level, barbarian_king_level, archer_queen_level,
+            minion_prince_level, grand_warden_level, royal_champion_level
         FROM player
         WHERE clan_tag = $1 AND is_player_in_clan
         ORDER BY
             town_hall_level DESC,
-            (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level) DESC,
+            (barbarian_king_level + archer_queen_level +
+            minion_prince_level + grand_warden_level + royal_champion_level) DESC,
             player_name
     ''', dm.clan_tag)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -591,6 +607,150 @@ async def edit_cwl_list(
         )]
     ])
     return text, ParseMode.HTML, keyboard
+
+
+async def give_bonus_select_player(
+        dm: DatabaseManager
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    text = (
+        f'<b>🪙 Выдача бонуса к рейтингу в ЛВК</b>\n'
+        f'\n'
+    )
+    if not await dm.load_clan_war_league_rating_config():
+        text += f'Рейтинг выключен'
+        return text, ParseMode.HTML, None
+    cwlws = await dm.load_clan_war_league_own_wars()
+    cwl_season, _ = await dm.load_clan_war_league()
+    text += (
+        f'Сезон ЛВК: {dm.of.season(cwl_season)}\n'
+        f'\n'
+        f'Выберите участника ЛВК:'
+    )
+    player_tags = await dm.get_cwl_ratings(cwl_season, cwlws)
+    button_rows = [
+        [InlineKeyboardButton(
+            text=f'{i + 1}. {dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n',
+            callback_data=AdminCallbackFactory(
+                output_view=OutputView.give_bonus,
+                player_tag=player_tag,
+                give_bonus=GiveBonus.set_points
+            ).pack()
+        )]
+        for i, (player_tag, r) in enumerate(sorted(player_tags.items(), key=lambda x: x[1].total_points, reverse=True))
+    ]
+    back_button = InlineKeyboardButton(
+        text='⬅️ Назад',
+        callback_data=AdminCallbackFactory(output_view=OutputView.menu).pack()
+    )
+    update_button = InlineKeyboardButton(
+        text='🔄 Обновить',
+        callback_data=AdminCallbackFactory(output_view=OutputView.give_bonus, give_bonus=GiveBonus.select_player).pack()
+    )
+    button_rows.append([back_button, update_button])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
+    return text, ParseMode.HTML, keyboard
+
+
+async def give_bonus_set_points(
+        dm: DatabaseManager, callback_data: AdminCallbackFactory
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    text = (
+        f'<b>🪙 Выдача бонуса к рейтингу в ЛВК</b>\n'
+        f'\n'
+    )
+    if not await dm.load_clan_war_league_rating_config():
+        text += f'Рейтинг выключен'
+        return text, ParseMode.HTML, None
+    cwl_season, _ = await dm.load_clan_war_league()
+    text += (
+        f'Сезон ЛВК: {dm.of.season(cwl_season)}\n'
+        f'\n'
+        f'Установите количество баллов:'
+    )
+    if callback_data.bonus_points is None:
+        bonus_points = 0
+    else:
+        bonus_points = callback_data.bonus_points
+    low_increase = InlineKeyboardButton(
+        text='+0.1',
+        callback_data=AdminCallbackFactory(
+            output_view=OutputView.give_bonus,
+            give_bonus=GiveBonus.set_points,
+            player_tag=callback_data.player_tag,
+            bonus_points=bonus_points + 0.1
+        ).pack()
+    )
+    low_decrease = InlineKeyboardButton(
+        text='-0.1',
+        callback_data=AdminCallbackFactory(
+            output_view=OutputView.give_bonus,
+            give_bonus=GiveBonus.set_points,
+            player_tag=callback_data.player_tag,
+            bonus_points=bonus_points - 0.1
+        ).pack()
+    )
+    high_increase = InlineKeyboardButton(
+        text='+1',
+        callback_data=AdminCallbackFactory(
+            output_view=OutputView.give_bonus,
+            give_bonus=GiveBonus.set_points,
+            player_tag=callback_data.player_tag,
+            bonus_points=bonus_points + 1
+        ).pack()
+    )
+    high_decrease = InlineKeyboardButton(
+        text='-1',
+        callback_data=AdminCallbackFactory(
+            output_view=OutputView.give_bonus,
+            give_bonus=GiveBonus.set_points,
+            player_tag=callback_data.player_tag,
+            bonus_points=bonus_points - 1
+        ).pack()
+    )
+    give_points_button = InlineKeyboardButton(
+        text=f'Выдать {dm.of.format_and_rstrip(bonus_points, 3)} баллов',
+        callback_data=AdminCallbackFactory(
+            output_view=OutputView.give_bonus,
+            give_bonus=GiveBonus.finish,
+            player_tag=callback_data.player_tag,
+            bonus_points=bonus_points
+        ).pack()
+    )
+    back_button = InlineKeyboardButton(
+        text='⬅️ Назад',
+        callback_data=AdminCallbackFactory(output_view=OutputView.give_bonus, give_bonus=GiveBonus.select_player).pack()
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [high_decrease, high_increase],
+        [low_decrease, low_increase],
+        [give_points_button],
+        [back_button]
+    ])
+    return text, ParseMode.HTML, keyboard
+
+
+async def give_bonus_finish(
+        dm: DatabaseManager, callback_query: CallbackQuery, callback_data: AdminCallbackFactory
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    text = (
+        f'<b>🪙 Выдача бонуса к рейтингу в ЛВК</b>\n'
+        f'\n'
+    )
+    if not await dm.load_clan_war_league_rating_config():
+        text += f'Рейтинг выключен'
+        return text, ParseMode.HTML, None
+    cwl_season, _ = await dm.load_clan_war_league()
+    text += (
+        f'Сезон ЛВК: {dm.of.season(cwl_season)}\n'
+        f'\n'
+        f'Игроку {dm.load_name(callback_data.player_tag)} выдано {dm.of.format_and_rstrip(callback_data.bonus_points, 3)} 🪙\n'
+    )
+    await dm.acquired_connection.execute('''
+        INSERT INTO clan_war_league_rating
+            (clan_tag, season, player_tag, chat_id, user_id, change_timestamp, points)
+        VALUES ($1, $2, $3, $4, $5, NOW() AT TIME ZONE 'UTC', $6)
+    ''', dm.clan_tag, cwl_season, callback_data.player_tag, callback_query.message.chat.id, callback_query.from_user.id, callback_data.bonus_points)
+    return text, ParseMode.HTML, None
 
 
 async def alert(
@@ -872,6 +1032,57 @@ async def callback_edit_cwl_list(
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await edit_cwl_list(dm, callback_query, callback_data)
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        await callback_query.answer()
+
+
+@router.callback_query(
+    AdminCallbackFactory.filter((F.output_view == OutputView.give_bonus) & (F.give_bonus == GiveBonus.select_player))
+)
+async def callback_give_bonus_select_player(
+        callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    can_user_edit_cw_list = await dm.can_user_edit_cw_list(callback_query.message.chat.id, callback_query.from_user.id)
+    if not user_is_message_owner or not can_user_edit_cw_list:
+        await callback_query.answer('Эта кнопка не работает для вас')
+    else:
+        text, parse_mode, reply_markup = await give_bonus_select_player(dm)
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        await callback_query.answer()
+
+
+@router.callback_query(
+    AdminCallbackFactory.filter((F.output_view == OutputView.give_bonus) & (F.give_bonus == GiveBonus.set_points))
+)
+async def callback_give_bonus_set_points(
+        callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    can_user_edit_cw_list = await dm.can_user_edit_cw_list(callback_query.message.chat.id, callback_query.from_user.id)
+    if not user_is_message_owner or not can_user_edit_cw_list:
+        await callback_query.answer('Эта кнопка не работает для вас')
+    else:
+        text, parse_mode, reply_markup = await give_bonus_set_points(dm, callback_data)
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        await callback_query.answer()
+
+
+@router.callback_query(
+    AdminCallbackFactory.filter((F.output_view == OutputView.give_bonus) & (F.give_bonus == GiveBonus.finish))
+)
+async def callback_give_bonus_finish(
+        callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    can_user_edit_cw_list = await dm.can_user_edit_cw_list(callback_query.message.chat.id, callback_query.from_user.id)
+    if not user_is_message_owner or not can_user_edit_cw_list:
+        await callback_query.answer('Эта кнопка не работает для вас')
+    else:
+        text, parse_mode, reply_markup = await give_bonus_finish(dm, callback_query, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         await callback_query.answer()

@@ -16,6 +16,7 @@ from async_client import AsyncClient
 from bot.commands import bot_cmd_list, get_shown_bot_commands
 from config import config
 from entities import ClanWarLeagueWar, BotUser, RaidsMember, WarMember
+from entities.game_entities import CWLWPlayerRating, CWLPlayerRating, CWLRatingConfig
 from output_formatter import OutputFormatter
 
 
@@ -68,6 +69,7 @@ class DatabaseManager:
         self.clan_tag = clan_tag
         self.bot = bot
 
+        self.clan_name = None
         self.name = None
         self.name_and_tag = None
         self.first_name = None
@@ -78,6 +80,8 @@ class DatabaseManager:
         self.is_privacy_mode_enabled = None
         self.blocked_user_ids = None
         self.ingore_updates_player_tags = None
+
+        self.cwl_rating_config = None
 
     async def connect_to_pool(self) -> None:
         self.connection_pool = await asyncpg.create_pool(
@@ -122,6 +126,7 @@ class DatabaseManager:
         if not were_clan_members_dumped:
             await self.load_and_cache_names()
         await self.dump_clan_games()
+        await self.load_clan_war_league_rating_config()
         await self.dump_clan_war()
         await self.dump_raid_weekends()
         await self.dump_clan_war_league()
@@ -146,6 +151,7 @@ class DatabaseManager:
         await self.dump_raid_weekends()
         await self.dump_clan_war_league()
         await self.dump_clan_war_league_wars()
+        await self.load_clan_war_league_rating_config()
         self.print_ram_usage()
 
     @staticmethod
@@ -276,8 +282,8 @@ class DatabaseManager:
                         )})'
                     row = await self.acquired_connection.fetchrow('''
                         SELECT
-                            town_hall_level,
-                            barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+                            town_hall_level, barbarian_king_level, archer_queen_level,
+                            minion_prince_level, grand_warden_level, royal_champion_level
                         FROM player
                         WHERE clan_tag = $1 AND player_tag = $2
                     ''', self.clan_tag, clan_member_tag)
@@ -350,9 +356,10 @@ class DatabaseManager:
                 player['name'], True,
                 False, False,
                 barbarian_king_level, archer_queen_level, minion_price_level,
-                grand_warden_level, royal_champion_level,
+                grand_warden_level, royal_champion_level, json.dumps(player['heroEquipment']),
                 player['townHallLevel'], player.get('builderHallLevel', 0),
                 player['trophies'], player.get('builderBaseTrophies', 0),
+                player['leagueTier']['id'] - 105000000,
                 player['role'], player['clanCapitalContributions'],
                 player['donations'], player['donationsReceived']
             ))
@@ -367,32 +374,42 @@ class DatabaseManager:
                 player_name, is_player_in_clan,
                 is_player_set_for_clan_wars, is_player_set_for_clan_war_league,
                 barbarian_king_level, archer_queen_level, minion_prince_level,
-                grand_warden_level, royal_champion_level,
+                grand_warden_level, royal_champion_level, hero_equipment,
                 town_hall_level, builder_hall_level,
                 home_village_trophies, builder_base_trophies,
+                home_village_league_tier,
                 player_role, capital_gold_contributed,
                 donations_given, donations_received,
                 first_seen, last_seen)
             VALUES
                 ($1, $2,
-                $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
+                $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
                 NOW() AT TIME ZONE 'UTC', NOW() AT TIME ZONE 'UTC')
             ON CONFLICT (clan_tag, player_tag)
             DO UPDATE SET
                 (player_name, is_player_in_clan,
                 barbarian_king_level, archer_queen_level, minion_prince_level,
-                grand_warden_level, royal_champion_level,
+                grand_warden_level, royal_champion_level, hero_equipment,
                 town_hall_level, builder_hall_level,
                 home_village_trophies, builder_base_trophies,
+                home_village_league_tier,
                 player_role, capital_gold_contributed,
                 donations_given, donations_received,
                 last_seen) =
-                ($3, $4, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19,
+                ($3, $4, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
                 NOW() AT TIME ZONE 'UTC')
         ''', rows)
         return True
 
     async def load_and_cache_names(self) -> None:
+        rows = await self.acquired_connection.fetch('''
+            SELECT clan_tag, clan_name
+            FROM clan
+        ''')
+        self.clan_name = {
+            row['clan_tag']: row['clan_name'] for row in rows
+        }
+
         rows = await self.acquired_connection.fetch('''
             SELECT player_tag, player_name
             FROM player
@@ -810,7 +827,7 @@ class DatabaseManager:
             await self.set_activity_end_message_sent(
                 self.clan_tag, 'raid_weekend', self.of.to_datetime(raids['startTime'])
             )
-        elif not row['start_message_sent'] and are_raids_updated and self.of.state(raids) == 'ongoing':
+        elif not row['start_message_sent'] and are_raids_updated and self.of.state(raids) == 'ongoing' and len(raids['attackLog']) > 0:
             texts.append(
                 f'<b>📣 Рейды начались</b>\n'
                 f'\n'
@@ -1052,6 +1069,130 @@ class DatabaseManager:
                     message_text=text,
                     user_ids_to_ping=await self.get_war_member_user_ids(row['chat_id'], cwlw, 1) if ping else None
                 )
+
+    async def load_clan_war_league_rating_config(self) -> bool:
+        row = await self.acquired_connection.fetchrow('''
+            SELECT
+                attack_stars_points, attack_destruction_points, attack_map_position_points,
+                attack_skip_points, defense_stars_points, defense_destruction_points
+            FROM clan_war_league_rating_config
+            WHERE clan_tag = $1
+        ''', self.clan_tag)
+        if row is None:
+            return False
+        self.cwl_rating_config = CWLRatingConfig(
+            row['attack_stars_points'], row['attack_destruction_points'], row['attack_map_position_points'],
+            row['attack_skip_points'], row['defense_stars_points'], row['defense_destruction_points']
+        )
+        return True
+
+    async def get_clan_war_league_rating(self, cwlw: dict) -> dict[str, CWLWPlayerRating]:
+        cwlw_rating = {}
+        opponent_map_position_by_tag = self.of.calculate_map_positions(cwlw['opponent']['members'])
+        if self.of.state(cwlw) == 'preparation':
+            return {}
+        for player in cwlw['clan']['members']:
+            if len(player.get('attacks', [])) > 0:
+                attack = player['attacks'][0]
+                previous_stars = [
+                    clanmate['attacks'][0]['stars']
+                    if (clanmate.get('attacks') is not None and
+                        clanmate['attacks'][0]['order'] < attack['order'] and
+                        clanmate['attacks'][0]['defenderTag'] == attack['defenderTag'])
+                    else 0
+                    for clanmate
+                    in cwlw['clan']['members']
+                ]
+                attack_new_stars = attack['stars'] - (max(previous_stars) if len(previous_stars) > 0 else 0)
+                if attack_new_stars < 0:
+                    attack_new_stars = 0
+                attack_destruction_percentage = attack['destructionPercentage']
+                attack_map_position = opponent_map_position_by_tag[attack['defenderTag']]
+            else:
+                if self.of.state(cwlw) == 'inWar':
+                    attack_new_stars, attack_destruction_percentage, attack_map_position = None, None, None
+                else:
+                    attack_new_stars, attack_destruction_percentage, attack_map_position = 0, 0, 31
+            if self.of.state(cwlw) == 'warEnded':
+                if player.get('bestOpponentAttack'):
+                    defense_stars = player['bestOpponentAttack']['stars']
+                    defense_destruction_percentage = player['bestOpponentAttack']['destructionPercentage']
+                else:
+                    defense_stars = 0
+                    defense_destruction_percentage = 0
+            else:
+                defense_stars = None
+                defense_destruction_percentage = None
+            cwlw_rating[player['tag']] = CWLWPlayerRating(
+                attack_new_stars, attack_destruction_percentage, attack_map_position,
+                defense_stars, defense_destruction_percentage
+            )
+        return cwlw_rating
+
+    async def get_cwl_ratings(self, cwl_season: str, cwlws: list[dict]) -> dict[str, CWLPlayerRating]:
+        player_tags = {}
+        for cwlw in cwlws:
+            for player in cwlw['clan']['members']:
+                player_tags[player['tag']] = CWLPlayerRating(
+                    [], [], [], [], [], [], None, None, None, None, None, None, None, None
+                )
+        wars_ended = sum(1 if self.of.state(cwlw) == 'warEnded' else 0 for cwlw in cwlws)
+        rows = await self.acquired_connection.fetch('''
+            SELECT player_tag, points
+            FROM clan_war_league_rating
+            WHERE (clan_tag, season) = ($1, $2)
+        ''', self.clan_tag, cwl_season)
+        for row in rows:
+            player_tags[row['player_tag']].bonus_points.append(row['points'])
+        for cwlw in cwlws:
+            cwlw_rating = await self.get_clan_war_league_rating(cwlw)
+            for player_tag, rating in cwlw_rating.items():
+                if rating.attack_new_stars is not None:
+                    player_tags[player_tag].attack_new_stars.append(rating.attack_new_stars)
+                if rating.attack_destruction_percentage is not None:
+                    player_tags[player_tag].attack_destruction_percentage.append(rating.attack_destruction_percentage)
+                if rating.attack_map_position is not None:
+                    player_tags[player_tag].attack_map_position.append(rating.attack_map_position)
+                if rating.defense_stars is not None:
+                    player_tags[player_tag].defense_stars.append(rating.defense_stars)
+                if rating.defense_destruction_percentage is not None:
+                    player_tags[player_tag].defense_destruction_percentage.append(rating.defense_destruction_percentage)
+        for player_tag, r in player_tags.items():
+            player_tags[player_tag].total_attack_new_stars_points = sum(
+                self.cwl_rating_config.attack_stars_points[attack_new_stars]
+                for attack_new_stars in r.attack_new_stars
+            )
+            player_tags[player_tag].total_attack_destruction_percentage_points = sum(
+                self.cwl_rating_config.attack_desruction_points * attack_destruction_percentage
+                for attack_destruction_percentage in r.attack_destruction_percentage
+            )
+            player_tags[player_tag].total_attack_map_position_points = sum(
+                self.cwl_rating_config.attack_map_position_points * (31 - attack_map_position)
+                for attack_map_position in r.attack_map_position
+            )
+            wars_skips = wars_ended - len(r.attack_new_stars)
+            if wars_skips < 0:
+                wars_skips = 0
+            player_tags[player_tag].total_attack_skips_points = self.cwl_rating_config.attack_skip_points[wars_skips]
+            player_tags[player_tag].total_defense_stars_points = sum(
+                self.cwl_rating_config.defense_stars_points[defense_stars]
+                for defense_stars in r.defense_stars
+            )
+            player_tags[player_tag].total_defense_destruction_percentage_points = sum(
+                self.cwl_rating_config.defense_desruction_points * (100 - defense_destruction_percentage)
+                for defense_destruction_percentage in r.defense_destruction_percentage
+            )
+            player_tags[player_tag].total_bonus_points = sum(player_tags[player_tag].bonus_points)
+            player_tags[player_tag].total_points = (
+                    player_tags[player_tag].total_attack_new_stars_points +
+                    player_tags[player_tag].total_attack_destruction_percentage_points +
+                    player_tags[player_tag].total_attack_map_position_points +
+                    player_tags[player_tag].total_attack_skips_points +
+                    player_tags[player_tag].total_defense_stars_points +
+                    player_tags[player_tag].total_defense_destruction_percentage_points +
+                    player_tags[player_tag].total_bonus_points
+            )
+        return player_tags
 
     async def dump_user(self, chat: Chat, user: User) -> None:
         if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:

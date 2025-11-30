@@ -1,14 +1,15 @@
 cw_info                 | ⚔️ Информация о КВ                      | group, private | CW
 cw_map                  | 🗺️ Карта КВ                             | group, private | CW
 cw_attacks              | 🗡️ Атаки в КВ                           | group, private | CW
-cw_status               | 📝 Изменить статус участия в КВ         | group, private |
-cw_list                 | 📋 Список участников КВ                 | group, private |
+cw_status               | 📝 Изменить статус участия в КВ         | group, private | CW
+cw_list                 | 📋 Список участников КВ                 | group, private | CW
 cw_skips                | 🕒 Не проатаковавшие в КВ               | group, private | CW
 cw_ping                 | 🔔 Напомнить об атаках в КВ             | group          | CW
 cwl_info                | ⚔️ Информация об ЛВК                    | group, private | CWL
 cwl_map                 | 🗺️ Карта ЛВК                            | group, private | CWL
 cwl_attacks             | 🗡️ Атаки в ЛВК                          | group, private | CWL
-cwl_list                | 📋 Список участников ЛВК                | group, private |
+cwl_rating              | 🪙 Рейтинг участников ЛВК               | group, private | CWL
+cwl_list                | 📋 Список участников ЛВК                | group, private | CWL
 cwl_clans               | 📶 Уровни ТХ кланов в ЛВК               | group, private | CWL
 cwl_skips               | 🕒 Не проатаковавшие в ЛВК              | group, private | CWL
 cwl_ping                | 🔔 Напомнить об атаках в ЛВК            | group          | CWL
@@ -19,6 +20,7 @@ raids_ping              | 🔔 Напомнить об атаках в рейд�
 raids_analysis          | 📊 Анализ атак в рейдах                 | group, private |
 player_info             | 👤 Аккаунты пользователя                | group, private |
 members                 | 🪖 Участники клана                      | group, private |
+hero_equipment          | 🔧 Снаряжения героев игроков            | group, private |
 contributions           | 🟡 Вклады в столице                     | group, private |
 donations               | 🏅 Лучшие жертвователи                  | group, private |
 events                  | 📆 События                              | group, private |

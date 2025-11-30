@@ -343,15 +343,16 @@ async def cw_status(
     rows = await dm.acquired_connection.fetch('''
         SELECT
             player_tag, player_name, is_player_set_for_clan_wars,
-            town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+            town_hall_level, barbarian_king_level, archer_queen_level,
+            minion_prince_level, grand_warden_level, royal_champion_level
         FROM
             player
             JOIN player_bot_user USING (clan_tag, player_tag)
             JOIN bot_user USING (clan_tag, chat_id, user_id)
         WHERE clan_tag = $1 AND is_player_in_clan AND chat_id = $2 AND user_id = $3 AND is_user_in_chat
         ORDER BY
-            town_hall_level DESC,
-            (barbarian_king_level + archer_queen_level + minion_prince_level, grand_warden_level + royal_champion_level) DESC,
+            town_hall_level DESC, (barbarian_king_level + archer_queen_level + 
+            minion_prince_level + grand_warden_level + royal_champion_level) DESC,
             player_name
     ''', dm.clan_tag, chat_id, bot_user.user_id)
     if len(rows) == 0:
@@ -400,7 +401,7 @@ async def cw_list(
         ).pack()
     )
     order_by_trophies_button = InlineKeyboardButton(
-        text='⬇️ по трофеям',
+        text='⬇️ по лиге и трофеям',
         callback_data=CWCallbackFactory(
             output_view=OutputView.cw_list, cw_list_order=CWListOrder.by_trophies
         ).pack()
@@ -412,10 +413,10 @@ async def cw_list(
                 town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
             FROM player
             WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_wars
-            ORDER BY home_village_trophies DESC
+            ORDER BY player.home_village_league_tier DESC, home_village_trophies DESC
         ''', dm.clan_tag)
         text = (
-            f'<b>📋 Список участников КВ (⬇️ по трофеям)</b>\n'
+            f'<b>📋 Список участников КВ (⬇️ по лиге и трофеям)</b>\n'
             f'\n'
         )
         button_row.append(order_by_town_hall_and_heroes_button)

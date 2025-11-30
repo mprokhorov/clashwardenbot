@@ -5,6 +5,7 @@ from typing import Optional
 from asyncpg import Record
 
 from config import config
+from entities.game_entities import HeroEquipment, Hero
 
 
 class Event(IntEnum):
@@ -128,15 +129,21 @@ class OutputFormatter:
         )
 
     @staticmethod
+    def get_minion_prince_emoji() -> str:
+        return (
+            f'<tg-emoji emoji-id="{config.home_village_hero_emoji_ids[2].get_secret_value()}">🦇</tg-emoji>'
+        )
+
+    @staticmethod
     def get_grand_warden_emoji() -> str:
         return (
-            f'<tg-emoji emoji-id="{config.home_village_hero_emoji_ids[2].get_secret_value()}">👴</tg-emoji>'
+            f'<tg-emoji emoji-id="{config.home_village_hero_emoji_ids[3].get_secret_value()}">👴</tg-emoji>'
         )
 
     @staticmethod
     def get_royal_champion_emoji() -> str:
         return (
-            f'<tg-emoji emoji-id="{config.home_village_hero_emoji_ids[3].get_secret_value()}">🙍‍♀️</tg-emoji>'
+            f'<tg-emoji emoji-id="{config.home_village_hero_emoji_ids[4].get_secret_value()}">🙍‍♀️</tg-emoji>'
         )
 
     @staticmethod
@@ -176,7 +183,7 @@ class OutputFormatter:
         if (archer_queen_level or 0) > 0:
             text += f' {self.get_archer_queen_emoji()}{archer_queen_level}'
         if (minion_prince_level or 0) > 0:
-            text += f' {'🦇'}{minion_prince_level}'
+            text += f' {self.get_minion_prince_emoji()}{minion_prince_level}'
         if (grand_warden_level or 0) > 0:
             text += f' {self.get_grand_warden_emoji()}{grand_warden_level}'
         if (royal_champion_level or 0) > 0:
@@ -812,6 +819,109 @@ class OutputFormatter:
         return '\n'.join(cw_member_lines)
 
     @staticmethod
+    async def calculate_hero_equipment_progress(hero_equipments: list) -> tuple[float, float, float, float]:
+        regular_equipment_max_level = 18
+        epic_equipment_max_level = 27
+        available_hero_equipments = OutputFormatter.get_available_hero_equipments()
+        regular_equipment_amount = sum(
+            hero_equipment.max_level == regular_equipment_max_level
+            for hero_equipment in available_hero_equipments.values()
+        )
+        epic_equipment_amount = sum(
+            hero_equipment.max_level == epic_equipment_max_level
+            for hero_equipment in available_hero_equipments.values()
+        )
+        shiny_ore_cumulative_price = [
+            0, 120, 360, 760, 1360, 2200, 3320, 4760, 6560,
+            8460, 10460, 12560, 14760, 17060, 19460, 21960, 24560, 27260,
+            30060, 32960, 35960, 39060, 42260, 45560, 48960, 52460, 56060
+        ]
+        glowy_ore_cumulative_price = [
+            0, 0, 20, 20, 20, 120, 120, 120, 320,
+            320, 320, 720, 720, 720, 1320, 1320, 1320, 1920,
+            1920, 1920, 2520, 2520, 2520, 3120, 3120, 3120, 3720
+        ]
+        starry_ore_cumulative_price = [
+            0, 0, 0, 0, 0, 0, 0, 0, 10,
+            10, 10, 30, 30, 30, 60, 60, 60, 110,
+            110, 110, 210, 210, 210, 330, 330, 330, 480
+        ]
+        shiny_ore_amount = 0
+        glowy_ore_amount = 0
+        starry_ore_amount = 0
+        levels_amount = 0
+        total_shiny_ore_amount = (
+                shiny_ore_cumulative_price[regular_equipment_max_level - 1] * regular_equipment_amount +
+                shiny_ore_cumulative_price[epic_equipment_max_level - 1] * epic_equipment_amount
+        )
+        total_glowy_ore_amount = (
+                glowy_ore_cumulative_price[regular_equipment_max_level - 1] * regular_equipment_amount +
+                glowy_ore_cumulative_price[epic_equipment_max_level - 1] * epic_equipment_amount
+        )
+        total_starry_ore_amount = (
+                starry_ore_cumulative_price[regular_equipment_max_level - 1] * regular_equipment_amount +
+                starry_ore_cumulative_price[epic_equipment_max_level - 1] * epic_equipment_amount
+        )
+        total_levels_amount = (
+                regular_equipment_max_level * regular_equipment_amount +
+                epic_equipment_max_level * epic_equipment_amount
+        )
+        for hero_equipment in hero_equipments:
+            shiny_ore_amount += shiny_ore_cumulative_price[hero_equipment['level'] - 1]
+            glowy_ore_amount += glowy_ore_cumulative_price[hero_equipment['level'] - 1]
+            starry_ore_amount += starry_ore_cumulative_price[hero_equipment['level'] - 1]
+            levels_amount += hero_equipment['level']
+        return (
+            shiny_ore_amount / total_shiny_ore_amount,
+            glowy_ore_amount / total_glowy_ore_amount,
+            starry_ore_amount / total_starry_ore_amount,
+            levels_amount / total_levels_amount
+        )
+
+    @staticmethod
+    def get_available_hero_equipments() -> dict[str, HeroEquipment]:
+        available_hero_equipments = {
+            'Barbarian Puppet': HeroEquipment('Кукла-варвар', 18, Hero.barbarian_king),
+            'Rage Vial': HeroEquipment('Фиал ярости', 18, Hero.barbarian_king),
+            'Earthquake Boots': HeroEquipment('Землетрясущие ботинки', 18, Hero.barbarian_king),
+            'Vampstache': HeroEquipment('Вампирские усы', 18, Hero.barbarian_king),
+            'Giant Gauntlet': HeroEquipment('Перчатка гиганта', 27, Hero.barbarian_king),
+            'Spiky Ball': HeroEquipment('Мяч с шипами', 27, Hero.barbarian_king),
+            'Snake Bracelet': HeroEquipment('Змеиный браслет', 27, Hero.barbarian_king),
+
+            'Archer Puppet': HeroEquipment('Кукла-лучница', 18, Hero.archer_queen),
+            'Invisibility Vial': HeroEquipment('Фиал невидимости', 18, Hero.archer_queen),
+            'Giant Arrow': HeroEquipment('Гигантская стрела', 18, Hero.archer_queen),
+            'Healer Puppet': HeroEquipment('Кукла-целительница', 18, Hero.archer_queen),
+            'Frozen Arrow': HeroEquipment('Ледяная стрела', 27, Hero.archer_queen),
+            'Magic Mirror': HeroEquipment('Волшебное зеркало', 27, Hero.archer_queen),
+            'Action Figure': HeroEquipment('Солдатик', 27, Hero.archer_queen),
+
+            'Henchmen Puppet': HeroEquipment('Кукольные приспешники', 18, Hero.minion_prince),
+            'Dark Orb': HeroEquipment('Сфера тьмы', 18, Hero.minion_prince),
+            'Metal Pants': HeroEquipment('Железные штаны', 18, Hero.minion_prince),
+            'Noble Iron': HeroEquipment('Королевская гантель', 18, Hero.minion_prince),
+            'Dark Crown': HeroEquipment('Темная корона', 27, Hero.minion_prince),
+            'Meteor Staff': HeroEquipment('Метеоритный посох', 27, Hero.minion_prince),
+
+            'Eternal Tome': HeroEquipment('Книга вечности', 18, Hero.grand_warden),
+            'Life Gem': HeroEquipment('Кристалл жизни', 18, Hero.grand_warden),
+            'Rage Gem': HeroEquipment('Кристалл ярости', 18, Hero.grand_warden),
+            'Healing Tome': HeroEquipment('Книга исцеления', 18, Hero.grand_warden),
+            'Fireball': HeroEquipment('Огненный шар', 27, Hero.grand_warden),
+            'Lavaloon Puppet': HeroEquipment('Кукла-лавашар', 27, Hero.grand_warden),
+            'Heroic Torch': HeroEquipment('Факел героев', 27, Hero.grand_warden),
+
+            'Royal Gem': HeroEquipment('Королевский кристалл', 18, Hero.royal_champion),
+            'Seeking Shield': HeroEquipment('Щит-искатель', 18, Hero.royal_champion),
+            'Hog Rider Puppet': HeroEquipment('Кукла-всадник на кабане', 18, Hero.royal_champion),
+            'Haste Vial': HeroEquipment('Фиал спешки', 18, Hero.royal_champion),
+            'Rocket Spear': HeroEquipment('Копье-ракета', 27, Hero.royal_champion),
+            'Electro Boots': HeroEquipment('Электросапоги', 27, Hero.royal_champion)
+        }
+        return available_hero_equipments
+
+    @staticmethod
     def attacks_count_to_text(attacks_count: int) -> str:
         if attacks_count == 1:
             return '1 атака'
@@ -825,6 +935,32 @@ class OutputFormatter:
             return f'{attacks_count} атак'
         else:
             return f'кол-во атак: {attacks_count}'
+
+    @staticmethod
+    def skips_count_to_text(skips_count: int) -> str:
+        if skips_count == 0:
+            return '0 пропусков'
+        if skips_count == 1:
+            return '1 пропуск'
+        if skips_count == 2:
+            return '2 пропуска'
+        if skips_count == 3:
+            return '3 пропуска'
+        if skips_count == 4:
+            return '4 пропуска'
+        if 5 <= skips_count <= 20:
+            return f'{skips_count} пропусков'
+        else:
+            return f'кол-во пропусков: {skips_count}'
+
+    @staticmethod
+    def format_and_rstrip(number, decimal_places):
+        formatted_string = f'{number:.{decimal_places}f}'
+        if '.' in formatted_string:
+            formatted_string = formatted_string.rstrip('0')
+            if formatted_string.endswith('.'):
+                formatted_string = formatted_string.rstrip('.')
+        return formatted_string
 
     @staticmethod
     def avg(lst: list[int]) -> float | int:

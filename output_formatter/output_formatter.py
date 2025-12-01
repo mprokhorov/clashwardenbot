@@ -599,7 +599,6 @@ class OutputFormatter:
         return text
 
     def raids_ongoing_or_ended(self, raids: dict) -> str:
-        current_raid_districts = raids['attackLog'][-1]['districts']
         text = (
             f'{self.event_datetime(Event.RW, raids['startTime'], raids['endTime'], True)}\n'
             f'\n'
@@ -609,6 +608,7 @@ class OutputFormatter:
             ])} ⚔️\n'
         )
         if self.state(raids) in ['ongoing']:
+            current_raid_districts = raids['attackLog'][-1]['districts']
             text += (
                 f'Уничтожено районов в текущем рейде: '
                 f'{len([district for district in current_raid_districts if district['destructionPercent'] == 100])} '

@@ -167,13 +167,13 @@ create table clan_war_league
 
 create table clan_war_league_rating
 (
-    clan_tag         varchar(16) not null,
-    season           varchar(16) not null,
-    player_tag       varchar(16) not null,
-    chat_id          integer     not null,
-    user_id          integer     not null,
-    change_timestamp timestamp   not null,
-    points           integer     not null,
+    clan_tag         varchar(16)      not null,
+    season           varchar(16)      not null,
+    player_tag       varchar(16)      not null,
+    chat_id          integer          not null,
+    user_id          integer          not null,
+    change_timestamp timestamp        not null,
+    points           double precision not null,
     constraint clan_war_league_rating_bot_user_clan_tag_chat_id_user_id_fk
         foreign key (clan_tag, chat_id, user_id) references bot_user,
     constraint clan_war_league_rating_clan_war_league_clan_tag_season_fk

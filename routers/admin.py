@@ -629,7 +629,7 @@ async def give_bonus_select_player(
     player_tags = await dm.get_cwl_ratings(cwl_season, cwlws)
     button_rows = [
         [InlineKeyboardButton(
-            text=f'{i + 1}. {dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n',
+            text=f'{dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n',
             callback_data=AdminCallbackFactory(
                 output_view=OutputView.give_bonus,
                 player_tag=player_tag,

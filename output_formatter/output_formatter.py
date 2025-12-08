@@ -607,7 +607,7 @@ class OutputFormatter:
                 if all(district['destructionPercent'] == 100 for district in raid['districts'])
             ])} ⚔️\n'
         )
-        if self.state(raids) in ['ongoing']:
+        if len(raids['attackLog']) > 0:
             current_raid_districts = raids['attackLog'][-1]['districts']
             text += (
                 f'Уничтожено районов в текущем рейде: '
@@ -917,7 +917,8 @@ class OutputFormatter:
             'Hog Rider Puppet': HeroEquipment('Кукла-всадник на кабане', 18, Hero.royal_champion),
             'Haste Vial': HeroEquipment('Фиал спешки', 18, Hero.royal_champion),
             'Rocket Spear': HeroEquipment('Копье-ракета', 27, Hero.royal_champion),
-            'Electro Boots': HeroEquipment('Электросапоги', 27, Hero.royal_champion)
+            'Electro Boots': HeroEquipment('Электросапоги', 27, Hero.royal_champion),
+            'Frost Flake': HeroEquipment('Снежинка', 27, Hero.royal_champion)
         }
         return available_hero_equipments
 

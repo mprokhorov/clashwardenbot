@@ -729,10 +729,11 @@ async def cwl_clans(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[Inlin
     for cwl_clan in cwl_clan_list:
         cwl_members = []
         for cwl_clan_cwl_member in cwl_clan['members']:
-            cwl_members.append(ClanWarLeagueMember(
-                town_hall_level=cwl_clan_cwl_member['townhallLevel'],
-                map_position=cwl_clan_cwl_member['mapPosition']
-            )
+            cwl_members.append(
+                ClanWarLeagueMember(
+                    town_hall_level=cwl_clan_cwl_member['townhallLevel'],
+                    map_position=cwl_clan_cwl_member['mapPosition']
+                )
             )
         cwl_members.sort(key=lambda cwl_member: cwl_member.map_position)
         cwl_clans_to_sort.append(

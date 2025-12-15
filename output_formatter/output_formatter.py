@@ -955,6 +955,19 @@ class OutputFormatter:
             return f'кол-во пропусков: {skips_count}'
 
     @staticmethod
+    def points_count_to_text(points_count: float) -> str:
+        if points_count != int(points_count):
+            return f'{points_count:g} балла'
+        if 5 <= abs(points_count) <= 20:
+            return f'{int(points_count)} баллов'
+        if abs(points_count) % 10 == 1:
+            return f'{int(points_count)} балл'
+        if 2 <= abs(points_count) % 10 <= 4:
+            return f'{int(points_count)} балла'
+        else:
+            return f'{int(points_count)} баллов'
+
+    @staticmethod
     def format_and_rstrip(number, decimal_places):
         formatted_string = f'{number:.{decimal_places}f}'
         if '.' in formatted_string:

@@ -45,6 +45,7 @@ class OutputView(IntEnum):
     cwl_rating_list = auto()
     cwl_rating_choose = auto()
     cwl_rating_details = auto()
+    cwl_rating_rules = auto()
 
 
 class CWLCallbackFactory(CallbackData, prefix='cwl'):
@@ -408,11 +409,15 @@ async def cwl_rating_list(
         text='🔄 Обновить',
         callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_list, update=True).pack()
     )
+    rules_button = InlineKeyboardButton(
+        text='❓ Правила',
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_rules).pack()
+    )
     for i, (player_tag, r) in enumerate(sorted(player_tags.items(), key=lambda x: x[1].total_points, reverse=True)):
         text += f'{i + 1}. {dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n'
     if len(player_tags) == 0:
         text += f'Список пуст\n'
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[details_button, update_button]])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[rules_button, details_button], [update_button]])
     return text, ParseMode.HTML, keyboard
 
 
@@ -525,6 +530,38 @@ async def cwl_rating_details(
             player_tag=callback_data.player_tag,
             update=True
         ).pack()
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[back_button, update_button]])
+    return text, ParseMode.HTML, keyboard
+
+
+async def cwl_rating_rules(
+        dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory]
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    text = f'<b>🪙 Правила рейтинга участников ЛВК</b>\n'
+    if not await dm.load_clan_war_league_rating_config():
+        text += (
+            f'\n'
+            f'Рейтинг выключен'
+        )
+        return text, ParseMode.HTML, None
+    text += dm.of.full_dedent(f'''
+        <b>Награды за атаки:</b>
+        За атаку на 3 звезды даётся {dm.of.points_count_to_text(dm.cwl_rating_config.attack_stars_points[3])}, на 2 звезды — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_stars_points[2])}, на 1 звезду — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_stars_points[1])}, за 0 звезд или пропуск атаки — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_stars_points[0])}. При этом количество звёзд определяется как разница между результатом атаки и последней атакой (в случае, если игрок атаковал уже атакованную базу). Также за каждую атаку начисляются баллы по формуле: [процент разрушения] * {dm.of.points_count_to_text(dm.cwl_rating_config.attack_desruction_points)}. Вне зависимости от результата атаки начисляются баллы по формуле: (31 - [номер места противника на карте]) * {dm.of.points_count_to_text(dm.cwl_rating_config.attack_map_position_points)}.
+        
+        <b>Штрафы за пропуски:</b>
+        За неучастие в раундах ЛВК штрафы начисляются в зависимости от количества пропусков: 0 пропусков — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[0])}, 1 пропуск — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[1])}, 2 пропуска — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[2])}, 3 пропуска — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[3])}, 4 пропуска — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[4])}, 5 пропусков — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[5])}, 6 пропусков — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[6])}, 7 пропусков — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[7])}.
+        
+        <b>Награды за оборону:</b>
+        Если базу игрока атаковали на 0 звёзд, ему начисляется {dm.of.points_count_to_text(dm.cwl_rating_config.defense_stars_points[0])}, на 1 звезду — {dm.of.points_count_to_text(dm.cwl_rating_config.defense_stars_points[1])}, на 2 звезды — {dm.of.points_count_to_text(dm.cwl_rating_config.defense_stars_points[2])}. Также (в случае, если базу игрока атаковали) начисляются бонусы по формуле: (100 - [процент разрушения]) * {dm.of.points_count_to_text(dm.cwl_rating_config.defense_desruction_points)}.
+        ''')
+    back_button = InlineKeyboardButton(
+        text='⬅️ Назад',
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_list).pack()
+    )
+    update_button = InlineKeyboardButton(
+        text='🔄 Обновить',
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_rules, update=True).pack()
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[back_button, update_button]])
     return text, ParseMode.HTML, keyboard
@@ -1011,6 +1048,23 @@ async def callback_cwl_rating_details(
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_rating_details(dm, callback_data)
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+    if callback_data.update:
+        await callback_query.answer('Сообщение обновлено')
+    else:
+        await callback_query.answer()
+
+
+@router.callback_query(CWLCallbackFactory.filter(F.output_view == OutputView.cwl_rating_rules))
+async def callback_cwl_rating_rules(
+        callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    if not user_is_message_owner:
+        await callback_query.answer('Эта кнопка не работает для вас')
+    else:
+        text, parse_mode, reply_markup = await cwl_rating_rules(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     if callback_data.update:

@@ -301,7 +301,8 @@ class DatabaseManager:
                         message_text += f'покинул клан\n'
                     elif clan_member_tag in joined_clan_member_tags:
                         message_text += f'вступил в клан\n'
-                    message_text += f'Количество участников: {len(retrieved_clan_members['items'])} / 50\n'
+                    if len(retrieved_clan_members['items']) == 50:
+                        message_text += f'Количество участников: 50 / 50\n'
                     await self.send_message_to_chat(
                         user_id=None,
                         chat_id=chat_id,

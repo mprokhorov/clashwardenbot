@@ -31,6 +31,11 @@ class CWListOrder(IntEnum):
     by_town_hall_and_heroes = auto()
 
 
+class CWListStatus(IntEnum):
+    set_for_clan_wars = auto()
+    not_set_for_clan_wars = auto()
+
+
 class OutputView(IntEnum):
     cw_info = auto()
     cw_map = auto()
@@ -49,6 +54,8 @@ class CWCallbackFactory(CallbackData, prefix='cw'):
     player_tag: Optional[str] = None
     is_player_set_for_clan_wars: Optional[bool] = None
     cw_list_order: Optional[CWListOrder] = None
+    cw_list_status: Optional[CWListStatus] = None
+
 
 
 async def cw_info(
@@ -389,55 +396,120 @@ async def cw_list(
         cw_list_order = callback_data.cw_list_order
     else:
         cw_list_order = CWListOrder.by_trophies
+    if callback_data is not None and callback_data.cw_list_status is not None:
+        cw_list_status = callback_data.cw_list_status
+    else:
+        cw_list_status = CWListStatus.set_for_clan_wars
     button_row = []
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=CWCallbackFactory(output_view=OutputView.cw_list, update=True, cw_list_order=cw_list_order).pack()
+        callback_data=CWCallbackFactory(
+            output_view=OutputView.cw_list,
+            update=True,
+            cw_list_order=cw_list_order,
+            cw_list_status=cw_list_status
+        ).pack()
     )
     order_by_town_hall_and_heroes_button = InlineKeyboardButton(
         text='⬇️ по ТХ и героям',
         callback_data=CWCallbackFactory(
-            output_view=OutputView.cw_list, cw_list_order=CWListOrder.by_town_hall_and_heroes
+            output_view=OutputView.cw_list,
+            cw_list_order=CWListOrder.by_town_hall_and_heroes,
+            cw_list_status=callback_data.cw_list_status if callback_data else None
         ).pack()
     )
     order_by_trophies_button = InlineKeyboardButton(
         text='⬇️ по лиге и трофеям',
         callback_data=CWCallbackFactory(
-            output_view=OutputView.cw_list, cw_list_order=CWListOrder.by_trophies
+            output_view=OutputView.cw_list,
+            cw_list_order=CWListOrder.by_trophies,
+            cw_list_status=callback_data.cw_list_status if callback_data else None
+        ).pack()
+    )
+    not_set_for_clan_wars_button = InlineKeyboardButton(
+        text='❌ не участвующие в КВ',
+        callback_data=CWCallbackFactory(
+            output_view=OutputView.cw_list,
+            cw_list_order=callback_data.cw_list_order if callback_data else None,
+            cw_list_status=CWListStatus.not_set_for_clan_wars
+        ).pack()
+    )
+    set_for_clan_wars_button = InlineKeyboardButton(
+        text='✅ участвующие в КВ',
+        callback_data=CWCallbackFactory(
+            output_view=OutputView.cw_list,
+            cw_list_order=callback_data.cw_list_order if callback_data else None,
+            cw_list_status=CWListStatus.set_for_clan_wars
         ).pack()
     )
     if cw_list_order == CWListOrder.by_trophies:
-        rows = await dm.acquired_connection.fetch('''
-            SELECT
-                player_name,
-                town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
-            FROM player
-            WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_wars
-            ORDER BY player.home_village_league_tier DESC, home_village_trophies DESC
-        ''', dm.clan_tag)
-        text = (
-            f'<b>📋 Список участников КВ (⬇️ по лиге и трофеям)</b>\n'
-            f'\n'
-        )
-        button_row.append(order_by_town_hall_and_heroes_button)
+        if cw_list_status == CWListStatus.not_set_for_clan_wars:
+            rows = await dm.acquired_connection.fetch('''
+                SELECT
+                    player_name,
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+                FROM player
+                WHERE clan_tag = $1 AND player.is_player_in_clan AND NOT is_player_set_for_clan_wars
+                ORDER BY player.home_village_league_tier DESC, home_village_trophies DESC
+            ''', dm.clan_tag)
+            text = (
+                f'<b>📋 Список не участвующих в КВ (⬇️ по лиге и трофеям)</b>\n'
+                f'\n'
+            )
+            button_row.append(order_by_town_hall_and_heroes_button)
+            button_row.append(set_for_clan_wars_button)
+        else:
+            rows = await dm.acquired_connection.fetch('''
+                SELECT
+                    player_name,
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+                FROM player
+                WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_wars
+                ORDER BY player.home_village_league_tier DESC, home_village_trophies DESC
+            ''', dm.clan_tag)
+            text = (
+                f'<b>📋 Список участников КВ (⬇️ по лиге и трофеям)</b>\n'
+                f'\n'
+            )
+            button_row.append(order_by_town_hall_and_heroes_button)
+            button_row.append(not_set_for_clan_wars_button)
     else:
-        rows = await dm.acquired_connection.fetch('''
-            SELECT
-                player_name,
-                town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
-            FROM player
-            WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_wars
-            ORDER BY
-                town_hall_level DESC,
-                (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level) DESC,
-                player_name
-        ''', dm.clan_tag)
-        text = (
-            f'<b>📋 Список участников КВ (⬇️ по ТХ и героям)</b>\n'
-            f'\n'
-        )
-        button_row.append(order_by_trophies_button)
-    button_row.append(update_button)
+        if cw_list_status == CWListStatus.not_set_for_clan_wars:
+            rows = await dm.acquired_connection.fetch('''
+                SELECT
+                    player_name,
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+                FROM player
+                WHERE clan_tag = $1 AND player.is_player_in_clan AND NOT is_player_set_for_clan_wars
+                ORDER BY
+                    town_hall_level DESC,
+                    (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level) DESC,
+                    player_name
+            ''', dm.clan_tag)
+            text = (
+                f'<b>📋 Список не участвующих в КВ (⬇️ по ТХ и героям)</b>\n'
+                f'\n'
+            )
+            button_row.append(order_by_trophies_button)
+            button_row.append(set_for_clan_wars_button)
+        else:
+            rows = await dm.acquired_connection.fetch('''
+                SELECT
+                    player_name,
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+                FROM player
+                WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_wars
+                ORDER BY
+                    town_hall_level DESC,
+                    (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level) DESC,
+                    player_name
+            ''', dm.clan_tag)
+            text = (
+                f'<b>📋 Список участников КВ (⬇️ по ТХ и героям)</b>\n'
+                f'\n'
+            )
+            button_row.append(order_by_trophies_button)
+            button_row.append(not_set_for_clan_wars_button)
     if len(rows) > 0:
         for i, row in enumerate(rows):
             text += (f'{i + 1}. {dm.of.to_html(row['player_name'])} {dm.of.get_player_info_with_emoji(
@@ -450,7 +522,7 @@ async def cw_list(
             )}\n')
     else:
         text += 'Список пуст\n'
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[button_row])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[button_row, [update_button]])
     return text, ParseMode.HTML, keyboard
 
 

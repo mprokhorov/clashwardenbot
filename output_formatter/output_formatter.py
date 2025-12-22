@@ -819,7 +819,7 @@ class OutputFormatter:
         return '\n'.join(cw_member_lines)
 
     @staticmethod
-    async def calculate_hero_equipment_progress(hero_equipments: list) -> tuple[float, float, float, float]:
+    async def calculate_hero_equipment_progress(hero_equipments: list, return_percentage: bool) -> tuple:
         regular_equipment_max_level = 18
         epic_equipment_max_level = 27
         available_hero_equipments = OutputFormatter.get_available_hero_equipments()
@@ -859,7 +859,6 @@ class OutputFormatter:
                 glowy_ore_cumulative_price[epic_equipment_max_level - 1] * epic_equipment_amount
         )
         total_starry_ore_amount = (
-                starry_ore_cumulative_price[regular_equipment_max_level - 1] * regular_equipment_amount +
                 starry_ore_cumulative_price[epic_equipment_max_level - 1] * epic_equipment_amount
         )
         total_levels_amount = (
@@ -869,14 +868,21 @@ class OutputFormatter:
         for hero_equipment in hero_equipments:
             shiny_ore_amount += shiny_ore_cumulative_price[hero_equipment['level'] - 1]
             glowy_ore_amount += glowy_ore_cumulative_price[hero_equipment['level'] - 1]
-            starry_ore_amount += starry_ore_cumulative_price[hero_equipment['level'] - 1]
+            if hero_equipment['maxLevel'] == 27:
+                starry_ore_amount += starry_ore_cumulative_price[hero_equipment['level'] - 1]
             levels_amount += hero_equipment['level']
-        return (
-            shiny_ore_amount / total_shiny_ore_amount,
-            glowy_ore_amount / total_glowy_ore_amount,
-            starry_ore_amount / total_starry_ore_amount,
-            levels_amount / total_levels_amount
-        )
+        if return_percentage:
+            return (
+                shiny_ore_amount / total_shiny_ore_amount,
+                glowy_ore_amount / total_glowy_ore_amount,
+                starry_ore_amount / total_starry_ore_amount,
+                levels_amount / total_levels_amount
+            )
+        else:
+            return (
+                shiny_ore_amount, glowy_ore_amount, starry_ore_amount, levels_amount,
+                total_shiny_ore_amount, total_glowy_ore_amount, total_starry_ore_amount, total_levels_amount
+            )
 
     @staticmethod
     def get_available_hero_equipments() -> dict[str, HeroEquipment]:
@@ -966,6 +972,10 @@ class OutputFormatter:
             return f'{int(points_count)} балла'
         else:
             return f'{int(points_count)} баллов'
+
+    @staticmethod
+    def separate_thousands(number: int) -> str:
+        return f'{number:,}'.replace(',', ' ')
 
     @staticmethod
     def format_and_rstrip(number, decimal_places):

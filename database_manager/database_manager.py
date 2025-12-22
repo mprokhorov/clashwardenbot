@@ -298,11 +298,10 @@ class DatabaseManager:
                             row['royal_champion_level']
                         )}{mentions} ')
                     if clan_member_tag in left_clan_member_tags:
-                        message_text += f'покинул клан\n'
+                        message_text += f'покинул клан'
                     elif clan_member_tag in joined_clan_member_tags:
-                        message_text += f'вступил в клан\n'
-                    if len(retrieved_clan_members['items']) == 50:
-                        message_text += f'Количество участников: 50 / 50\n'
+                        message_text += f'вступил в клан'
+                    message_text += f' ({len(retrieved_clan_members['items'])} / 50 🪖)'
                     await self.send_message_to_chat(
                         user_id=None,
                         chat_id=chat_id,

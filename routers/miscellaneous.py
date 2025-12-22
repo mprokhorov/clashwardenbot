@@ -440,7 +440,7 @@ async def hero_equipment_list(
     ''', dm.clan_tag)
     equipments_by_levels = [
         (
-            row['player_tag'], (await dm.of.calculate_hero_equipment_progress(json.loads(row['hero_equipment'])))[
+            row['player_tag'], (await dm.of.calculate_hero_equipment_progress(json.loads(row['hero_equipment']), True))[
                 hero_equipment_order_idx(list_order)
             ]
         )
@@ -495,7 +495,7 @@ async def hero_equipment_choose(
     equipments_by_levels = [
         (
             row['player_tag'],
-            (await dm.of.calculate_hero_equipment_progress(json.loads(row['hero_equipment'])))[
+            (await dm.of.calculate_hero_equipment_progress(json.loads(row['hero_equipment']), True))[
                 hero_equipment_order_idx(list_order)
             ]
         )
@@ -554,17 +554,26 @@ async def hero_equipment_details(
     ''', dm.clan_tag, callback_data.player_tag)
     hero_equipments = json.loads(hero_equipments)
     player_hero_equipments = {eq['name']: eq['level'] for eq in hero_equipments}
-    (shiny_ore_progress,
-     glowy_ore_progress,
-     starry_ore_progress,
-     levels_progress) = await dm.of.calculate_hero_equipment_progress(hero_equipments)
+    (shiny_ore_amount,
+     glowy_ore_amount,
+     starry_ore_amount,
+     levels_amount,
+     total_shiny_ore_amount,
+     total_glowy_ore_amount,
+     total_starry_ore_amount,
+     total_levels_amount) = await dm.of.calculate_hero_equipment_progress(hero_equipments, False)
     text = (
         f'<b>🔧 Снаряжения героев игрока {dm.load_name(callback_data.player_tag)}</b>\n'
         f'\n'
-        f'Прогресс: {format(levels_progress * 100, '.2f')}% (по уровням), '
-        f'{format(shiny_ore_progress * 100, '.2f')}% (по 🔵 руде), '
-        f'{format(glowy_ore_progress * 100, '.2f')}% (по 🟣 руде), '
-        f'{format(starry_ore_progress * 100, '.2f')}% (по 🟡 руде)\n'
+        f'⏳ Прогресс\n'
+        f'Уровни: {dm.of.separate_thousands(levels_amount)} / {dm.of.separate_thousands(total_levels_amount)} '
+        f'({format((levels_amount / total_levels_amount) * 100, '.2f')}%)\n'
+        f'🔵 руда: {dm.of.separate_thousands(shiny_ore_amount)} / {dm.of.separate_thousands(total_shiny_ore_amount)} '
+        f'({format((shiny_ore_amount / total_shiny_ore_amount) * 100, '.2f')}%)\n'
+        f'🟣 руда: {dm.of.separate_thousands(glowy_ore_amount)} / {dm.of.separate_thousands(total_glowy_ore_amount)} '
+        f'({format((glowy_ore_amount / total_glowy_ore_amount) * 100, '.2f')}%)\n'
+        f'🟡 руда: {dm.of.separate_thousands(starry_ore_amount)} / {dm.of.separate_thousands(total_starry_ore_amount)} '
+        f'({format((starry_ore_amount / total_starry_ore_amount) * 100, '.2f')}%)\n'
         f'\n'
     )
     if len(hero_equipments) == 0:

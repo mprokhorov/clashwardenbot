@@ -147,13 +147,20 @@ class OutputFormatter:
         )
 
     @staticmethod
+    def get_dragon_duke_emoji() -> str:
+        return (
+            f'<tg-emoji emoji-id="{config.home_village_hero_emoji_ids[5].get_secret_value()}">🐦‍🔥</tg-emoji>'
+        )
+
+    @staticmethod
     def get_player_info_with_emoji(
             town_hall_level: int,
             barbarian_king_level: Optional[int] = None,
             archer_queen_level: Optional[int] = None,
             minion_prince_level: Optional[int] = None,
             grand_warden_level: Optional[int] = None,
-            royal_champion_level: Optional[int] = None
+            royal_champion_level: Optional[int] = None,
+            dragon_duke_level: Optional[int] = None
     ) -> str:
         text = f'🛖{town_hall_level}'
         if (barbarian_king_level or 0) > 0:
@@ -166,6 +173,8 @@ class OutputFormatter:
             text += f' 👴{grand_warden_level}'
         if (royal_champion_level or 0) > 0:
             text += f' 🙍‍♀️{royal_champion_level}'
+        if (dragon_duke_level or 0) > 0:
+            text += f' 🐦‍🔥{dragon_duke_level}'
         return text
 
     def get_player_info_with_custom_emoji(
@@ -175,7 +184,8 @@ class OutputFormatter:
             archer_queen_level: Optional[int] = None,
             minion_prince_level: Optional[int] = None,
             grand_warden_level: Optional[int] = None,
-            royal_champion_level: Optional[int] = None
+            royal_champion_level: Optional[int] = None,
+            dragon_duke_level: Optional[int] = None
     ) -> str:
         text = f'{self.get_town_hall_emoji(town_hall_level)}{town_hall_level}'
         if (barbarian_king_level or 0) > 0:
@@ -188,6 +198,8 @@ class OutputFormatter:
             text += f' {self.get_grand_warden_emoji()}{grand_warden_level}'
         if (royal_champion_level or 0) > 0:
             text += f' {self.get_royal_champion_emoji()}{royal_champion_level}'
+        if (dragon_duke_level or 0) > 0:
+            text += f' {self.get_dragon_duke_emoji()}{dragon_duke_level}'
         return text
 
     def short_datetime(self, datetime_data: datetime) -> str:
@@ -490,7 +502,7 @@ class OutputFormatter:
                 f'{prev_clan_war['teamSize']} 🪖 ({self.event_remaining_or_passed(prev_clan_war['endTime'])})\n'
             )
         if len(only_clan_war_log[:10]) == 0:
-            text += f'Список пуст\n'
+            text += f'\nСписок пуст\n'
         return text
 
     def opponent_info(self, war_win_streak: int, clan_war_log: Optional[dict]):
@@ -514,7 +526,8 @@ class OutputFormatter:
                     row['archer_queen_level'],
                     row['minion_prince_level'],
                     row['grand_warden_level'],
-                    row['royal_champion_level']
+                    row['royal_champion_level'],
+                    row['dragon_duke_level']
                 )}'
             )
             for row in rows
@@ -866,11 +879,12 @@ class OutputFormatter:
                 epic_equipment_max_level * epic_equipment_amount
         )
         for hero_equipment in hero_equipments:
-            shiny_ore_amount += shiny_ore_cumulative_price[hero_equipment['level'] - 1]
-            glowy_ore_amount += glowy_ore_cumulative_price[hero_equipment['level'] - 1]
-            if hero_equipment['maxLevel'] == 27:
-                starry_ore_amount += starry_ore_cumulative_price[hero_equipment['level'] - 1]
-            levels_amount += hero_equipment['level']
+            if hero_equipment['name'] in available_hero_equipments:
+                shiny_ore_amount += shiny_ore_cumulative_price[hero_equipment['level'] - 1]
+                glowy_ore_amount += glowy_ore_cumulative_price[hero_equipment['level'] - 1]
+                if hero_equipment['maxLevel'] == 27:
+                    starry_ore_amount += starry_ore_cumulative_price[hero_equipment['level'] - 1]
+                levels_amount += hero_equipment['level']
         if return_percentage:
             return (
                 shiny_ore_amount / total_shiny_ore_amount,
@@ -894,6 +908,7 @@ class OutputFormatter:
             'Giant Gauntlet': HeroEquipment('Перчатка гиганта', 27, Hero.barbarian_king),
             'Spiky Ball': HeroEquipment('Мяч с шипами', 27, Hero.barbarian_king),
             'Snake Bracelet': HeroEquipment('Змеиный браслет', 27, Hero.barbarian_king),
+            'Stick Horse': HeroEquipment('Лошадка на палке', 27, Hero.barbarian_king),
 
             'Archer Puppet': HeroEquipment('Кукла-лучница', 18, Hero.archer_queen),
             'Invisibility Vial': HeroEquipment('Фиал невидимости', 18, Hero.archer_queen),
@@ -924,7 +939,11 @@ class OutputFormatter:
             'Haste Vial': HeroEquipment('Фиал спешки', 18, Hero.royal_champion),
             'Rocket Spear': HeroEquipment('Копье-ракета', 27, Hero.royal_champion),
             'Electro Boots': HeroEquipment('Электросапоги', 27, Hero.royal_champion),
-            'Frost Flake': HeroEquipment('Снежинка', 27, Hero.royal_champion)
+            'Frost Flake': HeroEquipment('Снежинка', 27, Hero.royal_champion),
+
+            'Fire Heart': HeroEquipment('Огненное сердце', 18, Hero.dragon_duke),
+            'Flame Blower': HeroEquipment('Огнедув', 18, Hero.dragon_duke),
+            'Stun Blaster': HeroEquipment('Шоковый бластер', 18, Hero.dragon_duke),
         }
         return available_hero_equipments
 

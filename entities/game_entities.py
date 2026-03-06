@@ -9,6 +9,7 @@ class Hero(IntEnum):
     minion_prince = auto()
     grand_warden = auto()
     royal_champion = auto()
+    dragon_duke = auto()
 
 
 @dataclass
@@ -21,9 +22,10 @@ class ClanMember:
     minion_prince_level: int
     grand_warden_level: int
     royal_champion_level: int
+    dragon_duke_level: int
 
     def hero_levels_sum(self):
-        return self.barbarian_king_level + self.archer_queen_level + self.minion_prince_level + self.grand_warden_level + self.royal_champion_level
+        return self.barbarian_king_level + self.archer_queen_level + self.minion_prince_level + self.grand_warden_level + self.royal_champion_level + self.dragon_duke_level
 
 
 @dataclass

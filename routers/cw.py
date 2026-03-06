@@ -200,7 +200,7 @@ async def cw_attacks(
             rows = await dm.acquired_connection.fetch('''
                 SELECT
                     player_tag, player_name,
-                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
                 FROM player
                 WHERE clan_tag = $1
             ''', dm.clan_tag)
@@ -216,7 +216,7 @@ async def cw_attacks(
             rows = await dm.acquired_connection.fetch('''
                 SELECT
                     player_tag, player_name,
-                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
                 FROM opponent_player
                 WHERE clan_tag = $1
             ''', cw['opponent']['tag'])
@@ -243,7 +243,7 @@ async def cw_attacks(
                 f'Атаки клана:\n'
                 f'\n'
                 f'{dm.of.get_attacks(
-                clan_map_position_by_player, opponent_map_position_by_player, cw['clan'], cw['opponent'], 2
+                clan_map_position_by_player, opponent_map_position_by_player, cw['clan'], cw['opponent'], cw['attacksPerMember']
                 )}'
             )
             button_row.append(opponent_attacks_button)
@@ -252,7 +252,7 @@ async def cw_attacks(
                 f'Атаки противника:\n'
                 f'\n'
                 f'{dm.of.get_attacks(
-                opponent_map_position_by_player, clan_map_position_by_player, cw['opponent'], cw['clan'], 2
+                opponent_map_position_by_player, clan_map_position_by_player, cw['opponent'], cw['clan'], cw['attacksPerMember']
                 )}'
             )
             button_row.append(clan_attacks_button)
@@ -282,12 +282,21 @@ async def cw_skips(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, O
         cw_members = []
         for cw_member in cw['clan']['members']:
             cw_members.append(
-                WarMember(player_tag=cw_member['tag'], attacks_spent=len(cw_member.get('attacks', [])), attacks_limit=2)
+                WarMember(
+                    player_tag=cw_member['tag'],
+                    attacks_spent=len(cw_member.get('attacks', [])),
+                    attacks_limit=cw['attacksPerMember']
+                )
             )
         text += (
             f'{dm.of.cw_in_war_or_war_ended(cw, False, None, None)}'
             f'\n'
-            f'{await dm.skips(chat_id=chat_id, players=cw_members, ping=False, desired_attacks_spent=2)}'
+            f'{await dm.skips(
+                chat_id=chat_id,
+                players=cw_members,
+                ping=False,
+                desired_attacks_spent=cw['attacksPerMember']
+            )}'
         )
         button_row.append(update_button)
     else:
@@ -309,12 +318,21 @@ async def cw_ping(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, Op
         cw_members = []
         for cw_member in cw['clan']['members']:
             cw_members.append(
-                WarMember(player_tag=cw_member['tag'], attacks_spent=len(cw_member.get('attacks', [])), attacks_limit=2)
+                WarMember(
+                    player_tag=cw_member['tag'],
+                    attacks_spent=len(cw_member.get('attacks', [])),
+                    attacks_limit=cw['attacksPerMember']
+                )
             )
         text += (
             f'{dm.of.cw_in_war_or_war_ended(cw, False, None, None)}'
             f'\n'
-            f'{await dm.skips(chat_id=chat_id, players=cw_members, ping=True, desired_attacks_spent=2)}'
+            f'{await dm.skips(
+                chat_id=chat_id,
+                players=cw_members,
+                ping=True,
+                desired_attacks_spent=cw['attacksPerMember']
+            )}'
         )
     else:
         text += 'Информация о КВ отсутствует'
@@ -351,7 +369,7 @@ async def cw_status(
         SELECT
             player_tag, player_name, is_player_set_for_clan_wars,
             town_hall_level, barbarian_king_level, archer_queen_level,
-            minion_prince_level, grand_warden_level, royal_champion_level
+            minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
         FROM
             player
             JOIN player_bot_user USING (clan_tag, player_tag)
@@ -359,7 +377,7 @@ async def cw_status(
         WHERE clan_tag = $1 AND is_player_in_clan AND chat_id = $2 AND user_id = $3 AND is_user_in_chat
         ORDER BY
             town_hall_level DESC, (barbarian_king_level + archer_queen_level + 
-            minion_prince_level + grand_warden_level + royal_champion_level) DESC,
+            minion_prince_level + grand_warden_level + royal_champion_level + dragon_duke_level) DESC,
             player_name
     ''', dm.clan_tag, chat_id, bot_user.user_id)
     if len(rows) == 0:
@@ -376,7 +394,8 @@ async def cw_status(
                          row['archer_queen_level'],
                          row['minion_prince_level'],
                          row['grand_warden_level'],
-                         row['royal_champion_level'])}',
+                         row['royal_champion_level'],
+                         row['dragon_duke_level'])}',
                 callback_data=CWCallbackFactory(
                     output_view=OutputView.cw_status,
                     player_tag=row['player_tag'],
@@ -411,7 +430,7 @@ async def cw_list(
         ).pack()
     )
     order_by_town_hall_and_heroes_button = InlineKeyboardButton(
-        text='⬇️ по ТХ и героям',
+        text='⬇️ По ТХ и героям',
         callback_data=CWCallbackFactory(
             output_view=OutputView.cw_list,
             cw_list_order=CWListOrder.by_town_hall_and_heroes,
@@ -419,7 +438,7 @@ async def cw_list(
         ).pack()
     )
     order_by_trophies_button = InlineKeyboardButton(
-        text='⬇️ по лиге и трофеям',
+        text='⬇️ По лиге и трофеям',
         callback_data=CWCallbackFactory(
             output_view=OutputView.cw_list,
             cw_list_order=CWListOrder.by_trophies,
@@ -427,7 +446,7 @@ async def cw_list(
         ).pack()
     )
     not_set_for_clan_wars_button = InlineKeyboardButton(
-        text='❌ не участвующие в КВ',
+        text='❌ Не участвующие в КВ',
         callback_data=CWCallbackFactory(
             output_view=OutputView.cw_list,
             cw_list_order=callback_data.cw_list_order if callback_data else None,
@@ -435,7 +454,7 @@ async def cw_list(
         ).pack()
     )
     set_for_clan_wars_button = InlineKeyboardButton(
-        text='✅ участвующие в КВ',
+        text='✅ Участвующие в КВ',
         callback_data=CWCallbackFactory(
             output_view=OutputView.cw_list,
             cw_list_order=callback_data.cw_list_order if callback_data else None,
@@ -447,7 +466,7 @@ async def cw_list(
             rows = await dm.acquired_connection.fetch('''
                 SELECT
                     player_name,
-                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
                 FROM player
                 WHERE clan_tag = $1 AND player.is_player_in_clan AND NOT is_player_set_for_clan_wars
                 ORDER BY player.home_village_league_tier DESC, home_village_trophies DESC
@@ -462,7 +481,7 @@ async def cw_list(
             rows = await dm.acquired_connection.fetch('''
                 SELECT
                     player_name,
-                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
                 FROM player
                 WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_wars
                 ORDER BY player.home_village_league_tier DESC, home_village_trophies DESC
@@ -478,12 +497,12 @@ async def cw_list(
             rows = await dm.acquired_connection.fetch('''
                 SELECT
                     player_name,
-                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
                 FROM player
                 WHERE clan_tag = $1 AND player.is_player_in_clan AND NOT is_player_set_for_clan_wars
                 ORDER BY
                     town_hall_level DESC,
-                    (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level) DESC,
+                    (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level + dragon_duke_level) DESC,
                     player_name
             ''', dm.clan_tag)
             text = (
@@ -496,12 +515,12 @@ async def cw_list(
             rows = await dm.acquired_connection.fetch('''
                 SELECT
                     player_name,
-                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
                 FROM player
                 WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_wars
                 ORDER BY
                     town_hall_level DESC,
-                    (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level) DESC,
+                    (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level + dragon_duke_level) DESC,
                     player_name
             ''', dm.clan_tag)
             text = (
@@ -518,7 +537,8 @@ async def cw_list(
                 row['archer_queen_level'],
                 row['minion_prince_level'],
                 row['grand_warden_level'],
-                row['royal_champion_level']
+                row['royal_champion_level'],
+                row['dragon_duke_level']
             )}\n')
     else:
         text += 'Список пуст\n'

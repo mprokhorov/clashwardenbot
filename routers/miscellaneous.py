@@ -75,15 +75,15 @@ def next_hero_equipment_list_order(order: HeroEquipmentListOrder) -> HeroEquipme
         return HeroEquipmentListOrder.by_starry_ore
 
 
-def hero_equipment_list_order_text(order: HeroEquipmentListOrder) -> str:
+def hero_equipment_list_order_text(order: HeroEquipmentListOrder, button: bool) -> str:
     if order == HeroEquipmentListOrder.by_starry_ore:
-        return 'по 🟡 руде'
+        return '⬇️ По 🟡 руде' if button else '⬇️ по 🟡 руде'
     elif order == HeroEquipmentListOrder.by_glowy_ore:
-        return 'по 🟣 руде'
+        return '⬇️ По 🟣 руде' if button else '⬇️ по 🟣 руде'
     elif order == HeroEquipmentListOrder.by_shiny_ore:
-        return 'по 🔵 руде'
+        return '⬇️ По 🔵 руде' if button else '⬇️ по 🔵 руде'
     else:
-        return 'по уровням'
+        return '⬇️ По уровням' if button else '⬇️ по уровням'
 
 
 def hero_equipment_order_idx(order: HeroEquipmentListOrder) -> int:
@@ -101,7 +101,7 @@ async def player_info(dm: DatabaseManager, bot_user: BotUser) -> tuple[str, Pars
     rows = await dm.acquired_connection.fetch('''
         SELECT
             player_name, player.player_tag, is_player_set_for_clan_wars,
-            barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level,
+            barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level,
             town_hall_level, builder_hall_level, home_village_trophies, builder_base_trophies,
             player_role
         FROM
@@ -119,7 +119,7 @@ async def player_info(dm: DatabaseManager, bot_user: BotUser) -> tuple[str, Pars
                 AND (bot_user.chat_id, bot_user.user_id) = ($2, $3)
         ORDER BY
             town_hall_level DESC,
-            (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level) DESC,
+            (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level + dragon_duke_level) DESC,
             player_name
     ''', dm.clan_tag, bot_user.chat_id, bot_user.user_id)
     if len(rows) > 1:
@@ -142,7 +142,8 @@ async def player_info(dm: DatabaseManager, bot_user: BotUser) -> tuple[str, Pars
                 row['archer_queen_level'],
                 row['minion_prince_level'],
                 row['grand_warden_level'],
-                row['royal_champion_level']
+                row['royal_champion_level'],
+                row['dragon_duke_level']
             )}\n'
             f'\n'
         )
@@ -164,12 +165,12 @@ async def members_players(dm: DatabaseManager) -> tuple[str, ParseMode, Optional
     rows = await dm.acquired_connection.fetch('''
         SELECT
             player_name,
-            town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+            town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
         FROM player
         WHERE clan_tag = $1 AND is_player_in_clan
         ORDER BY
             town_hall_level DESC,
-            (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level) DESC,
+            (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level + dragon_duke_level) DESC,
             player_name
     ''', dm.clan_tag)
     text = (
@@ -186,7 +187,8 @@ async def members_players(dm: DatabaseManager) -> tuple[str, ParseMode, Optional
                 row['archer_queen_level'],
                 row['minion_prince_level'],
                 row['grand_warden_level'],
-                row['royal_champion_level']
+                row['royal_champion_level'],
+                row['dragon_duke_level']
             )}\n')
     if len(rows) == 0:
         text += f'Список пуст\n'
@@ -213,7 +215,7 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
     rows = await dm.acquired_connection.fetch('''
         SELECT
             bot_user.user_id, player.clan_tag, player.player_tag,
-            town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+            town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
         FROM
             player_bot_user
             JOIN player ON
@@ -232,14 +234,14 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
         players_by_user[row['user_id']].append(ClanMember(
             dm.clan_tag, row['player_tag'], row['town_hall_level'],
             row['barbarian_king_level'], row['archer_queen_level'], row['minion_prince_level'],
-            row['grand_warden_level'], row['royal_champion_level']
+            row['grand_warden_level'], row['royal_champion_level'], row['dragon_duke_level']
         ))
     rows = await dm.acquired_connection.fetch('''
         SELECT
             other_user.chat_id, other_user.user_id, player_bot_user.player_tag, player.clan_tag,
             player_town_hall.town_hall_level, player_town_hall.barbarian_king_level,
             player_town_hall.archer_queen_level, player_town_hall.minion_prince_level,
-            player_town_hall.grand_warden_level, player_town_hall.royal_champion_level
+            player_town_hall.grand_warden_level, player_town_hall.royal_champion_level, player_town_hall.dragon_duke_level
         FROM (
             SELECT chat_id, user_id, first_name, last_name
             FROM bot_user
@@ -265,7 +267,7 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
                 SELECT
                     clan_tag, player_tag,
                     town_hall_level, barbarian_king_level, archer_queen_level,
-                    minion_prince_level, grand_warden_level, royal_champion_level
+                    minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
                 FROM player
             ) player_town_hall ON
                 player_town_hall.clan_tag = player_bot_user.clan_tag
@@ -286,12 +288,12 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
             players_by_other_user[row['user_id']].append(ClanMember(
                 row['clan_tag'], row['player_tag'], row['town_hall_level'],
                 row['barbarian_king_level'], row['archer_queen_level'], row['minion_prince_level'],
-                row['grand_warden_level'], row['royal_champion_level']
+                row['grand_warden_level'], row['royal_champion_level'], row['dragon_duke_level']
             ))
     rows = await dm.acquired_connection.fetch('''
         SELECT
             player_tag,
-            town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+            town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
         FROM player
         WHERE clan_tag = $1 AND is_player_in_clan AND player.player_tag NOT IN (
             SELECT player.player_tag
@@ -314,7 +316,7 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
         ClanMember(
             dm.clan_tag, row['player_tag'], row['town_hall_level'],
             row['barbarian_king_level'], row['archer_queen_level'], row['minion_prince_level'],
-            row['grand_warden_level'], row['royal_champion_level']
+            row['grand_warden_level'], row['royal_champion_level'], row['dragon_duke_level']
         )
         for row in rows
     ]
@@ -430,7 +432,7 @@ async def hero_equipment_list(
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     list_order = callback_data.hero_equipment_list_order if callback_data else HeroEquipmentListOrder.by_starry_ore
     text = (
-        f'<b>🔧 Снаряжения героев игроков ({hero_equipment_list_order_text(list_order)})</b>\n'
+        f'<b>🔧 Снаряжения героев игроков ({hero_equipment_list_order_text(list_order, False)})</b>\n'
         f'\n'
     )
     rows = await dm.acquired_connection.fetch('''
@@ -457,7 +459,7 @@ async def hero_equipment_list(
         ).pack()
     )
     next_order_button = InlineKeyboardButton(
-        text=hero_equipment_list_order_text(next_hero_equipment_list_order(list_order)),
+        text=hero_equipment_list_order_text(next_hero_equipment_list_order(list_order), True),
         callback_data=MiscellaneousCallbackFactory(
             output_view=OutputView.hero_equipment,
             hero_equipment_view=HeroEquipmentView.list,
@@ -483,7 +485,7 @@ async def hero_equipment_choose(
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     list_order = callback_data.hero_equipment_list_order if callback_data else HeroEquipmentListOrder.by_starry_ore
     text = (
-        f'<b>🔧 Снаряжения героев игроков ({hero_equipment_list_order_text(list_order)})</b>\n'
+        f'<b>🔧 Снаряжения героев игроков ({hero_equipment_list_order_text(list_order, False)})</b>\n'
         f'\n'
         f'Выберите игрока:'
     )
@@ -545,7 +547,8 @@ async def hero_equipment_details(
         Hero.archer_queen: f'{dm.of.get_archer_queen_emoji()} Королева лучниц',
         Hero.minion_prince: f'{dm.of.get_minion_prince_emoji()} Принц миньонов',
         Hero.grand_warden: f'{dm.of.get_grand_warden_emoji()} Хранитель',
-        Hero.royal_champion: f'{dm.of.get_royal_champion_emoji()} Королевский чемпион'
+        Hero.royal_champion: f'{dm.of.get_royal_champion_emoji()} Королевский чемпион',
+        Hero.dragon_duke: f'{dm.of.get_dragon_duke_emoji()} Герцог Дракон'
     }
     hero_equipments = await dm.acquired_connection.fetchval('''
         SELECT hero_equipment
@@ -653,7 +656,7 @@ async def contributions(
         else:
             text += f'Список пуст\n'
         opposite_view_button = InlineKeyboardButton(
-            text='🕒 по времени',
+            text='🕒 По времени',
             callback_data=MiscellaneousCallbackFactory(
                 output_view=OutputView.contributions, contributions_view=ContributionsView.contribuions
             ).pack()
@@ -679,7 +682,7 @@ async def contributions(
         if len(rows) == 0:
             text += f'Список пуст\n'
         opposite_view_button = InlineKeyboardButton(
-            text='🪖 по игрокам',
+            text='🪖 По игрокам',
             callback_data=MiscellaneousCallbackFactory(
                 output_view=OutputView.contributions, contributions_view=ContributionsView.players
             ).pack()

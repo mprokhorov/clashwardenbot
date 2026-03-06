@@ -251,6 +251,7 @@ create table opponent_player
     minion_prince_level  integer     not null,
     grand_warden_level   integer     not null,
     royal_champion_level integer     not null,
+    dragon_duke_level    integer     not null,
     constraint opponent_player_pk
         primary key (clan_tag, player_tag)
 );
@@ -270,6 +271,7 @@ create table player
     minion_prince_level               integer     not null,
     grand_warden_level                integer     not null,
     royal_champion_level              integer     not null,
+    dragon_duke_level                 integer     not null,
     hero_equipment                    jsonb,
     town_hall_level                   integer     not null,
     builder_hall_level                integer     not null,

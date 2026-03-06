@@ -287,7 +287,7 @@ async def cwl_attacks(
             rows = await dm.acquired_connection.fetch('''
                 SELECT
                     player_tag, player_name,
-                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
                 FROM player
                 WHERE clan_tag = $1
             ''', dm.clan_tag)
@@ -303,7 +303,7 @@ async def cwl_attacks(
             rows = await dm.acquired_connection.fetch('''
                 SELECT
                     player_tag, player_name,
-                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
                 FROM opponent_player
                 WHERE clan_tag = $1
             ''', cwlw['opponent']['tag'])
@@ -417,7 +417,7 @@ async def cwl_rating_list(
         text += f'{i + 1}. {dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n'
     if len(player_tags) == 0:
         text += f'Список пуст\n'
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[rules_button, details_button], [update_button]])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[details_button, rules_button], [update_button]])
     return text, ParseMode.HTML, keyboard
 
 
@@ -679,13 +679,13 @@ async def cwl_list(
         ).pack()
     )
     order_by_town_hall_and_heroes_button = InlineKeyboardButton(
-        text='⬇️ по ТХ и героям',
+        text='⬇️ По ТХ и героям',
         callback_data=CWLCallbackFactory(
             output_view=OutputView.cwl_list, cwl_list_order=CWLListOrder.by_town_hall_and_heroes
         ).pack()
     )
     order_by_trophies_button = InlineKeyboardButton(
-        text='⬇️ по трофеям',
+        text='⬇️ По трофеям',
         callback_data=CWLCallbackFactory(
             output_view=OutputView.cwl_list, cwl_list_order=CWLListOrder.by_trophies
         ).pack()
@@ -694,12 +694,12 @@ async def cwl_list(
         rows = await dm.acquired_connection.fetch('''
             SELECT
                 player_name,
-                town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+                town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
             FROM player
             WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_war_league
             ORDER BY
                 town_hall_level DESC,
-                (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level) DESC,
+                (barbarian_king_level + archer_queen_level + minion_prince_level + grand_warden_level + royal_champion_level + dragon_duke_level) DESC,
                 player_name
         ''', dm.clan_tag)
         text = (
@@ -711,7 +711,7 @@ async def cwl_list(
         rows = await dm.acquired_connection.fetch('''
             SELECT
                 player_name,
-                town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+                town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
             FROM player
             WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_war_league
             ORDER BY home_village_trophies DESC
@@ -730,7 +730,8 @@ async def cwl_list(
                 row['archer_queen_level'],
                 row['minion_prince_level'],
                 row['grand_warden_level'],
-                row['royal_champion_level']
+                row['royal_champion_level'],
+                row['dragon_duke_level']
             )}\n')
     else:
         text += 'Список пуст\n'

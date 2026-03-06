@@ -509,12 +509,12 @@ async def edit_cw_list(
     rows = await dm.acquired_connection.fetch('''
         SELECT
             player_tag, is_player_set_for_clan_wars,
-            town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level
+            town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
         FROM player
         WHERE clan_tag = $1 AND is_player_in_clan
         ORDER BY
             town_hall_level DESC,
-            (barbarian_king_level + archer_queen_level + minion_prince_level + minion_prince_level + grand_warden_level + royal_champion_level) DESC,
+            (barbarian_king_level + archer_queen_level + minion_prince_level + minion_prince_level + grand_warden_level + royal_champion_level + dragon_duke_level) DESC,
             player_name
     ''', dm.clan_tag)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -526,7 +526,8 @@ async def edit_cw_list(
                      row['archer_queen_level'],
                      row['minion_prince_level'],
                      row['grand_warden_level'],
-                     row['royal_champion_level']
+                     row['royal_champion_level'],
+                     row['dragon_duke_level']
                  )}',
             callback_data=AdminCallbackFactory(
                 output_view=OutputView.edit_cw_list,
@@ -571,13 +572,13 @@ async def edit_cwl_list(
         SELECT
             player_tag, is_player_set_for_clan_war_league,
             town_hall_level, barbarian_king_level, archer_queen_level,
-            minion_prince_level, grand_warden_level, royal_champion_level
+            minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
         FROM player
         WHERE clan_tag = $1 AND is_player_in_clan
         ORDER BY
             town_hall_level DESC,
             (barbarian_king_level + archer_queen_level +
-            minion_prince_level + grand_warden_level + royal_champion_level) DESC,
+            minion_prince_level + grand_warden_level + royal_champion_level + dragon_duke_level) DESC,
             player_name
     ''', dm.clan_tag)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -589,7 +590,8 @@ async def edit_cwl_list(
                      row['archer_queen_level'],
                      row['minion_prince_level'],
                      row['grand_warden_level'],
-                     row['royal_champion_level']
+                     row['royal_champion_level'],
+                     row['dragon_duke_level']
                  )}',
             callback_data=AdminCallbackFactory(
                 output_view=OutputView.edit_cwl_list,
@@ -708,7 +710,7 @@ async def give_bonus_set_points(
         ).pack()
     )
     give_points_button = InlineKeyboardButton(
-        text=f'Выдать {dm.of.format_and_rstrip(bonus_points, 3)} баллов',
+        text=f'Выдать {dm.of.points_count_to_text(bonus_points)}',
         callback_data=AdminCallbackFactory(
             output_view=OutputView.give_bonus,
             give_bonus=GiveBonus.finish,

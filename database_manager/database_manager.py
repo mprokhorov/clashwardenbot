@@ -283,7 +283,7 @@ class DatabaseManager:
                     row = await self.acquired_connection.fetchrow('''
                         SELECT
                             town_hall_level, barbarian_king_level, archer_queen_level,
-                            minion_prince_level, grand_warden_level, royal_champion_level
+                            minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
                         FROM player
                         WHERE clan_tag = $1 AND player_tag = $2
                     ''', self.clan_tag, clan_member_tag)
@@ -295,7 +295,8 @@ class DatabaseManager:
                             row['archer_queen_level'],
                             row['minion_prince_level'],
                             row['grand_warden_level'],
-                            row['royal_champion_level']
+                            row['royal_champion_level'],
+                            row['dragon_duke_level']
                         )}{mentions} ')
                     if clan_member_tag in left_clan_member_tags:
                         message_text += f'покинул клан'
@@ -340,6 +341,7 @@ class DatabaseManager:
             minion_price_level = 0
             grand_warden_level = 0
             royal_champion_level = 0
+            dragon_duke_level = 0
             for player_hero in player_heroes:
                 if player_hero['name'] == 'Barbarian King':
                     barbarian_king_level = player_hero['level']
@@ -351,12 +353,14 @@ class DatabaseManager:
                     grand_warden_level = player_hero['level']
                 elif player_hero['name'] == 'Royal Champion':
                     royal_champion_level = player_hero['level']
+                elif player_hero['name'] == 'Dragon Duke':
+                    dragon_duke_level = player_hero['level']
             rows.append((
                 self.clan_tag, player['tag'],
                 player['name'], True,
                 False, False,
                 barbarian_king_level, archer_queen_level, minion_price_level,
-                grand_warden_level, royal_champion_level, json.dumps(player['heroEquipment']),
+                grand_warden_level, royal_champion_level, dragon_duke_level, json.dumps(player['heroEquipment']),
                 player['townHallLevel'], player.get('builderHallLevel', 0),
                 player['trophies'], player.get('builderBaseTrophies', 0),
                 player['leagueTier']['id'] - 105000000,
@@ -374,7 +378,7 @@ class DatabaseManager:
                 player_name, is_player_in_clan,
                 is_player_set_for_clan_wars, is_player_set_for_clan_war_league,
                 barbarian_king_level, archer_queen_level, minion_prince_level,
-                grand_warden_level, royal_champion_level, hero_equipment,
+                grand_warden_level, royal_champion_level, dragon_duke_level, hero_equipment,
                 town_hall_level, builder_hall_level,
                 home_village_trophies, builder_base_trophies,
                 home_village_league_tier,
@@ -383,20 +387,20 @@ class DatabaseManager:
                 first_seen, last_seen)
             VALUES
                 ($1, $2,
-                $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
+                $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
                 NOW() AT TIME ZONE 'UTC', NOW() AT TIME ZONE 'UTC')
             ON CONFLICT (clan_tag, player_tag)
             DO UPDATE SET
                 (player_name, is_player_in_clan,
                 barbarian_king_level, archer_queen_level, minion_prince_level,
-                grand_warden_level, royal_champion_level, hero_equipment,
+                grand_warden_level, royal_champion_level, dragon_duke_level, hero_equipment,
                 town_hall_level, builder_hall_level,
                 home_village_trophies, builder_base_trophies,
                 home_village_league_tier,
                 player_role, capital_gold_contributed,
                 donations_given, donations_received,
                 last_seen) =
-                ($3, $4, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21,
+                ($3, $4, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
                 NOW() AT TIME ZONE 'UTC')
         ''', rows)
         return True
@@ -654,6 +658,7 @@ class DatabaseManager:
             minion_prince_level = 0
             grand_warden_level = 0
             royal_champion_level = 0
+            dragon_duke_level = 0
             for player_hero in player_heroes:
                 if player_hero['name'] == 'Barbarian King':
                     barbarian_king_level = player_hero['level']
@@ -665,25 +670,27 @@ class DatabaseManager:
                     grand_warden_level = player_hero['level']
                 elif player_hero['name'] == 'Royal Champion':
                     royal_champion_level = player_hero['level']
+                elif player_hero['name'] == 'Dragon Duke':
+                    dragon_duke_level = player_hero['level']
             rows.append((
                 war['opponent']['tag'], opponent_player['tag'],
                 opponent_player['name'], opponent_player['townHallLevel'],
                 barbarian_king_level, archer_queen_level, minion_prince_level,
-                grand_warden_level, royal_champion_level
+                grand_warden_level, royal_champion_level, dragon_duke_level
             ))
         await self.acquired_connection.executemany('''
             INSERT INTO opponent_player
                 (clan_tag, player_tag,
                 player_name, town_hall_level,
                 barbarian_king_level, archer_queen_level, minion_prince_level,
-                grand_warden_level, royal_champion_level)
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+                grand_warden_level, royal_champion_level, dragon_duke_level)
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
             ON CONFLICT (clan_tag, player_tag)
             DO UPDATE SET
                 (player_name, town_hall_level,
                 barbarian_king_level, archer_queen_level, minion_prince_level,
-                grand_warden_level, royal_champion_level) =
-                ($3, $4, $5, $6, $7, $8, $9)
+                grand_warden_level, royal_champion_level, dragon_duke_level) =
+                ($3, $4, $5, $6, $7, $8, $9, $10)
         ''', rows)
         return True
 
@@ -1104,15 +1111,16 @@ class DatabaseManager:
                     in cwlw['clan']['members']
                 ]
                 attack_new_stars = attack['stars'] - (max(previous_stars) if len(previous_stars) > 0 else 0)
+                attack_destruction_percentage = attack['destructionPercentage']
                 if attack_new_stars < 0:
                     attack_new_stars = 0
-                attack_destruction_percentage = attack['destructionPercentage']
+                    attack_destruction_percentage = 0
                 attack_map_position = opponent_map_position_by_tag[attack['defenderTag']]
             else:
                 if self.of.state(cwlw) == 'inWar':
                     attack_new_stars, attack_destruction_percentage, attack_map_position = None, None, None
                 else:
-                    attack_new_stars, attack_destruction_percentage, attack_map_position = 0, 0, 31
+                    attack_new_stars, attack_destruction_percentage, attack_map_position = 0, 0, None
             if self.of.state(cwlw) == 'warEnded':
                 if player.get('bestOpponentAttack'):
                     defense_stars = player['bestOpponentAttack']['stars']

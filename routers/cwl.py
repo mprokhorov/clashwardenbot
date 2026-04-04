@@ -57,6 +57,7 @@ class CWLCallbackFactory(CallbackData, prefix='cwl'):
     cwl_attacks_side: Optional[CWLAttacksSide] = None
     player_tag: Optional[str] = None
     cwl_list_order: Optional[CWLListOrder] = None
+    show_skips: Optional[bool] = None
 
 
 async def cwl_info(
@@ -149,7 +150,7 @@ async def cwl_info(
 
 
 async def cwl_map(
-        dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory]
+        dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory], chat_id: int
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     if callback_data is not None and callback_data.cwl_day is not None:
         cwl_day, cwlw = callback_data.cwl_day, (await dm.load_clan_war_league_own_wars())[callback_data.cwl_day]
@@ -160,6 +161,10 @@ async def cwl_map(
         cwl_map_side = callback_data.cwl_map_side
     else:
         cwl_map_side = CWLAttacksSide.opponent
+    if callback_data is not None and callback_data.show_skips is not None:
+        show_skips = callback_data.show_skips
+    else:
+        show_skips = False
     text = (
         f'<b>🗺️ Карта ЛВК</b>\n'
         f'\n'
@@ -169,19 +174,31 @@ async def cwl_map(
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
         callback_data=CWLCallbackFactory(
-            output_view=OutputView.cwl_map_day, update=True, cwl_day=cwl_day, cwl_map_side=cwl_map_side
+            output_view=OutputView.cwl_map_day, update=True, cwl_day=cwl_day, cwl_map_side=cwl_map_side, show_skips=show_skips
         ).pack()
     )
     clan_side_button = InlineKeyboardButton(
         text='↔️ Карта клана',
         callback_data=CWLCallbackFactory(
-            output_view=OutputView.cwl_map_day, cwl_day=cwl_day, cwl_map_side=CWLMapSide.clan
+            output_view=OutputView.cwl_map_day, cwl_day=cwl_day, cwl_map_side=CWLMapSide.clan, show_skips=show_skips
         ).pack()
     )
     opponent_side_button = InlineKeyboardButton(
         text='↔️ Карта противника',
         callback_data=CWLCallbackFactory(
-            output_view=OutputView.cwl_map_day, cwl_day=cwl_day, cwl_map_side=CWLMapSide.opponent
+            output_view=OutputView.cwl_map_day, cwl_day=cwl_day, cwl_map_side=CWLMapSide.opponent, show_skips=show_skips
+        ).pack()
+    )
+    hide_skips_button = InlineKeyboardButton(
+        text='🔼 Свернуть',
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_map_day, cwl_day=cwl_day, cwl_map_side=cwl_map_side, show_skips=False
+        ).pack()
+    )
+    show_skips_button = InlineKeyboardButton(
+        text='🔽 Развернуть',
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_map_day, cwl_day=cwl_day, cwl_map_side=cwl_map_side, show_skips=True
         ).pack()
     )
     if dm.of.state(cwlw) in ['preparation']:
@@ -200,6 +217,24 @@ async def cwl_map(
                 clan_map_position_by_player, opponent_map_position_by_player, cwlw['clan'], cwlw['opponent']
             )
             button_upper_row.append(clan_side_button)
+            if show_skips:
+                cwlw_members = []
+                for cwlw_member in cwlw['clan']['members']:
+                    cwlw_members.append(
+                        WarMember(
+                            player_tag=cwlw_member['tag'], attacks_spent=len(cwlw_member.get('attacks', [])), attacks_limit=1
+                        )
+                    )
+                text += (
+                    f'\n'
+                    f'\n'
+                    f'Не проатаковавшие:'
+                    f'\n'
+                    f'{await dm.skips(chat_id=chat_id, players=cwlw_members, ping=False, desired_attacks_spent=1)}'
+                )
+                button_upper_row.append(hide_skips_button)
+            else:
+                button_upper_row.append(show_skips_button)
         else:
             text += 'Карта клана:\n'
             text += dm.of.get_map(
@@ -214,19 +249,19 @@ async def cwl_map(
         previous_cwl_day_button = InlineKeyboardButton(
             text=f'⬅️ День {cwl_day}',
             callback_data=CWLCallbackFactory(
-                output_view=OutputView.cwl_map_day, cwl_day=cwl_day - 1, cwl_map_side=cwl_map_side
+                output_view=OutputView.cwl_map_day, cwl_day=cwl_day - 1, cwl_map_side=cwl_map_side, show_skips=show_skips
             ).pack()
         )
         next_cwl_day_button = InlineKeyboardButton(
             text=f'➡️ День {cwl_day + 2}',
             callback_data=CWLCallbackFactory(
-                output_view=OutputView.cwl_map_day, cwl_day=cwl_day + 1, cwl_map_side=cwl_map_side
+                output_view=OutputView.cwl_map_day, cwl_day=cwl_day + 1, cwl_map_side=cwl_map_side, show_skips=show_skips
             ).pack()
         )
         all_cwl_days_button = InlineKeyboardButton(
             text='🧾 Все дни',
             callback_data=CWLCallbackFactory(
-                output_view=OutputView.cwl_map_all_days, cwl_map_side=cwl_map_side
+                output_view=OutputView.cwl_map_all_days, cwl_map_side=cwl_map_side, show_skips=show_skips
             ).pack()
         )
         if cwl_day > 0:
@@ -863,7 +898,8 @@ async def cwl_days_list(
             update=True,
             show_opponent_info=callback_data.show_opponent_info,
             cwl_map_side=callback_data.cwl_map_side,
-            cwl_attacks_side=callback_data.cwl_attacks_side
+            cwl_attacks_side=callback_data.cwl_attacks_side,
+            show_skips=callback_data.show_skips
         ).pack()
     )
     button_rows = [[InlineKeyboardButton(
@@ -873,7 +909,8 @@ async def cwl_days_list(
             cwl_day=i,
             show_opponent_info=callback_data.show_opponent_info,
             cwl_map_side=callback_data.cwl_map_side,
-            cwl_attacks_side=callback_data.cwl_attacks_side
+            cwl_attacks_side=callback_data.cwl_attacks_side,
+            show_skips=callback_data.show_skips
         ).pack()
     )] for i, cwl_day_title in enumerate(cwl_day_titles)]
     button_rows.append([update_button])
@@ -907,7 +944,8 @@ async def callback_cwl_info(
 
 @router.message(Command('cwl_map'))
 async def command_cwl_map(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, reply_markup = await cwl_map(dm, None)
+    chat_id = await dm.get_group_chat_id(message)
+    text, parse_mode, reply_markup = await cwl_map(dm, None, chat_id)
     reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     await dm.dump_message_owner(reply_from_bot, message.from_user)
 
@@ -920,7 +958,8 @@ async def callback_cwl_map(
     if not user_is_message_owner:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
-        text, parse_mode, reply_markup = await cwl_map(dm, callback_data)
+        chat_id = await dm.get_group_chat_id(callback_query.message)
+        text, parse_mode, reply_markup = await cwl_map(dm, callback_data, chat_id)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     if callback_data.update:

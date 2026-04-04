@@ -55,6 +55,7 @@ class CWCallbackFactory(CallbackData, prefix='cw'):
     is_player_set_for_clan_wars: Optional[bool] = None
     cw_list_order: Optional[CWListOrder] = None
     cw_list_status: Optional[CWListStatus] = None
+    show_skips: Optional[bool] = None
 
 
 
@@ -107,12 +108,16 @@ async def cw_info(
 
 
 async def cw_map(
-        dm: DatabaseManager, callback_data: Optional[CWCallbackFactory]
+        dm: DatabaseManager, callback_data: Optional[CWCallbackFactory], chat_id: int
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     if callback_data is not None and callback_data.cw_map_side is not None:
         cw_map_side = callback_data.cw_map_side
     else:
         cw_map_side = CWMapSide.opponent
+    if callback_data is not None and callback_data.show_skips is not None:
+        show_skips = callback_data.show_skips
+    else:
+        show_skips = False
     text = (
         f'<b>🗺️ Карта КВ</b>\n'
         f'\n'
@@ -120,15 +125,23 @@ async def cw_map(
     button_row = []
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=CWCallbackFactory(output_view=OutputView.cw_map, update=True, cw_map_side=cw_map_side).pack()
+        callback_data=CWCallbackFactory(output_view=OutputView.cw_map, update=True, cw_map_side=cw_map_side, show_skips=show_skips).pack()
     )
     clan_side_button = InlineKeyboardButton(
         text='↔️ Карта клана',
-        callback_data=CWCallbackFactory(output_view=OutputView.cw_map, cw_map_side=CWMapSide.clan).pack()
+        callback_data=CWCallbackFactory(output_view=OutputView.cw_map, cw_map_side=CWMapSide.clan, show_skips=show_skips).pack()
     )
     opponent_side_button = InlineKeyboardButton(
         text='↔️ Карта противника',
-        callback_data=CWCallbackFactory(output_view=OutputView.cw_map, cw_map_side=CWMapSide.opponent).pack()
+        callback_data=CWCallbackFactory(output_view=OutputView.cw_map, cw_map_side=CWMapSide.opponent, show_skips=show_skips).pack()
+    )
+    hide_skips_button = InlineKeyboardButton(
+        text='🔼 Свернуть',
+        callback_data=CWCallbackFactory(output_view=OutputView.cw_map, cw_map_side=cw_map_side, show_skips=False).pack()
+    )
+    show_skips_button = InlineKeyboardButton(
+        text='🔽 Развернуть',
+        callback_data=CWCallbackFactory(output_view=OutputView.cw_map, cw_map_side=cw_map_side, show_skips=True).pack()
     )
     cw = await dm.load_clan_war()
     if dm.of.state(cw) in ['preparation']:
@@ -150,12 +163,38 @@ async def cw_map(
                 clan_map_position_by_player, opponent_map_position_by_player, cw['clan'], cw['opponent']
             )
             button_row.append(clan_side_button)
+            if show_skips:
+                cw_members = []
+                for cw_member in cw['clan']['members']:
+                    cw_members.append(
+                        WarMember(
+                            player_tag=cw_member['tag'],
+                            attacks_spent=len(cw_member.get('attacks', [])),
+                            attacks_limit=cw['attacksPerMember']
+                        )
+                    )
+                text += (
+                    f'\n'
+                    f'\n'
+                    f'Не проатаковавшие:'
+                    f'\n'
+                    f'{await dm.skips(
+                        chat_id=chat_id,
+                        players=cw_members,
+                        ping=False,
+                        desired_attacks_spent=cw['attacksPerMember']
+                    )}'
+                )
+                button_row.append(hide_skips_button)
+            else:
+                button_row.append(show_skips_button)
         else:
             text += 'Карта клана:\n'
             text += dm.of.get_map(
                 opponent_map_position_by_player, clan_map_position_by_player, cw['opponent'], cw['clan']
             )
             button_row.append(opponent_side_button)
+
         button_row.append(update_button)
     else:
         text += f'Информация о КВ отсутствует\n'
@@ -572,7 +611,8 @@ async def callback_cw_info(
 
 @router.message(Command('cw_map'))
 async def command_cw_map(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, reply_markup = await cw_map(dm, callback_data=None)
+    chat_id = await dm.get_group_chat_id(message)
+    text, parse_mode, reply_markup = await cw_map(dm, None, chat_id)
     reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     await dm.dump_message_owner(reply_from_bot, message.from_user)
 
@@ -585,7 +625,8 @@ async def callback_cw_map(
     if not user_is_message_owner:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
-        text, parse_mode, reply_markup = await cw_map(dm, callback_data)
+        chat_id = await dm.get_group_chat_id(callback_query.message)
+        text, parse_mode, reply_markup = await cw_map(dm, callback_data, chat_id)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         if callback_data.update:

@@ -944,6 +944,7 @@ class OutputFormatter:
             'Fire Heart': HeroEquipment('Огненное сердце', 18, Hero.dragon_duke),
             'Flame Blower': HeroEquipment('Огнедув', 18, Hero.dragon_duke),
             'Stun Blaster': HeroEquipment('Шоковый бластер', 18, Hero.dragon_duke),
+            'Rocket Backpack': HeroEquipment('Ракетный ранец', 27, Hero.dragon_duke)
         }
         return available_hero_equipments
 

@@ -732,24 +732,14 @@ class OutputFormatter:
 
     @staticmethod
     def calculate_next_league_reset() -> datetime:
-        dt_now = datetime.now(UTC)
-        last_day_of_month = (dt_now.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-        days_after_last_monday = last_day_of_month.weekday() % 7
-        last_monday = last_day_of_month - timedelta(days=days_after_last_monday)
-        last_monday = datetime(year=last_monday.year, month=last_monday.month, day=last_monday.day, hour=5)
-        if dt_now.replace(tzinfo=None) < last_monday:
-            return last_monday
-        else:
-            dt = datetime(
-                year=dt_now.year if dt_now.month < 12 else dt_now.year + 1,
-                month=dt_now.month + 1 if dt_now.month < 12 else 1,
-                day=1,
-                hour=0
-            )
-            last_day_of_month = (dt.replace(day=28) + timedelta(days=4)).replace(day=1) - timedelta(days=1)
-            days_after_last_monday = last_day_of_month.weekday() % 7
-            last_monday = last_day_of_month - timedelta(days=days_after_last_monday)
-            return datetime(year=last_monday.year, month=last_monday.month, day=last_monday.day, hour=5)
+        first_reset = datetime(2026, 4, 20, 8)
+        cycle_days = 28
+        dt_now = datetime.now(UTC).replace(tzinfo=None)
+        elapsed = (dt_now - first_reset).total_seconds()
+        cycle_seconds = 28 * 24 * 60 * 60
+        full_cycles = int(elapsed // cycle_seconds)
+        current_reset = first_reset + timedelta(days=full_cycles * cycle_days)
+        return current_reset + timedelta(days=cycle_days)
 
     @staticmethod
     def calculate_map_positions(war_clan_members: list) -> dict:

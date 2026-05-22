@@ -286,7 +286,7 @@ class DatabaseManager:
                             row['dragon_duke_level']
                         )}{mentions} ')
                     if clan_member_tag in left_clan_member_tags:
-                        message_text += f'покинул клан'
+                        message_text += f'больше не состоит в клане'
                     elif clan_member_tag in joined_clan_member_tags:
                         message_text += f'вступил в клан'
                     message_text += f' ({len(retrieved_clan_members['items'])} / 50 🪖)'

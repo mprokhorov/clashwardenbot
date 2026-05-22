@@ -113,3 +113,13 @@ class HeroEquipment:
     name_in_russian: str
     max_level: int
     hero: Hero
+
+@dataclass
+class PlayerRating:
+    town_hall_difference: int
+    cwl_total_stars: int
+    cwl_total_wars: int
+    league_numbers: list[int]
+    raids_total_attacks: list[int]
+    raids_total_gold: list[int]
+    cw_total_attacks: list[int]

@@ -14,7 +14,7 @@ from async_client import AsyncClient
 from bot.commands import bot_cmd_list, get_shown_bot_commands
 from config import config
 from entities import ClanWarLeagueWar, BotUser, RaidsMember, WarMember
-from entities.game_entities import CWLWPlayerRating, CWLPlayerRating, CWLRatingConfig
+from entities.game_entities import CWLWPlayerRating, CWLPlayerRating, CWLRatingConfig, PlayerRating
 from output_formatter import OutputFormatter
 
 
@@ -952,8 +952,9 @@ class DatabaseManager:
         for day, clan_war_league_war in enumerate(clan_war_league_wars):
             return day, clan_war_league_war
 
-    async def load_clan_war_league_own_wars(self) -> Optional[list[dict]]:
-        season, _ = await self.load_clan_war_league()
+    async def load_clan_war_league_own_wars(self, season: Optional[str] = None) -> Optional[list[dict]]:
+        if season is None:
+            season, _ = await self.load_clan_war_league()
         if season is None:
             return None
         rows = await self.acquired_connection.fetch('''
@@ -1188,6 +1189,18 @@ class DatabaseManager:
                     player_tags[player_tag].total_bonus_points
             )
         return player_tags
+
+    async def get_player_ratings(self, season: str) -> dict[str, PlayerRating]:
+        player_tags = {}
+        raid_weekends = await self.acquired_connection.fetch('''
+            SELECT 
+        ''')
+        raid_weekends = await self.acquired_connection.fetch('''
+            SELECT data
+            FROM raid_weekend
+            WHERE clan_tag = $1 AND TO_CHAR(start_time, 'YYYY-MM') = $2
+            ORDER BY start_time DESC
+        ''', self.clan_tag, season)
 
     async def dump_user(self, chat: Chat, user: User) -> None:
         if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:

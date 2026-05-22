@@ -4,13 +4,11 @@ from datetime import datetime, UTC
 from typing import Optional, Any
 
 import asyncpg
-import psutil
 from aiogram import Bot
 from aiogram.enums import ChatType, ParseMode
 from aiogram.types import Chat, User, Message, BotCommandScopeAllGroupChats, BotCommandScopeAllPrivateChats
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from asyncpg import Record, Pool
-from psutil._common import bytes2human
 
 from async_client import AsyncClient
 from bot.commands import bot_cmd_list, get_shown_bot_commands
@@ -153,17 +151,6 @@ class DatabaseManager:
         await self.dump_clan_war_league_wars()
         await self.load_clan_war_league_rating_config()
         self.print_ram_usage()
-
-    @staticmethod
-    def print_ram_usage() -> None:
-        total, available, percent, used, free, *_ = psutil.virtual_memory()
-        process = psutil.Process()
-        print(
-            f'Total RAM: {bytes2human(total)}, '
-            f'available RAM: {bytes2human(available)}, '
-            f'used RAM: {bytes2human(used)} ({percent}%)'
-        )
-        print(f'RAM used by process: {bytes2human(process.memory_info().rss)}')
 
     async def load_privacy_mode(self) -> bool:
         self.is_privacy_mode_enabled = await self.acquired_connection.fetchval('''

@@ -101,11 +101,11 @@ class CWLPlayerRating:
 @dataclass
 class CWLRatingConfig:
     attack_stars_points: list[float]
-    attack_desruction_points: float
+    attack_destruction_points: float
     attack_map_position_points: float
     attack_skip_points: list[float]
     defense_stars_points: list[float]
-    defense_desruction_points: float
+    defense_destruction_points: float
 
 
 @dataclass

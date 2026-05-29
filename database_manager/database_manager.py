@@ -129,7 +129,6 @@ class DatabaseManager:
         await self.dump_raid_weekends()
         await self.dump_clan_war_league()
         await self.dump_clan_war_league_wars()
-        self.print_ram_usage()
 
     async def infrequent_jobs(self) -> None:
         await self.load_privacy_mode()
@@ -150,7 +149,6 @@ class DatabaseManager:
         await self.dump_clan_war_league()
         await self.dump_clan_war_league_wars()
         await self.load_clan_war_league_rating_config()
-        self.print_ram_usage()
 
     async def load_privacy_mode(self) -> bool:
         self.is_privacy_mode_enabled = await self.acquired_connection.fetchval('''
@@ -321,6 +319,7 @@ class DatabaseManager:
         if None in retrieved_players:
             return False
         rows = []
+        league_tier_rows = []
         for player in retrieved_players:
             player_heroes = player.get('heroes', [])
             barbarian_king_level = 0
@@ -354,6 +353,9 @@ class DatabaseManager:
                 player['role'], player['clanCapitalContributions'],
                 player['donations'], player['donationsReceived']
             ))
+            league_tier_rows.append(
+                (self.clan_tag, player['tag'], player['leagueTier']['id'] - 105000000, player['trophies'])
+            )
         await self.acquired_connection.execute('''
             UPDATE player
             SET is_player_in_clan = FALSE
@@ -390,6 +392,12 @@ class DatabaseManager:
                 ($3, $4, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
                 NOW() AT TIME ZONE 'UTC')
         ''', rows)
+        await self.acquired_connection.executemany('''
+            INSERT INTO player_league (clan_tag, player_tag, league_date, league_tier, trophies)
+            VALUES ($1, $2, NOW() AT TIME ZONE 'UTC', $3, $4)
+            ON CONFLICT (clan_tag, player_tag, league_date)
+            DO UPDATE SET (league_tier, trophies) = ($3, $4)
+        ''', league_tier_rows)
         return True
 
     async def load_and_cache_names(self) -> None:
@@ -1159,7 +1167,7 @@ class DatabaseManager:
                 for attack_new_stars in r.attack_new_stars
             )
             player_tags[player_tag].total_attack_destruction_percentage_points = sum(
-                self.cwl_rating_config.attack_desruction_points * attack_destruction_percentage
+                self.cwl_rating_config.attack_destruction_points * attack_destruction_percentage
                 for attack_destruction_percentage in r.attack_destruction_percentage
             )
             player_tags[player_tag].total_attack_map_position_points = sum(
@@ -1175,7 +1183,7 @@ class DatabaseManager:
                 for defense_stars in r.defense_stars
             )
             player_tags[player_tag].total_defense_destruction_percentage_points = sum(
-                self.cwl_rating_config.defense_desruction_points * (100 - defense_destruction_percentage)
+                self.cwl_rating_config.defense_destruction_points * (100 - defense_destruction_percentage)
                 for defense_destruction_percentage in r.defense_destruction_percentage
             )
             player_tags[player_tag].total_bonus_points = sum(player_tags[player_tag].bonus_points)
@@ -1191,16 +1199,48 @@ class DatabaseManager:
         return player_tags
 
     async def get_player_ratings(self, season: str) -> dict[str, PlayerRating]:
-        player_tags = {}
-        raid_weekends = await self.acquired_connection.fetch('''
-            SELECT 
-        ''')
         raid_weekends = await self.acquired_connection.fetch('''
             SELECT data
             FROM raid_weekend
-            WHERE clan_tag = $1 AND TO_CHAR(start_time, 'YYYY-MM') = $2
+            WHERE clan_tag = $1 AND TO_CHAR(start_time + INTERVAL '3 days', 'YYYY-MM') = $2
             ORDER BY start_time DESC
         ''', self.clan_tag, season)
+        rows = await self.acquired_connection.fetch('''
+            SELECT DISTINCT bot_user.user_id, player.player_tag
+            FROM
+                player_bot_user
+                JOIN player ON
+                    player_bot_user.clan_tag = player.clan_tag
+                    AND player_bot_user.player_tag = player.player_tag
+                JOIN bot_user ON
+                    player_bot_user.clan_tag = bot_user.clan_tag
+                    AND player_bot_user.chat_id = bot_user.chat_id
+                    AND player_bot_user.user_id = bot_user.user_id
+                    AND is_user_in_chat
+              WHERE player.clan_tag = $1
+          ''', self.clan_tag)
+        users_by_tag = {player_tag: [] for player_tag in [row['player_tag'] for row in rows]}
+        for row in rows:
+            users_by_tag[row['player_tag']].append(row['user_id'])
+        tags_by_user = {user_id: [] for user_id in [row['user_id'] for row in rows]}
+        for row in rows:
+            tags_by_user[row['user_id']].append(row['player_tag'])
+        gold_by_tag_raw = {}
+        for raid_weekend in raid_weekends:
+            for raids_member in json.loads(raid_weekend['data'])['members']:
+                if raids_member['tag'] not in gold_by_tag_raw:
+                    gold_by_tag_raw[raids_member['tag']] = raids_member['capitalResourcesLooted']
+                else:
+                    gold_by_tag_raw[raids_member['tag']] += raids_member['capitalResourcesLooted']
+        gold_by_tag = {player_tag: 0 for player_tag in gold_by_tag_raw}
+        for player_tag in gold_by_tag_raw:
+            if player_tag not in users_by_tag or len(users_by_tag[player_tag]) == 0:
+                gold_by_tag[player_tag] = gold_by_tag_raw[player_tag]
+            else:
+                for user_id in users_by_tag[player_tag]:
+                    for tag in tags_by_user[user_id]:
+                        gold_by_tag[tag] += gold_by_tag_raw[player_tag] / (len(tags_by_user[user_id]) * len(users_by_tag[player_tag]))
+
 
     async def dump_user(self, chat: Chat, user: User) -> None:
         if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:

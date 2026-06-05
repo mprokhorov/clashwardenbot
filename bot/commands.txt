@@ -21,8 +21,8 @@ raids_analysis          | 📊 Анализ атак в рейдах            
 player_info             | 👤 Аккаунты пользователя                | group, private |
 members                 | 🪖 Участники клана                      | group, private |
 hero_equipment          | 🔧 Снаряжения героев игроков            | group, private |
-contributions           | 🟡 Вклады в столице                     | group, private |
-donations               | 🏅 Лучшие жертвователи                  | group, private |
+contributions           | 🟡 Вклады в столице                     |                |
+donations               | 🏅 Лучшие жертвователи                  |                |
 events                  | 📆 События                              | group, private |
 alert                   | 💬 Отправить сообщение клану            |                |
 ping                    | 📣 Оповестить клан                      |                |

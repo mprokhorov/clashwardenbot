@@ -907,6 +907,7 @@ class OutputFormatter:
             'Frozen Arrow': HeroEquipment('Ледяная стрела', 27, Hero.archer_queen),
             'Magic Mirror': HeroEquipment('Волшебное зеркало', 27, Hero.archer_queen),
             'Action Figure': HeroEquipment('Солдатик', 27, Hero.archer_queen),
+            'Monolith Arrow': HeroEquipment('Монолитная стрела', 27, Hero.archer_queen),
 
             'Henchmen Puppet': HeroEquipment('Кукольные приспешники', 18, Hero.minion_prince),
             'Dark Orb': HeroEquipment('Сфера тьмы', 18, Hero.minion_prince),

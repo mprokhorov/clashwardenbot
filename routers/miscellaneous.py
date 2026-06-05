@@ -24,7 +24,6 @@ class MembersView(IntEnum):
     players = auto()
     users = auto()
 
-
 class HeroEquipmentListOrder(IntEnum):
     by_starry_ore = auto()
     by_glowy_ore = auto()
@@ -59,6 +58,7 @@ class MiscellaneousCallbackFactory(CallbackData, prefix='members'):
     user_id: Optional[int] = None
     player_tag: Optional[str] = None
     members_view: Optional[MembersView] = None
+    show_other_users: Optional[bool] = None
     hero_equipment_view: Optional[HeroEquipmentView] = None
     hero_equipment_list_order: Optional[HeroEquipmentListOrder] = None
     contributions_view: Optional[ContributionsView] = None
@@ -161,7 +161,9 @@ async def player_info(dm: DatabaseManager, bot_user: BotUser) -> tuple[str, Pars
     return text, ParseMode.HTML, keyboard
 
 
-async def members_players(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+async def members_players(
+        dm: DatabaseManager, callback_data: Optional[MiscellaneousCallbackFactory]
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     rows = await dm.acquired_connection.fetch('''
         SELECT
             player_name,
@@ -193,16 +195,25 @@ async def members_players(dm: DatabaseManager) -> tuple[str, ParseMode, Optional
     if len(rows) == 0:
         text += f'Список пуст\n'
     button_row = []
+    if callback_data is not None and callback_data.show_other_users:
+        show_other_users = True
+    else:
+        show_other_users = False
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
         callback_data=MiscellaneousCallbackFactory(
-            output_view=OutputView.members, update=True, members_view=MembersView.players
+            output_view=OutputView.members,
+            update=True,
+            members_view=MembersView.players,
+            show_other_users=show_other_users
         ).pack()
     )
     users_view_button = InlineKeyboardButton(
         text='👥 Пользователи',
         callback_data=MiscellaneousCallbackFactory(
-            output_view=OutputView.members, members_view=MembersView.users
+            output_view=OutputView.members,
+            members_view=MembersView.users,
+            show_other_users=show_other_users
         ).pack()
     )
     button_row.append(users_view_button)
@@ -211,7 +222,9 @@ async def members_players(dm: DatabaseManager) -> tuple[str, ParseMode, Optional
     return text, ParseMode.HTML, keyboard
 
 
-async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+async def members_users(
+        dm: DatabaseManager, callback_data: Optional[MiscellaneousCallbackFactory], chat_id: int
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     rows = await dm.acquired_connection.fetch('''
         SELECT
             bot_user.user_id, player.clan_tag, player.player_tag,
@@ -378,50 +391,69 @@ async def members_users(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMo
             )}\n'
             f'\n'
         )
-    if len(players_by_other_user) > 0:
-        text += '<b>Другие пользователи:</b>\n'
-    for user_id, players in sorted(
-            players_by_other_user.items(),
-            key=lambda item: (
-                    sum(clan_member.town_hall_level for clan_member in item[1]),
-                    sum(clan_member.hero_levels_sum() for clan_member in item[1]),
-                    dm.of.str_sort_key(dm.load_full_name(chat_id, item[0]))
-            ),
-            reverse=True
-    ):
-        text += f'👤 {dm.of.to_html(dm.load_full_name(chat_id, user_id))}'
-        if len(players) > 0:
-            text += (
-                f': {', '.join(
-                    f'{dm.of.to_html(dm.load_name(player.player_tag))} '
-                    f'{dm.of.get_player_info_with_custom_emoji(player.town_hall_level)}'
-                    f' ({dm.clan_name[player.clan_tag] if player.clan_tag is not None else 'не в клане'})'
-                    for player in sorted(
-                        players,
-                        key=lambda _player: (
-                            _player.town_hall_level,
-                            _player.hero_levels_sum(),
-                            dm.of.str_sort_key(dm.load_name(_player.player_tag))
-                        ),
-                        reverse=True
-                    )
-                )}'
-            )
-        text += '\n'
+    if callback_data is not None and callback_data.show_other_users:
+        show_other_users = True
+    else:
+        show_other_users = False
+    if show_other_users:
+        if len(players_by_other_user) > 0:
+            text += '<b>Другие пользователи:</b>\n'
+        for user_id, players in sorted(
+                players_by_other_user.items(),
+                key=lambda item: (
+                        sum(clan_member.town_hall_level for clan_member in item[1]),
+                        sum(clan_member.hero_levels_sum() for clan_member in item[1]),
+                        dm.of.str_sort_key(dm.load_full_name(chat_id, item[0]))
+                ),
+                reverse=True
+        ):
+            text += f'👤 {dm.of.to_html(dm.load_full_name(chat_id, user_id))}'
+            if len(players) > 0:
+                text += (
+                    f': {', '.join(
+                        f'{dm.of.to_html(dm.load_name(player.player_tag))} '
+                        f'{dm.of.get_player_info_with_custom_emoji(player.town_hall_level)}'
+                        f' ({dm.clan_name[player.clan_tag] if player.clan_tag is not None else 'не в клане'})'
+                        for player in sorted(
+                            players,
+                            key=lambda _player: (
+                                _player.town_hall_level,
+                                _player.hero_levels_sum(),
+                                dm.of.str_sort_key(dm.load_name(_player.player_tag))
+                            ),
+                            reverse=True
+                        )
+                    )}'
+                )
+            text += '\n'
     button_row = []
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
         callback_data=MiscellaneousCallbackFactory(
-            output_view=OutputView.members, update=True, members_view=MembersView.users
+            output_view=OutputView.members,
+            update=True,
+            members_view=MembersView.users,
+            show_other_users=show_other_users
+        ).pack()
+    )
+    extended_button = InlineKeyboardButton(
+        text='🔼 Свернуть' if show_other_users else '🔽 Развернуть',
+        callback_data=MiscellaneousCallbackFactory(
+            output_view=OutputView.members,
+            members_view=MembersView.users,
+            show_other_users=not show_other_users
         ).pack()
     )
     players_view_button = InlineKeyboardButton(
         text='🪖 Аккаунты',
         callback_data=MiscellaneousCallbackFactory(
-            output_view=OutputView.members, members_view=MembersView.players
+            output_view=OutputView.members,
+            members_view=MembersView.players,
+            show_other_users=show_other_users
         ).pack()
     )
     button_row.append(players_view_button)
+    button_row.append(extended_button)
     button_row.append(update_button)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[button_row])
     return text, ParseMode.HTML, keyboard
@@ -897,7 +929,7 @@ async def callback_player_info(
 
 @router.message(Command('members'))
 async def command_members(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, reply_markup = await members_players(dm)
+    text, parse_mode, reply_markup = await members_players(dm, None)
     reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     await dm.dump_message_owner(reply_from_bot, message.from_user)
 
@@ -912,9 +944,9 @@ async def callback_members(
     else:
         if callback_data.members_view == MembersView.users:
             chat_id = await dm.get_group_chat_id(callback_query.message)
-            text, parse_mode, reply_markup = await members_users(dm, chat_id)
+            text, parse_mode, reply_markup = await members_users(dm, callback_data, chat_id)
         else:
-            text, parse_mode, reply_markup = await members_players(dm)
+            text, parse_mode, reply_markup = await members_players(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         if callback_data.update:

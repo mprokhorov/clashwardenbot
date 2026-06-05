@@ -561,17 +561,17 @@ class DatabaseManager:
                 )
 
     async def dump_clan_war(self) -> bool:
-        old_clan_war = await self.load_clan_war() or {'startTime': None, 'state': None}
+        old_clan_war = await self.load_clan_war() or {'preparationStartTime': None, 'state': None}
 
         retrieved_clan_war = await self.api_client.get_clan_current_war(clan_tag=self.clan_tag)
-        if retrieved_clan_war is None or retrieved_clan_war.get('startTime') is None:
+        if retrieved_clan_war is None or retrieved_clan_war.get('preparationStartTime') is None:
             return False
         await self.acquired_connection.execute('''
-            INSERT INTO clan_war (clan_tag, start_time, data)
+            INSERT INTO clan_war (clan_tag, preparation_start_time, data)
             VALUES ($1, $2, $3)
-            ON CONFLICT (clan_tag, start_time)
+            ON CONFLICT (clan_tag, preparation_start_time)
             DO UPDATE SET data = $3
-        ''', self.clan_tag, self.of.to_datetime(retrieved_clan_war['startTime']), json.dumps(retrieved_clan_war))
+        ''', self.clan_tag, self.of.to_datetime(retrieved_clan_war['preparationStartTime']), json.dumps(retrieved_clan_war))
 
         new_clan_war = await self.load_clan_war()
         await asyncio.gather(
@@ -590,7 +590,7 @@ class DatabaseManager:
             SELECT data
             FROM clan_war
             WHERE clan_tag = $1
-            ORDER BY start_time DESC
+            ORDER BY preparation_start_time DESC
         ''', self.clan_tag)
         if row is None:
             return None
@@ -698,17 +698,17 @@ class DatabaseManager:
             VALUES
                 ($1, $2, $3, FALSE, FALSE, FALSE, FALSE)
             ON CONFLICT (clan_tag, name, start_time) DO NOTHING;
-        ''', self.clan_tag, 'clan_war', self.of.to_datetime(cw['startTime']))
+        ''', self.clan_tag, 'clan_war', self.of.to_datetime(cw['preparationStartTime']))
         row = await self.acquired_connection.fetchrow('''
             SELECT
                 clan_tag, name, start_time,
                 preparation_message_sent, start_message_sent, half_time_remaining_message_sent, end_message_sent
             FROM activity
             WHERE (clan_tag, name, start_time) = ($1, $2, $3)
-        ''', self.clan_tag, 'clan_war', self.of.to_datetime(cw['startTime']))
+        ''', self.clan_tag, 'clan_war', self.of.to_datetime(cw['preparationStartTime']))
         texts = []
         pings = []
-        is_cw_updated = old_cw['startTime'] != cw['startTime']
+        is_cw_updated = old_cw['preparationStartTime'] != cw['preparationStartTime']
         is_cw_state_updated = self.of.state(old_cw) != self.of.state(cw)
         is_cw_midpoint_passed = (self.of.to_datetime(cw['endTime']) - self.of.utc_now()).seconds <= 12 * SECONDS_IN_HOUR
         if not row['end_message_sent'] and self.of.state(cw) == 'warEnded' and is_cw_state_updated:
@@ -719,7 +719,7 @@ class DatabaseManager:
             )
             pings.append(False)
             await self.set_activity_end_message_sent(
-                self.clan_tag, 'clan_war', self.of.to_datetime(cw['startTime'])
+                self.clan_tag, 'clan_war', self.of.to_datetime(cw['preparationStartTime'])
             )
         elif not row['half_time_remaining_message_sent'] and self.of.state(cw) == 'inWar' and is_cw_midpoint_passed:
             texts.append(
@@ -729,7 +729,7 @@ class DatabaseManager:
             )
             pings.append(True)
             await self.set_activity_half_time_remaining_message_sent(
-                self.clan_tag, 'clan_war', self.of.to_datetime(cw['startTime'])
+                self.clan_tag, 'clan_war', self.of.to_datetime(cw['preparationStartTime'])
             )
         elif not row['start_message_sent'] and self.of.state(cw) == 'inWar' and is_cw_state_updated:
             texts.append(
@@ -739,7 +739,7 @@ class DatabaseManager:
             )
             pings.append(True)
             await self.set_activity_start_message_sent(
-                self.clan_tag, 'clan_war', self.of.to_datetime(cw['startTime'])
+                self.clan_tag, 'clan_war', self.of.to_datetime(cw['preparationStartTime'])
             )
         elif not row['preparation_message_sent'] and self.of.state(cw) == 'preparation' and is_cw_updated:
             texts.append(
@@ -749,7 +749,7 @@ class DatabaseManager:
             )
             pings.append(False)
             await self.set_activity_preparation_message_sent(
-                self.clan_tag, 'clan_war', self.of.to_datetime(cw['startTime'])
+                self.clan_tag, 'clan_war', self.of.to_datetime(cw['preparationStartTime'])
             )
         for text, ping in zip(texts, pings):
             rows = await self.acquired_connection.fetch('''
@@ -937,7 +937,7 @@ class DatabaseManager:
         if old_cwl_season != new_cwl_season:
             old_cwlws = []
         if len(old_cwlws) < len(new_cwlws):
-            old_cwlws += [{'startTime': None, 'state': None}] * (len(new_cwlws) - len(old_cwlws))
+            old_cwlws += [{'preparationStartTime': None, 'state': None}] * (len(new_cwlws) - len(old_cwlws))
         for cwl_day, (old_cwlw, new_cwlw) in enumerate(zip(old_cwlws, new_cwlws)):
             war_win_streak = await self.load_war_win_streak(clan_tag=new_cwlw['opponent']['tag'])
             cw_log = await self.load_clan_war_log(clan_tag=new_cwlw['opponent']['tag'])
@@ -1005,17 +1005,17 @@ class DatabaseManager:
             VALUES
                 ($1, $2, $3, FALSE, FALSE, FALSE, FALSE)
             ON CONFLICT (clan_tag, name, start_time) DO NOTHING;
-        ''', self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['startTime']))
+        ''', self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['preparationStartTime']))
         row = await self.acquired_connection.fetchrow('''
             SELECT
                 clan_tag, name, start_time,
                 preparation_message_sent, start_message_sent, half_time_remaining_message_sent, end_message_sent
             FROM activity
             WHERE (clan_tag, name, start_time) = ($1, $2, $3)
-        ''', self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['startTime']))
+        ''', self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['preparationStartTime']))
         texts = []
         pings = []
-        is_cwlw_updated = old_cwlw['startTime'] != cwlw['startTime']
+        is_cwlw_updated = old_cwlw['preparationStartTime'] != cwlw['preparationStartTime']
         is_cwlw_state_updated = self.of.state(old_cwlw) != self.of.state(cwlw)
         cwlw_remaining_time = (self.of.to_datetime(cwlw['endTime']) - self.of.utc_now()).seconds
         is_cwlw_midpoint_passed = cwlw_remaining_time <= 12 * SECONDS_IN_HOUR
@@ -1027,7 +1027,7 @@ class DatabaseManager:
             )
             pings.append(False)
             await self.set_activity_end_message_sent(
-                self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['startTime'])
+                self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['preparationStartTime'])
             )
         elif not row['half_time_remaining_message_sent'] and self.of.state(cwlw) == 'inWar' and is_cwlw_midpoint_passed:
             texts.append(
@@ -1037,7 +1037,7 @@ class DatabaseManager:
             )
             pings.append(True)
             await self.set_activity_half_time_remaining_message_sent(
-                self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['startTime'])
+                self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['preparationStartTime'])
             )
         elif not row['start_message_sent'] and self.of.state(cwlw) == 'inWar' and is_cwlw_state_updated:
             texts.append(
@@ -1047,7 +1047,7 @@ class DatabaseManager:
             )
             pings.append(True)
             await self.set_activity_start_message_sent(
-                self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['startTime'])
+                self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['preparationStartTime'])
             )
         elif not row['preparation_message_sent'] and self.of.state(cwlw) == 'preparation' and is_cwlw_updated:
             texts.append(
@@ -1057,7 +1057,7 @@ class DatabaseManager:
             )
             pings.append(False)
             await self.set_activity_preparation_message_sent(
-                self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['startTime'])
+                self.clan_tag, 'clan_war_league_war', self.of.to_datetime(cwlw['preparationStartTime'])
             )
         for text, ping in zip(texts, pings):
             rows = await self.acquired_connection.fetch('''

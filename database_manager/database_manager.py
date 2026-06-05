@@ -960,21 +960,25 @@ class DatabaseManager:
         for day, clan_war_league_war in enumerate(clan_war_league_wars):
             return day, clan_war_league_war
 
-    async def load_clan_war_league_own_wars(self, season: Optional[str] = None) -> Optional[list[dict]]:
+    async def load_clan_war_league_own_wars(
+            self, season: Optional[str] = None, clan_tag: Optional[str] = None
+    ) -> Optional[list[dict]]:
         if season is None:
             season, _ = await self.load_clan_war_league()
         if season is None:
             return None
+        if clan_tag is None:
+            clan_tag = self.clan_tag
         rows = await self.acquired_connection.fetch('''
             SELECT data
             FROM clan_war_league_war
             WHERE (clan_tag, season) = ($1, $2) AND $1 IN (data->'clan'->>'tag', data->'opponent'->>'tag')
             ORDER BY day
-        ''', self.clan_tag, season)
+        ''', clan_tag, season)
         clan_war_league_wars = []
         for row in rows:
             clan_war_league_war = json.loads(row['data'])
-            if clan_war_league_war['opponent']['tag'] == self.clan_tag:
+            if clan_war_league_war['opponent']['tag'] == clan_tag:
                 clan_war_league_war['clan'], clan_war_league_war['opponent'] = (
                     clan_war_league_war['opponent'], clan_war_league_war['clan']
                 )
@@ -1240,6 +1244,35 @@ class DatabaseManager:
                 for user_id in users_by_tag[player_tag]:
                     for tag in tags_by_user[user_id]:
                         gold_by_tag[tag] += gold_by_tag_raw[player_tag] / (len(tags_by_user[user_id]) * len(users_by_tag[player_tag]))
+        cwl_clan_tags = await self.acquired_connection.fetch('''
+            SELECT cwl_clan_tag
+            FROM player_rating_config
+            WHERE clan_tag = $1 AND minimum_average_cwl_stars IS NOT NULL AND minimum_cwl_wars IS NOT NULL
+        ''', self.clan_tag)
+        cwl_total_stars = {}
+        cwl_total_wars = {}
+        for cwl_clan_tag in cwl_clan_tags:
+            cwl_own_wars = await self.load_clan_war_league_own_wars(season, cwl_clan_tag) or []
+            for cwl_own_war in cwl_own_wars:
+                for cwlw_member in cwl_own_war['clan']['members']:
+                    cwlw_total_stars = sum(attack['stars'] for attack in cwlw_member['attacks'])
+                    cwl_total_stars[cwlw_member['tag']] = cwl_total_stars.get(cwlw_member['tag'], 0) + cwlw_total_stars
+                    cwl_total_wars[cwlw_member['tag']] = cwl_total_wars.get(cwlw_member['tag'], 0) + 1
+        rows = await self.acquired_connection.fetch('''
+            SELECT data
+            FROM clan_wars
+            WHERE TO_CHAR((data->>'endTime')::timestamp, 'YYYY-MM') = $1 and clan_tag IN (
+                SELECT child_clan_tag
+                FROM player_rating_config
+                WHERE clan_tag = $2 AND cw_bonus IS NOT NULL
+            )
+        ''', season, self.clan_tag)
+        cw_total_attacks_by_tag = {}
+        for row in rows:
+            cw = json.loads(row['data'])
+            for member in cw['members']:
+                cw_total_attacks_by_tag[member['tag']] = cw_total_attacks_by_tag.get(member['tag'], []) + [len(member['attacks'])]
+
 
 
     async def dump_user(self, chat: Chat, user: User) -> None:

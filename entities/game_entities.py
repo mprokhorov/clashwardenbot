@@ -114,9 +114,11 @@ class HeroEquipment:
     max_level: int
     hero: Hero
 
+
 @dataclass
 class PlayerRating:
     town_hall_difference: int
+    cwl_clan_tag: str
     cwl_total_stars: int
     cwl_total_wars: int
     league_numbers: list[int]

@@ -61,6 +61,7 @@ class MiscellaneousCallbackFactory(CallbackData, prefix='members'):
     show_other_users: Optional[bool] = None
     hero_equipment_view: Optional[HeroEquipmentView] = None
     hero_equipment_list_order: Optional[HeroEquipmentListOrder] = None
+    hero_equipment_show_all: Optional[bool] = None
     contributions_view: Optional[ContributionsView] = None
 
 
@@ -463,6 +464,10 @@ async def hero_equipment_list(
         dm: DatabaseManager, callback_data: Optional[MiscellaneousCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     list_order = callback_data.hero_equipment_list_order if callback_data else HeroEquipmentListOrder.by_starry_ore
+    if callback_data and callback_data.hero_equipment_show_all:
+        hero_equipment_show_all = True
+    else:
+        hero_equipment_show_all = False
     text = (
         f'<b>🔧 Снаряжения героев игроков ({hero_equipment_list_order_text(list_order, False)})</b>\n'
         f'\n'
@@ -488,6 +493,7 @@ async def hero_equipment_list(
             output_view=OutputView.hero_equipment,
             hero_equipment_view=HeroEquipmentView.choose,
             hero_equipment_list_order=list_order,
+            hero_equipment_show_all=hero_equipment_show_all,
         ).pack()
     )
     next_order_button = InlineKeyboardButton(
@@ -496,6 +502,7 @@ async def hero_equipment_list(
             output_view=OutputView.hero_equipment,
             hero_equipment_view=HeroEquipmentView.list,
             hero_equipment_list_order=next_hero_equipment_list_order(list_order),
+            hero_equipment_show_all=hero_equipment_show_all,
         ).pack()
     )
     update_button = InlineKeyboardButton(
@@ -504,6 +511,7 @@ async def hero_equipment_list(
             output_view=OutputView.hero_equipment,
             hero_equipment_view=HeroEquipmentView.list,
             hero_equipment_list_order=list_order,
+            hero_equipment_show_all=hero_equipment_show_all,
             update=True
         ).pack()
     )
@@ -516,6 +524,10 @@ async def hero_equipment_choose(
         dm: DatabaseManager, callback_data: Optional[MiscellaneousCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     list_order = callback_data.hero_equipment_list_order if callback_data else HeroEquipmentListOrder.by_starry_ore
+    if callback_data and callback_data.hero_equipment_show_all:
+        hero_equipment_show_all = True
+    else:
+        hero_equipment_show_all = False
     text = (
         f'<b>🔧 Снаряжения героев игроков ({hero_equipment_list_order_text(list_order, False)})</b>\n'
         f'\n'
@@ -542,6 +554,7 @@ async def hero_equipment_choose(
                 output_view=OutputView.hero_equipment,
                 hero_equipment_view=HeroEquipmentView.details,
                 hero_equipment_list_order=callback_data.hero_equipment_list_order,
+                hero_equipment_show_all=hero_equipment_show_all,
                 player_tag=player_tag
             ).pack()
         )]
@@ -553,7 +566,8 @@ async def hero_equipment_choose(
         callback_data=MiscellaneousCallbackFactory(
             output_view=OutputView.hero_equipment,
             hero_equipment_view=HeroEquipmentView.list,
-            hero_equipment_list_order=callback_data.hero_equipment_list_order
+            hero_equipment_list_order=callback_data.hero_equipment_list_order,
+            hero_equipment_show_all=hero_equipment_show_all
         ).pack()
     )
     update_button = InlineKeyboardButton(
@@ -562,6 +576,7 @@ async def hero_equipment_choose(
             output_view=OutputView.hero_equipment,
             hero_equipment_view=HeroEquipmentView.choose,
             hero_equipment_list_order=callback_data.hero_equipment_list_order,
+            hero_equipment_show_all=hero_equipment_show_all,
             update=True
         ).pack()
     )
@@ -573,6 +588,10 @@ async def hero_equipment_choose(
 async def hero_equipment_details(
         dm: DatabaseManager, callback_data: Optional[MiscellaneousCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    if callback_data and callback_data.hero_equipment_show_all:
+        hero_equipment_show_all = True
+    else:
+        hero_equipment_show_all = False
     available_hero_equipments = dm.of.get_available_hero_equipments()
     available_heroes_name_in_russian = {
         Hero.barbarian_king: f'{dm.of.get_barbarian_king_emoji()} Король варваров',
@@ -597,10 +616,13 @@ async def hero_equipment_details(
      total_glowy_ore_amount,
      total_starry_ore_amount,
      total_levels_amount) = await dm.of.calculate_hero_equipment_progress(hero_equipments, False)
+    available_equipments_for_player = sum(
+        name in player_hero_equipments.keys() for name, _ in available_hero_equipments.items()
+    )
     text = (
         f'<b>🔧 Снаряжения героев игрока {dm.load_name(callback_data.player_tag)}</b>\n'
         f'\n'
-        f'⏳ Прогресс\n'
+        f'⏳ Прогресс ({available_equipments_for_player} / {len(available_hero_equipments)})\n'
         f'Уровни: {dm.of.separate_thousands(levels_amount)} / {dm.of.separate_thousands(total_levels_amount)} '
         f'({format((levels_amount / total_levels_amount) * 100, '.2f')}%)\n'
         f'🔵 руда: {dm.of.separate_thousands(shiny_ore_amount)} / {dm.of.separate_thousands(total_shiny_ore_amount)} '
@@ -611,18 +633,30 @@ async def hero_equipment_details(
         f'({format((starry_ore_amount / total_starry_ore_amount) * 100, '.2f')}%)\n'
         f'\n'
     )
-    if len(hero_equipments) == 0:
+    if len(hero_equipments) == 0 and not hero_equipment_show_all:
         text += f'Список пуст\n'
     for hero, hero_name_in_russian in available_heroes_name_in_russian.items():
         if any(
-                hero_equipment['name'] in available_hero_equipments.keys()
-                and hero == available_hero_equipments[hero_equipment['name']].hero
-                for hero_equipment in hero_equipments
-        ):
-            text += f'{hero_name_in_russian}\n'
+            hero_equipment['name'] in available_hero_equipments.keys()
+            and hero == available_hero_equipments[hero_equipment['name']].hero
+            for hero_equipment in hero_equipments
+        ) or hero_equipment_show_all:
+            available_equipments_for_current_hero = sum(
+                name in player_hero_equipments.keys() and eq.hero == hero for name, eq in available_hero_equipments.items()
+            )
+            total_equipments_for_current_hero = sum(
+                eq.hero == hero for _, eq in available_hero_equipments.items()
+            )
+            text += (
+                f'{hero_name_in_russian} ({available_equipments_for_current_hero} '
+                f'/ {total_equipments_for_current_hero})\n'
+            )
             for name, eq in available_hero_equipments.items():
-                if eq.hero == hero and name in player_hero_equipments.keys():
-                    text += f'{eq.name_in_russian}: {player_hero_equipments[name]} / {eq.max_level}\n'
+                if eq.hero == hero:
+                    if name in player_hero_equipments.keys():
+                        text += f'{eq.name_in_russian}: {player_hero_equipments[name]} / {eq.max_level}\n'
+                    elif hero_equipment_show_all:
+                        text += f'{eq.name_in_russian}: нет\n'
             text += '\n'
     back_button = InlineKeyboardButton(
         text='⬅️ Назад',
@@ -630,6 +664,17 @@ async def hero_equipment_details(
             output_view=OutputView.hero_equipment,
             hero_equipment_view=HeroEquipmentView.choose,
             hero_equipment_list_order=callback_data.hero_equipment_list_order,
+            hero_equipment_show_all=hero_equipment_show_all
+        ).pack()
+    )
+    show_all_button = InlineKeyboardButton(
+        text='🔼 Свернуть' if hero_equipment_show_all else '🔽 Развернуть',
+        callback_data=MiscellaneousCallbackFactory(
+            output_view=OutputView.hero_equipment,
+            hero_equipment_view=HeroEquipmentView.details,
+            hero_equipment_list_order=callback_data.hero_equipment_list_order,
+            player_tag=callback_data.player_tag,
+            hero_equipment_show_all=not hero_equipment_show_all
         ).pack()
     )
     update_button = InlineKeyboardButton(
@@ -639,10 +684,14 @@ async def hero_equipment_details(
             hero_equipment_view=HeroEquipmentView.details,
             hero_equipment_list_order=callback_data.hero_equipment_list_order,
             player_tag=callback_data.player_tag,
+            hero_equipment_show_all=hero_equipment_show_all,
             update=True
         ).pack()
     )
-    button_rows = [[back_button, update_button]]
+    if available_equipments_for_player == len(available_hero_equipments):
+        button_rows = [[back_button, update_button]]
+    else:
+        button_rows = [[back_button, show_all_button, update_button]]
     keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     return text, ParseMode.HTML, keyboard
 

@@ -44,7 +44,7 @@ class OutputFormatter:
         return '\n'.join(map(str.lstrip, text.split('\n')))
 
     @staticmethod
-    def season(season_data: str) -> str:
+    async def season(season_data: str) -> str:
         month_in_russian = {
             '01': 'январь',
             '02': 'февраль',
@@ -59,8 +59,13 @@ class OutputFormatter:
             '11': 'ноябрь',
             '12': 'декабрь'
         }
-        year, month = season_data.split('-')
-        return f'{month_in_russian[month]} {year}'
+        if len(season_data.split('-')) == 2:
+            year, month = season_data.split('-')
+            return f'{month_in_russian[month]} {year}'
+        else:
+            year, month, half = season_data.split('-')
+            return f'{month_in_russian[month]} {year} ({half}-я половина)'
+
 
     @staticmethod
     def role(role_data: str) -> str:

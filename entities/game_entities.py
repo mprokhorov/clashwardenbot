@@ -118,10 +118,19 @@ class HeroEquipment:
 @dataclass
 class PlayerRating:
     town_hall_difference: int
-    cwl_clan_tag: str
+    cwl_clan_tag: Optional[str]
     cwl_total_stars: int
     cwl_total_wars: int
     league_numbers: list[int]
+    leagues_places: list[int]
     raids_total_attacks: list[int]
     raids_total_gold: list[int]
     cw_total_attacks: list[int]
+    is_eligible_for_prize: bool
+
+
+@dataclass
+class PlayerRatingConfig:
+    minimum_average_cwl_stars: list[float]
+    minimum_cwl_stars: int
+    cw_bonus_points: list[float]

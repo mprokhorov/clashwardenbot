@@ -665,7 +665,7 @@ async def give_bonus_set_points(
         return text, ParseMode.HTML, None
     cwl_season, _ = await dm.load_clan_war_league()
     text += (
-        f'Сезон ЛВК: {dm.of.season(cwl_season)}\n'
+        f'Сезон ЛВК: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
         f'\n'
         f'Установите количество баллов:'
     )
@@ -673,7 +673,7 @@ async def give_bonus_set_points(
         bonus_points = 0
     else:
         bonus_points = callback_data.bonus_points
-    low_increase = InlineKeyboardButton(
+    point_one_increase = InlineKeyboardButton(
         text='+0.1',
         callback_data=AdminCallbackFactory(
             output_view=OutputView.give_bonus,
@@ -682,7 +682,7 @@ async def give_bonus_set_points(
             bonus_points=bonus_points + 0.1
         ).pack()
     )
-    low_decrease = InlineKeyboardButton(
+    point_one_decrease = InlineKeyboardButton(
         text='-0.1',
         callback_data=AdminCallbackFactory(
             output_view=OutputView.give_bonus,
@@ -691,7 +691,7 @@ async def give_bonus_set_points(
             bonus_points=bonus_points - 0.1
         ).pack()
     )
-    high_increase = InlineKeyboardButton(
+    one_increase = InlineKeyboardButton(
         text='+1',
         callback_data=AdminCallbackFactory(
             output_view=OutputView.give_bonus,
@@ -700,13 +700,31 @@ async def give_bonus_set_points(
             bonus_points=bonus_points + 1
         ).pack()
     )
-    high_decrease = InlineKeyboardButton(
+    one_decrease = InlineKeyboardButton(
         text='-1',
         callback_data=AdminCallbackFactory(
             output_view=OutputView.give_bonus,
             give_bonus=GiveBonus.set_points,
             player_tag=callback_data.player_tag,
             bonus_points=bonus_points - 1
+        ).pack()
+    )
+    ten_increase = InlineKeyboardButton(
+        text='+10',
+        callback_data=AdminCallbackFactory(
+            output_view=OutputView.give_bonus,
+            give_bonus=GiveBonus.set_points,
+            player_tag=callback_data.player_tag,
+            bonus_points=bonus_points + 10
+        ).pack()
+    )
+    ten_decrease = InlineKeyboardButton(
+        text='-10',
+        callback_data=AdminCallbackFactory(
+            output_view=OutputView.give_bonus,
+            give_bonus=GiveBonus.set_points,
+            player_tag=callback_data.player_tag,
+            bonus_points=bonus_points - 10
         ).pack()
     )
     give_points_button = InlineKeyboardButton(
@@ -723,8 +741,9 @@ async def give_bonus_set_points(
         callback_data=AdminCallbackFactory(output_view=OutputView.give_bonus, give_bonus=GiveBonus.select_player).pack()
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
-        [high_decrease, high_increase],
-        [low_decrease, low_increase],
+        [ten_decrease, ten_increase],
+        [one_decrease, one_increase],
+        [point_one_decrease, point_one_increase],
         [give_points_button],
         [back_button]
     ])

@@ -624,7 +624,7 @@ async def give_bonus_select_player(
     cwlws = await dm.load_clan_war_league_own_wars()
     cwl_season, _ = await dm.load_clan_war_league()
     text += (
-        f'Сезон ЛВК: {dm.of.season(cwl_season)}\n'
+        f'Сезон ЛВК: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
         f'\n'
         f'Выберите участника ЛВК:'
     )
@@ -743,7 +743,7 @@ async def give_bonus_finish(
         return text, ParseMode.HTML, None
     cwl_season, _ = await dm.load_clan_war_league()
     text += (
-        f'Сезон ЛВК: {dm.of.season(cwl_season)}\n'
+        f'Сезон ЛВК: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
         f'\n'
         f'Игроку {dm.load_name(callback_data.player_tag)} выдано {dm.of.format_and_rstrip(callback_data.bonus_points, 3)} 🪙\n'
     )

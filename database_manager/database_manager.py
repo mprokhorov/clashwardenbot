@@ -858,27 +858,12 @@ class DatabaseManager:
         retrieved_clan_war_league = await self.api_client.get_clan_war_league_group(clan_tag=self.clan_tag)
         if retrieved_clan_war_league is None:
             return False
-        _, old_cwl_data = await self.load_clan_war_league()
-        if old_cwl_data is None:
-            cwl_season = retrieved_clan_war_league['season']
-        else:
-            old_war_tags = []
-            for old_cwl_round in old_cwl_data['rounds']:
-                old_war_tags += old_cwl_round['warTags']
-            new_war_tags = []
-            for new_cwl_round in retrieved_clan_war_league['rounds']:
-                new_war_tags += new_cwl_round['warTags']
-            if len(set(old_war_tags).intersection(set(new_war_tags))) == 0 and old_cwl_data['season'] != retrieved_clan_war_league['season']:
-                cwl_season = retrieved_clan_war_league['season'] + '-2'
-            else:
-                cwl_season = retrieved_clan_war_league['season']
-
         await self.acquired_connection.execute('''
             INSERT INTO clan_war_league (clan_tag, season, data)
             VALUES ($1, $2, $3)
             ON CONFLICT (clan_tag, season)
             DO UPDATE SET data = $3
-        ''', self.clan_tag, cwl_season, json.dumps(retrieved_clan_war_league))
+        ''', self.clan_tag, retrieved_clan_war_league['season'], json.dumps(retrieved_clan_war_league))
         return True
 
     async def load_clan_war_league(self) -> tuple[Optional[str], Optional[dict]]:
@@ -891,6 +876,13 @@ class DatabaseManager:
         if row is None:
             return None, None
         return row['season'], json.loads(row['data'])
+
+    async def get_season_cwl_amount(self, season: str) -> int:
+        return await self.acquired_connection.fetchval('''
+            SELECT COUNT(*)
+            FROM clan_war_league
+            WHERE clan_tag = $1 AND season LIKE $2
+        ''', self.clan_tag, f'{season[0:7]}%')
 
     async def dump_clan_war_league_wars(self) -> bool:
         old_cwl_season, _ = await self.load_clan_war_league()
@@ -1043,7 +1035,7 @@ class DatabaseManager:
             texts.append(
                 f'<b>💬 День ЛВК закончился</b>\n'
                 f'\n'
-                f'{self.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, cwl_day, False, None, None)}'
+                f'{self.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, await self.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)}'
             )
             pings.append(False)
             await self.set_activity_end_message_sent(
@@ -1053,7 +1045,7 @@ class DatabaseManager:
             texts.append(
                 f'<b>📣 До конца дня ЛВК осталось менее 12 часов</b>\n'
                 f'\n'
-                f'{self.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, cwl_day, False, None, None)}'
+                f'{self.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, await self.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)}'
             )
             pings.append(True)
             await self.set_activity_half_time_remaining_message_sent(
@@ -1063,7 +1055,7 @@ class DatabaseManager:
             texts.append(
                 f'<b>📣 День ЛВК начался</b>\n'
                 f'\n'
-                f'{self.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, cwl_day, False, None, None)}'
+                f'{self.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, await self.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)}'
             )
             pings.append(True)
             await self.set_activity_start_message_sent(
@@ -1073,7 +1065,7 @@ class DatabaseManager:
             texts.append(
                 f'<b>💬 Подготовка ко дню ЛВК началась</b>\n'
                 f'\n'
-                f'{self.of.cwlw_preparation(cwlw, cwl_season, cwl_day, True, war_win_streak, cw_log)}'
+                f'{self.of.cwlw_preparation(cwlw, cwl_season, await self.get_season_cwl_amount(cwl_season) == 2, cwl_day, True, war_win_streak, cw_log)}'
             )
             pings.append(False)
             await self.set_activity_preparation_message_sent(

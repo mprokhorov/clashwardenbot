@@ -44,7 +44,7 @@ class OutputFormatter:
         return '\n'.join(map(str.lstrip, text.split('\n')))
 
     @staticmethod
-    async def season(season_data: str) -> str:
+    def season(season_data: str, show_half: bool) -> str:
         month_in_russian = {
             '01': 'январь',
             '02': 'февраль',
@@ -59,12 +59,15 @@ class OutputFormatter:
             '11': 'ноябрь',
             '12': 'декабрь'
         }
-        if len(season_data.split('-')) == 2:
+        if not show_half or len(season_data.split('-')) == 2:
             year, month = season_data.split('-')
             return f'{month_in_russian[month]} {year}'
         else:
-            year, month, half = season_data.split('-')
-            return f'{month_in_russian[month]} {year} ({half}-я половина)'
+            year, month, day = season_data.split('-')
+            if int(day) < 15:
+                return f'{month_in_russian[month]} {year} (1-я половина)'
+            else:
+                return f'{month_in_russian[month]} {year} (2-я половина)'
 
 
     @staticmethod
@@ -581,11 +584,11 @@ class OutputFormatter:
         return text
 
     def cwlw_preparation(
-            self, cwlw: dict, cwl_season: str, cwl_day: int,
+            self, cwlw: dict, cwl_season: str, show_half: bool, cwl_day: int,
             show_opponent_info: bool, war_win_streak: Optional[int], clan_war_log: Optional[dict]
     ) -> str:
         text = (
-            f'Сезон ЛВК: {self.season(cwl_season)}, день {cwl_day + 1}\n'
+            f'Сезон ЛВК: {self.season(cwl_season, show_half)}, день {cwl_day + 1}\n'
             f'{self.to_html(cwlw['clan']['name'])} vs {self.to_html(cwlw['opponent']['name'])}\n'
             f'{cwlw['teamSize']} 🪖 vs {cwlw['teamSize']} 🪖\n'
             f'\n'
@@ -596,13 +599,13 @@ class OutputFormatter:
         return text
 
     def cwlw_in_war_or_war_ended(
-            self, cwlw: dict, cwl_season: str, cwl_day: int,
+            self, cwlw: dict, cwl_season: str, show_half: bool, cwl_day: int,
             show_opponent_info: bool, war_win_streak: Optional[int], clan_war_log: Optional[dict]
     ) -> str:
         text = (
             f'{self.event_datetime(Event.CWLW, cwlw['startTime'], cwlw['endTime'], True)}\n'
             f'\n'
-            f'Сезон ЛВК: {self.season(cwl_season)}, день {cwl_day + 1}\n'
+            f'Сезон ЛВК: {self.season(cwl_season, show_half)}, день {cwl_day + 1}\n'
             f'{self.to_html(cwlw['clan']['name'])} vs {self.to_html(cwlw['opponent']['name'])}\n'
             f'{cwlw['teamSize']} 🪖 vs {cwlw['teamSize']} 🪖\n'
             f'{cwlw['clan']['attacks']} 🗡 vs {cwlw['opponent']['attacks']} 🗡\n'

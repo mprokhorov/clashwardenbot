@@ -101,13 +101,13 @@ async def cwl_info(
     if dm.of.state(cwlw) in ['preparation']:
         war_win_streak = await dm.load_war_win_streak(cwlw['opponent']['tag'])
         cw_log = await dm.load_clan_war_log(cwlw['opponent']['tag'])
-        text += dm.of.cwlw_preparation(cwlw, cwl_season, cwl_day, show_opponent_info, war_win_streak, cw_log)
+        text += dm.of.cwlw_preparation(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, show_opponent_info, war_win_streak, cw_log)
         button_upper_row.append(opponent_info_button)
         button_upper_row.append(update_button)
     elif dm.of.state(cwlw) in ['inWar', 'warEnded']:
         war_win_streak = await dm.load_war_win_streak(cwlw['opponent']['tag'])
         cw_log = await dm.load_clan_war_log(cwlw['opponent']['tag'])
-        text += dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, cwl_day, show_opponent_info, war_win_streak, cw_log)
+        text += dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, show_opponent_info, war_win_streak, cw_log)
         button_upper_row.append(opponent_info_button)
         button_upper_row.append(update_button)
     else:
@@ -202,13 +202,13 @@ async def cwl_map(
         ).pack()
     )
     if dm.of.state(cwlw) in ['preparation']:
-        text += dm.of.cwlw_preparation(cwlw, cwl_season, cwl_day, False, None, None)
+        text += dm.of.cwlw_preparation(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)
         button_upper_row.append(update_button)
     elif dm.of.state(cwlw) in ['inWar', 'warEnded']:
         clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
         opponent_map_position_by_player = dm.of.calculate_map_positions(cwlw['opponent']['members'])
         text += (
-            f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, cwl_day, False, None, None)}'
+            f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)}'
             f'\n'
         )
         if cwl_map_side == CWLMapSide.opponent:
@@ -328,7 +328,7 @@ async def cwl_attacks(
             ''', dm.clan_tag)
             clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
             text += (
-                f'{dm.of.cwlw_preparation(cwlw, cwl_season, cwl_day, False, None, None)}'
+                f'{dm.of.cwlw_preparation(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)}'
                 f'\n'
                 f'Список участников дня ЛВК клана:\n'
                 f'{dm.of.war_members(cwlw['clan']['members'], clan_map_position_by_player, rows)}'
@@ -344,7 +344,7 @@ async def cwl_attacks(
             ''', cwlw['opponent']['tag'])
             opponent_map_position_by_player = dm.of.calculate_map_positions(cwlw['opponent']['members'])
             text += (
-                f'{dm.of.cwlw_preparation(cwlw, cwl_season, cwl_day, False, None, None)}'
+                f'{dm.of.cwlw_preparation(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)}'
                 f'\n'
                 f'Список участников дня ЛВК противника:\n'
                 f'{dm.of.war_members(cwlw['opponent']['members'], opponent_map_position_by_player, rows)}'
@@ -355,7 +355,7 @@ async def cwl_attacks(
         clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
         opponent_map_position_by_player = dm.of.calculate_map_positions(cwlw['opponent']['members'])
         text += (
-            f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, cwl_day, False, None, None)}'
+            f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)}'
             f'\n'
         )
         if cwl_attacks_side == CWLAttacksSide.clan:
@@ -433,7 +433,7 @@ async def cwl_rating_list(
     cwl_season, _ = await dm.load_clan_war_league()
     player_tags = await dm.get_cwl_ratings(cwl_season, cwlws)
     text += (
-        f'Сезон ЛВК: {dm.of.season(cwl_season)}\n'
+        f'Сезон ЛВК: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
         f'\n'
     )
     details_button = InlineKeyboardButton(
@@ -472,7 +472,7 @@ async def cwl_rating_choose(
     cwlws = await dm.load_clan_war_league_own_wars()
     cwl_season, _ = await dm.load_clan_war_league()
     text += (
-        f'Сезон ЛВК: {dm.of.season(cwl_season)}\n'
+        f'Сезон ЛВК: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
         f'\n'
         f'Выберите участника ЛВК:'
     )
@@ -518,7 +518,7 @@ async def cwl_rating_details(
     player_tags = await dm.get_cwl_ratings(cwl_season, cwlws)
     r = player_tags[callback_data.player_tag]
     text += (
-        f'Сезон ЛВК: {dm.of.season(cwl_season)}\n'
+        f'Сезон ЛВК: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
         f'\n'
         f'Итого баллов: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n\n'
     )
@@ -621,7 +621,7 @@ async def cwl_skips(
     )
     cwl_season, _ = await dm.load_clan_war_league()
     if dm.of.state(cwlw) in ['preparation']:
-        text += dm.of.cwlw_preparation(cwlw, cwl_season, cwl_day, False, None, None)
+        text += dm.of.cwlw_preparation(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)
         button_upper_row.append(update_button)
     elif dm.of.state(cwlw) in ['inWar', 'warEnded']:
         cwl_season, _ = await dm.load_clan_war_league()
@@ -633,7 +633,7 @@ async def cwl_skips(
                 )
             )
         text += (
-            f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, cwl_day, False, None, None)}'
+            f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)}'
             f'\n'
             f'{await dm.skips(chat_id=chat_id, players=cwlw_members, ping=False, desired_attacks_spent=1)}'
         )
@@ -679,7 +679,7 @@ async def cwl_ping(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, O
     cwl_day, cwlw = await dm.load_clan_war_league_own_war()
     cwl_season, _ = await dm.load_clan_war_league()
     if dm.of.state(cwlw) in ['preparation']:
-        text += dm.of.cwlw_preparation(cwlw, cwl_season, cwl_day, False, None, None)
+        text += dm.of.cwlw_preparation(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)
     elif dm.of.state(cwlw) in ['inWar', 'warEnded']:
         cwl_season, _ = await dm.load_clan_war_league()
         cwlw_members = []
@@ -690,7 +690,7 @@ async def cwl_ping(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, O
                 )
             )
         text += (
-            f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, cwl_day, False, None, None)}'
+            f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)}'
             f'\n'
             f'{await dm.skips(chat_id=chat_id, players=cwlw_members, ping=True, desired_attacks_spent=1)}'
         )
@@ -791,7 +791,7 @@ async def cwl_clans(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[Inlin
     cwl_season, _ = await dm.load_clan_war_league()
     cwl_day, _ = await dm.load_clan_war_league_own_war()
     text += (
-        f'Сезон: {dm.of.season(cwl_season)}\n'
+        f'Сезон: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
         f'\n'
     )
     cwl_clan_list = []
@@ -837,7 +837,7 @@ async def cwl_days_list(
         text = (
             f'<b>⚔️ Информация об ЛВК</b>\n'
             f'\n'
-            f'Сезон: {dm.of.season(cwl_season)}\n'
+            f'Сезон: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
             f'\n'
             f'Выберите день:\n'
         )
@@ -846,7 +846,7 @@ async def cwl_days_list(
         text = (
             f'<b>🗺️ Карта ЛВК</b>\n'
             f'\n'
-            f'Сезон: {dm.of.season(cwl_season)}\n'
+            f'Сезон: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
             f'\n'
             f'Выберите день:\n'
         )
@@ -855,7 +855,7 @@ async def cwl_days_list(
         text = (
             f'<b>🗡️ Атаки в ЛВК</b>\n'
             f'\n'
-            f'Сезон: {dm.of.season(cwl_season)}\n'
+            f'Сезон: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
             f'\n'
             f'Выберите день:\n'
         )
@@ -864,7 +864,7 @@ async def cwl_days_list(
         text = (
             f'<b>🕒 Не проатаковавшие в ЛВК</b>\n'
             f'\n'
-            f'Сезон: {dm.of.season(cwl_season)}\n'
+            f'Сезон: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
             f'\n'
             f'Выберите день:\n'
         )

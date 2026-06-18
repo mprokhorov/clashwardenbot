@@ -151,6 +151,30 @@ class DatabaseManager:
         await self.dump_clan_war_league_wars()
         await self.load_clan_war_league_rating_config()
 
+    async def maintenance_alert(self, old_war: dict, war: dict) -> None:
+        texts = []
+        pings = []
+        are_wars_same = old_war.get('preparationStartTime') == war.get('preparationStartTime')
+        is_war_shifted = old_war.get('startTime') != war.get('startTime') or old_war.get('endTime') != war.get('endTime')
+        if are_wars_same and is_war_shifted:
+            texts.append(
+                f'<b>💬 Технический перерыв завершён</b>\n'
+            )
+            pings.append(False)
+        for text, ping in zip(texts, pings):
+            rows = await self.acquired_connection.fetch('''
+                SELECT chat_id
+                FROM clan_chat
+                WHERE clan_tag = $1 AND send_activity_updates
+            ''', self.clan_tag)
+            for row in rows:
+                await self.send_message_to_chat(
+                    user_id=None,
+                    chat_id=row['chat_id'],
+                    message_text=text,
+                    user_ids_to_ping=None
+                )
+
     async def load_privacy_mode(self) -> bool:
         self.is_privacy_mode_enabled = await self.acquired_connection.fetchval('''
             SELECT privacy_mode_enabled
@@ -583,7 +607,7 @@ class DatabaseManager:
         war_win_streak = await self.load_war_win_streak(clan_tag=new_clan_war['opponent']['tag'])
         clan_war_log = await self.load_clan_war_log(clan_tag=new_clan_war['opponent']['tag'])
         await self.clan_war_alert(old_clan_war, new_clan_war, war_win_streak, clan_war_log)
-
+        await self.maintenance_alert(old_clan_war, new_clan_war)
         return True
 
     async def load_clan_war(self) -> Optional[dict]:
@@ -926,7 +950,6 @@ class DatabaseManager:
             ON CONFLICT (clan_tag, war_tag)
             DO UPDATE SET (season, day, data) = ($3, $4, $5)
         ''', rows)
-
         new_cwl_season, _ = await self.load_clan_war_league()
         new_cwlws = await self.load_clan_war_league_own_wars()
         opponent_players_tasks = [
@@ -950,6 +973,7 @@ class DatabaseManager:
             war_win_streak = await self.load_war_win_streak(clan_tag=new_cwlw['opponent']['tag'])
             cw_log = await self.load_clan_war_log(clan_tag=new_cwlw['opponent']['tag'])
             await self.clan_war_league_war_alert(old_cwlw, new_cwlw, new_cwl_season, cwl_day, war_win_streak, cw_log)
+            await self.maintenance_alert(old_cwlw, new_cwlw)
         return True
 
     async def load_clan_war_league_own_war(self) -> tuple[Optional[int], Optional[dict]]:
@@ -1156,12 +1180,15 @@ class DatabaseManager:
                 defense_stars = None
                 defense_destruction_percentage = None
             cwlw_rating[player['tag']] = CWLWPlayerRating(
-                attack_new_stars, attack_destruction_percentage, attack_map_position,
-                defense_stars, defense_destruction_percentage
+                attack_new_stars,
+                attack_destruction_percentage,
+                attack_map_position,
+                defense_stars,
+                defense_destruction_percentage
             )
         return cwlw_rating
 
-    async def get_cwl_ratings(self, cwl_season: str, cwlws: list[dict]) -> dict[str, CWLPlayerRating]:
+    async def get_cwl_ratings(self, cwl_season: str, cwlws: list[dict], count_bonus_points: bool) -> dict[str, CWLPlayerRating]:
         player_tags = {}
         for cwlw in cwlws:
             for player in cwlw['clan']['members']:
@@ -1169,13 +1196,14 @@ class DatabaseManager:
                     [], [], [], [], [], [], None, None, None, None, None, None, None, None
                 )
         wars_ended = sum(1 if self.of.state(cwlw) == 'warEnded' else 0 for cwlw in cwlws)
-        rows = await self.acquired_connection.fetch('''
-            SELECT player_tag, points
-            FROM clan_war_league_rating
-            WHERE (clan_tag, season) = ($1, $2)
-        ''', self.clan_tag, cwl_season)
-        for row in rows:
-            player_tags[row['player_tag']].bonus_points.append(row['points'])
+        if count_bonus_points:
+            rows = await self.acquired_connection.fetch('''
+                SELECT player_tag, points
+                FROM clan_war_league_rating
+                WHERE (clan_tag, season) = ($1, $2)
+            ''', self.clan_tag, cwl_season)
+            for row in rows:
+                player_tags[row['player_tag']].bonus_points.append(row['points'])
         for cwlw in cwlws:
             cwlw_rating = await self.get_clan_war_league_rating(cwlw)
             for player_tag, rating in cwlw_rating.items():

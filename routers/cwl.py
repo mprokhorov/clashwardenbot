@@ -58,6 +58,7 @@ class CWLCallbackFactory(CallbackData, prefix='cwl'):
     player_tag: Optional[str] = None
     cwl_list_order: Optional[CWLListOrder] = None
     show_skips: Optional[bool] = None
+    count_bonus_points: Optional[bool] = None
 
 
 async def cwl_info(
@@ -419,8 +420,12 @@ async def cwl_attacks(
 async def cwl_rating_list(
         dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    if callback_data is not None and callback_data.count_bonus_points is not None:
+        count_bonus_points = callback_data.count_bonus_points
+    else:
+        count_bonus_points = True
     text = (
-        f'<b>🪙 Рейтинг участников ЛВК</b>\n'
+        f'<b>🪙 Рейтинг участников ЛВК ({'с бонусами' if count_bonus_points else 'без бонусов'})</b>\n'
         f'\n'
     )
     if not await dm.load_clan_war_league_rating_config():
@@ -431,36 +436,44 @@ async def cwl_rating_list(
         return text, ParseMode.HTML, None
     cwlws = await dm.load_clan_war_league_own_wars()
     cwl_season, _ = await dm.load_clan_war_league()
-    player_tags = await dm.get_cwl_ratings(cwl_season, cwlws)
+    player_tags = await dm.get_cwl_ratings(cwl_season, cwlws, count_bonus_points)
     text += (
         f'Сезон ЛВК: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
         f'\n'
     )
     details_button = InlineKeyboardButton(
         text='📋 Подробнее',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_choose).pack()
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_choose, count_bonus_points=count_bonus_points).pack()
+    )
+    count_bonus_points_button = InlineKeyboardButton(
+        text='🪙 Без бонусов' if count_bonus_points else '🪙 С бонусами',
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_list, count_bonus_points=not count_bonus_points).pack()
     )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_list, update=True).pack()
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_list, count_bonus_points=count_bonus_points, update=True).pack()
     )
     rules_button = InlineKeyboardButton(
         text='❓ Правила',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_rules).pack()
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_rules, count_bonus_points=count_bonus_points).pack()
     )
     for i, (player_tag, r) in enumerate(sorted(player_tags.items(), key=lambda x: x[1].total_points, reverse=True)):
         text += f'{i + 1}. {dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n'
     if len(player_tags) == 0:
         text += f'Список пуст\n'
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[details_button, rules_button], [update_button]])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[details_button, count_bonus_points_button, rules_button], [update_button]])
     return text, ParseMode.HTML, keyboard
 
 
 async def cwl_rating_choose(
         dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    if callback_data is not None and callback_data.count_bonus_points is not None:
+        count_bonus_points = callback_data.count_bonus_points
+    else:
+        count_bonus_points = True
     text = (
-        f'<b>🪙 Рейтинг участников ЛВК</b>\n'
+        f'<b>🪙 Рейтинг участников ЛВК ({'с бонусами' if count_bonus_points else 'без бонусов'})</b>\n'
         f'\n'
     )
     if not await dm.load_clan_war_league_rating_config():
@@ -476,25 +489,30 @@ async def cwl_rating_choose(
         f'\n'
         f'Выберите участника ЛВК:'
     )
-    player_tags = await dm.get_cwl_ratings(cwl_season, cwlws)
+    player_tags = await dm.get_cwl_ratings(cwl_season, cwlws, count_bonus_points)
     button_rows = [[
         InlineKeyboardButton(
             text=f'{dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n',
             callback_data=CWLCallbackFactory(
                 output_view=OutputView.cwl_rating_details,
+                count_bonus_points=count_bonus_points,
                 player_tag=player_tag
             ).pack()
         )] for i, (player_tag, r) in enumerate(sorted(player_tags.items(), key=lambda x: x[1].total_points, reverse=True))
     ]
     back_button = InlineKeyboardButton(
         text='⬅️ Назад',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_list).pack()
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_list, count_bonus_points=count_bonus_points).pack()
+    )
+    count_bonus_points_button = InlineKeyboardButton(
+        text='🪙 Без бонусов' if count_bonus_points else '🪙 С бонусами',
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_choose, count_bonus_points=not count_bonus_points).pack()
     )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_choose, update=True).pack()
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_choose, count_bonus_points=count_bonus_points, update=True).pack()
     )
-    button_rows.append([back_button, update_button])
+    button_rows.append([back_button, count_bonus_points_button, update_button])
     keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     return text, ParseMode.HTML, keyboard
 
@@ -502,8 +520,12 @@ async def cwl_rating_choose(
 async def cwl_rating_details(
         dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    if callback_data is not None and callback_data.count_bonus_points is not None:
+        count_bonus_points = callback_data.count_bonus_points
+    else:
+        count_bonus_points = True
     text = (
-        f'<b>🪙 Рейтинг игрока {dm.load_name(callback_data.player_tag)}</b>\n'
+        f'<b>🪙 Рейтинг игрока {dm.load_name(callback_data.player_tag)} ({'с бонусами' if count_bonus_points else 'без бонусов'})</b>\n'
         f'\n'
     )
     if not await dm.load_clan_war_league_rating_config():
@@ -515,7 +537,7 @@ async def cwl_rating_details(
     cwlws = await dm.load_clan_war_league_own_wars()
     wars_ended = sum(dm.of.state(cwlw) == 'warEnded' for cwlw in cwlws)
     cwl_season, _ = await dm.load_clan_war_league()
-    player_tags = await dm.get_cwl_ratings(cwl_season, cwlws)
+    player_tags = await dm.get_cwl_ratings(cwl_season, cwlws, count_bonus_points)
     r = player_tags[callback_data.player_tag]
     text += (
         f'Сезон ЛВК: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
@@ -556,17 +578,22 @@ async def cwl_rating_details(
         text += f'Бонусы: {dm.of.format_and_rstrip(r.total_bonus_points, 3)} 🪙'
     back_button = InlineKeyboardButton(
         text='⬅️ Назад',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_choose).pack()
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_choose, count_bonus_points=count_bonus_points).pack()
+    )
+    count_bonus_points_button = InlineKeyboardButton(
+        text='🪙 Без бонусов' if count_bonus_points else '🪙 С бонусами',
+        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_details, player_tag=callback_data.player_tag, count_bonus_points=not count_bonus_points).pack()
     )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
         callback_data=CWLCallbackFactory(
             output_view=OutputView.cwl_rating_details,
             player_tag=callback_data.player_tag,
+            count_bonus_points=count_bonus_points,
             update=True
         ).pack()
     )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[back_button, update_button]])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[back_button, count_bonus_points_button, update_button]])
     return text, ParseMode.HTML, keyboard
 
 

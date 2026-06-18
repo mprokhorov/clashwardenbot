@@ -59,16 +59,15 @@ class OutputFormatter:
             '11': 'ноябрь',
             '12': 'декабрь'
         }
-        if not show_half or len(season_data.split('-')) == 2:
-            year, month = season_data.split('-')
-            return f'{month_in_russian[month]} {year}'
-        else:
+        if len(season_data.split('-')) == 3 and show_half:
             year, month, day = season_data.split('-')
             if int(day) < 15:
                 return f'{month_in_russian[month]} {year} (1-я половина)'
             else:
                 return f'{month_in_russian[month]} {year} (2-я половина)'
-
+        else:
+            year, month, *_ = season_data.split('-')
+            return f'{month_in_russian[month]} {year}'
 
     @staticmethod
     def role(role_data: str) -> str:

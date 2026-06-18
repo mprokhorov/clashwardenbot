@@ -776,19 +776,22 @@ class OutputFormatter:
         for opponent_member in opponent_data['members']:
             if opponent_member.get('bestOpponentAttack') is not None:
                 best_opponent_attack = opponent_member['bestOpponentAttack']
+                opponent_member_lines[opponent_map_position_by_player[opponent_member['tag']] - 1] += (
+                    f'{opponent_map_position_by_player[opponent_member['tag']]}. '
+                )
                 if best_opponent_attack['stars'] > 0:
                     opponent_member_lines[opponent_map_position_by_player[opponent_member['tag']] - 1] += (
-                        f'{opponent_map_position_by_player[opponent_member['tag']]}. '
-                        f'{'⭐' * best_opponent_attack['stars']} '
-                        f'({best_opponent_attack['destructionPercentage']}%) '
-                        f'⬅️ '
-                        f'{clan_map_position_by_player[best_opponent_attack['attackerTag']]}. '
-                        f'{self.to_html(clan_player_name_by_player_tag[best_opponent_attack['attackerTag']])}'
+                        f'{'⭐' * best_opponent_attack['stars']} ({best_opponent_attack['destructionPercentage']}%) '
                     )
                 else:
                     opponent_member_lines[opponent_map_position_by_player[opponent_member['tag']] - 1] += (
-                        f'{opponent_map_position_by_player[opponent_member['tag']]}. 0%'
+                        f'{best_opponent_attack['destructionPercentage']}% '
                     )
+                opponent_member_lines[opponent_map_position_by_player[opponent_member['tag']] - 1] += (
+                    f'⬅️ '
+                    f'{clan_map_position_by_player[best_opponent_attack['attackerTag']]}. '
+                    f'{self.to_html(clan_player_name_by_player_tag[best_opponent_attack['attackerTag']])}'
+                )
             else:
                 opponent_member_lines[opponent_map_position_by_player[opponent_member['tag']] - 1] += (
                     f'{opponent_map_position_by_player[opponent_member['tag']]}. 0%'

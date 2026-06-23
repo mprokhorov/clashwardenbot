@@ -151,17 +151,10 @@ class DatabaseManager:
         await self.dump_clan_war_league_wars()
         await self.load_clan_war_league_rating_config()
 
-    async def maintenance_alert(self, old_war: dict, war: dict) -> None:
-        texts = []
-        pings = []
+    async def maintenance_alert(self, old_war: dict, war: dict) -> bool:
         are_wars_same = old_war.get('preparationStartTime') == war.get('preparationStartTime')
         is_war_shifted = old_war.get('startTime') != war.get('startTime') or old_war.get('endTime') != war.get('endTime')
         if are_wars_same and is_war_shifted:
-            texts.append(
-                f'<b>💬 Технический перерыв завершён</b>\n'
-            )
-            pings.append(False)
-        for text, ping in zip(texts, pings):
             rows = await self.acquired_connection.fetch('''
                 SELECT chat_id
                 FROM clan_chat
@@ -171,9 +164,11 @@ class DatabaseManager:
                 await self.send_message_to_chat(
                     user_id=None,
                     chat_id=row['chat_id'],
-                    message_text=text,
+                    message_text=f'<b>💬 Технический перерыв завершён</b>\n',
                     user_ids_to_ping=None
                 )
+            return True
+        return False
 
     async def load_privacy_mode(self) -> bool:
         self.is_privacy_mode_enabled = await self.acquired_connection.fetchval('''
@@ -969,11 +964,13 @@ class DatabaseManager:
             old_cwlws = []
         if len(old_cwlws) < len(new_cwlws):
             old_cwlws += [{'preparationStartTime': None, 'state': None}] * (len(new_cwlws) - len(old_cwlws))
+        was_maintenance_alert_sent = False
         for cwl_day, (old_cwlw, new_cwlw) in enumerate(zip(old_cwlws, new_cwlws)):
             war_win_streak = await self.load_war_win_streak(clan_tag=new_cwlw['opponent']['tag'])
             cw_log = await self.load_clan_war_log(clan_tag=new_cwlw['opponent']['tag'])
             await self.clan_war_league_war_alert(old_cwlw, new_cwlw, new_cwl_season, cwl_day, war_win_streak, cw_log)
-            await self.maintenance_alert(old_cwlw, new_cwlw)
+            if not was_maintenance_alert_sent:
+                was_maintenance_alert_sent = await self.maintenance_alert(old_cwlw, new_cwlw)
         return True
 
     async def load_clan_war_league_own_war(self) -> tuple[Optional[int], Optional[dict]]:

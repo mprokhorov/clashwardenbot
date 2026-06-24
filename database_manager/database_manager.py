@@ -1168,9 +1168,12 @@ class DatabaseManager:
     async def get_clan_war_league_rating(self, cwlw: dict) -> dict[str, CWLWPlayerRating]:
         cwlw_rating = {}
         opponent_map_position_by_tag = self.of.calculate_map_positions(cwlw['opponent']['members'])
-        opponent_town_hall_level_by_tag = {
-            member['tag']: member['townHallLevel'] for member in cwlw['opponent']['members']
-        }
+        opponent_player_rows = await self.acquired_connection.fetch('''
+            SELECT player_tag, town_hall_level
+            FROM opponent_player
+            WHERE clan_tag = $1
+        ''', cwlw['opponent']['tag'])
+        opponent_town_hall_level_by_tag = {row['player_tag']: row['town_hall_level'] for row in opponent_player_rows}
         if self.of.state(cwlw) == 'preparation':
             return {}
         defense_attack_counts_by_tag = {}
@@ -1197,7 +1200,7 @@ class DatabaseManager:
                     attack_new_stars = 0
                     attack_destruction_percentage = 0
                 attack_map_position = opponent_map_position_by_tag[attack['defenderTag']]
-                attack_town_hall_level = opponent_town_hall_level_by_tag[attack['defenderTag']]
+                attack_town_hall_level = opponent_town_hall_level_by_tag.get(attack['defenderTag'])
             else:
                 if self.of.state(cwlw) == 'inWar':
                     attack_new_stars, attack_destruction_percentage, attack_map_position = None, None, None

@@ -1112,7 +1112,9 @@ class DatabaseManager:
         row = await self.acquired_connection.fetchrow('''
             SELECT
                 attack_stars_points, attack_destruction_points, attack_map_position_points,
-                attack_skip_points, defense_stars_points, defense_destruction_points
+                attack_max_town_hall_points, attack_max_town_hall_minus_one_points,
+                attack_max_town_hall_minus_two_points, attack_skip_points, defense_stars_points,
+                defense_destruction_points, defense_additional_attack_points
             FROM clan_war_league_rating_config
             WHERE clan_tag = $1
         ''', self.clan_tag)
@@ -1120,9 +1122,32 @@ class DatabaseManager:
             return False
         self.cwl_rating_config = CWLRatingConfig(
             row['attack_stars_points'], row['attack_destruction_points'], row['attack_map_position_points'],
-            row['attack_skip_points'], row['defense_stars_points'], row['defense_destruction_points']
+            row['attack_max_town_hall_points'], row['attack_max_town_hall_minus_one_points'],
+            row['attack_max_town_hall_minus_two_points'], row['attack_skip_points'], row['defense_stars_points'],
+            row['defense_destruction_points'], row['defense_additional_attack_points']
         )
         return True
+
+    async def get_max_town_hall_level(self) -> int:
+        row = await self.acquired_connection.fetchrow('''
+            SELECT MAX(town_hall_level) AS max_town_hall_level
+            FROM (
+                SELECT town_hall_level FROM player
+                UNION ALL
+                SELECT town_hall_level FROM opponent_player
+            ) AS town_hall_levels
+        ''')
+        return row['max_town_hall_level']
+
+    def get_attack_town_hall_bonus_points(self, attack_town_hall_level: int, max_town_hall_level: int) -> float:
+        if attack_town_hall_level == max_town_hall_level:
+            return self.cwl_rating_config.attack_max_town_hall_points
+        elif attack_town_hall_level == max_town_hall_level - 1:
+            return self.cwl_rating_config.attack_max_town_hall_minus_one_points
+        elif attack_town_hall_level == max_town_hall_level - 2:
+            return self.cwl_rating_config.attack_max_town_hall_minus_two_points
+        else:
+            return 0.0
 
     async def load_player_rating_config(self) -> bool:
         rows = await self.acquired_connection.fetch('''
@@ -1143,8 +1168,17 @@ class DatabaseManager:
     async def get_clan_war_league_rating(self, cwlw: dict) -> dict[str, CWLWPlayerRating]:
         cwlw_rating = {}
         opponent_map_position_by_tag = self.of.calculate_map_positions(cwlw['opponent']['members'])
+        opponent_town_hall_level_by_tag = {
+            member['tag']: member['townHallLevel'] for member in cwlw['opponent']['members']
+        }
         if self.of.state(cwlw) == 'preparation':
             return {}
+        defense_attack_counts_by_tag = {}
+        for opponent_member in cwlw['opponent']['members']:
+            for opponent_attack in opponent_member.get('attacks', []):
+                defense_attack_counts_by_tag[opponent_attack['defenderTag']] = (
+                    defense_attack_counts_by_tag.get(opponent_attack['defenderTag'], 0) + 1
+                )
         for player in cwlw['clan']['members']:
             if len(player.get('attacks', [])) > 0:
                 attack = player['attacks'][0]
@@ -1163,11 +1197,14 @@ class DatabaseManager:
                     attack_new_stars = 0
                     attack_destruction_percentage = 0
                 attack_map_position = opponent_map_position_by_tag[attack['defenderTag']]
+                attack_town_hall_level = opponent_town_hall_level_by_tag[attack['defenderTag']]
             else:
                 if self.of.state(cwlw) == 'inWar':
                     attack_new_stars, attack_destruction_percentage, attack_map_position = None, None, None
+                    attack_town_hall_level = None
                 else:
                     attack_new_stars, attack_destruction_percentage, attack_map_position = 0, 0, None
+                    attack_town_hall_level = None
             if self.of.state(cwlw) == 'warEnded':
                 if player.get('bestOpponentAttack'):
                     defense_stars = player['bestOpponentAttack']['stars']
@@ -1175,15 +1212,19 @@ class DatabaseManager:
                 else:
                     defense_stars = 0
                     defense_destruction_percentage = 0
+                defense_additional_attacks = max(0, defense_attack_counts_by_tag.get(player['tag'], 0) - 1)
             else:
                 defense_stars = None
                 defense_destruction_percentage = None
+                defense_additional_attacks = None
             cwlw_rating[player['tag']] = CWLWPlayerRating(
                 attack_new_stars,
                 attack_destruction_percentage,
                 attack_map_position,
+                attack_town_hall_level,
                 defense_stars,
-                defense_destruction_percentage
+                defense_destruction_percentage,
+                defense_additional_attacks
             )
         return cwlw_rating
 
@@ -1192,9 +1233,10 @@ class DatabaseManager:
         for cwlw in cwlws:
             for player in cwlw['clan']['members']:
                 player_tags[player['tag']] = CWLPlayerRating(
-                    [], [], [], [], [], [], None, None, None, None, None, None, None, None
+                    [], [], [], [], [], [], [], [], None, None, None, None, None, None, None, None, None, None
                 )
         wars_ended = sum(1 if self.of.state(cwlw) == 'warEnded' else 0 for cwlw in cwlws)
+        max_town_hall_level = await self.get_max_town_hall_level()
         if count_bonus_points:
             rows = await self.acquired_connection.fetch('''
                 SELECT player_tag, points
@@ -1212,10 +1254,14 @@ class DatabaseManager:
                     player_tags[player_tag].attack_destruction_percentage.append(rating.attack_destruction_percentage)
                 if rating.attack_map_position is not None:
                     player_tags[player_tag].attack_map_position.append(rating.attack_map_position)
+                if rating.attack_town_hall_level is not None:
+                    player_tags[player_tag].attack_town_hall_level.append(rating.attack_town_hall_level)
                 if rating.defense_stars is not None:
                     player_tags[player_tag].defense_stars.append(rating.defense_stars)
                 if rating.defense_destruction_percentage is not None:
                     player_tags[player_tag].defense_destruction_percentage.append(rating.defense_destruction_percentage)
+                if rating.defense_additional_attacks is not None:
+                    player_tags[player_tag].defense_additional_attacks.append(rating.defense_additional_attacks)
         for player_tag, r in player_tags.items():
             player_tags[player_tag].total_attack_new_stars_points = sum(
                 self.cwl_rating_config.attack_stars_points[attack_new_stars]
@@ -1229,6 +1275,10 @@ class DatabaseManager:
                 self.cwl_rating_config.attack_map_position_points * (31 - attack_map_position)
                 for attack_map_position in r.attack_map_position
             )
+            player_tags[player_tag].total_attack_town_hall_bonus_points = sum(
+                self.get_attack_town_hall_bonus_points(attack_town_hall_level, max_town_hall_level)
+                for attack_town_hall_level in r.attack_town_hall_level
+            )
             wars_skips = wars_ended - len(r.attack_new_stars)
             if wars_skips < 0:
                 wars_skips = 0
@@ -1241,14 +1291,20 @@ class DatabaseManager:
                 self.cwl_rating_config.defense_destruction_points * (100 - defense_destruction_percentage)
                 for defense_destruction_percentage in r.defense_destruction_percentage
             )
+            player_tags[player_tag].total_defense_additional_attacks_points = sum(
+                self.cwl_rating_config.defense_additional_attack_points * defense_additional_attacks
+                for defense_additional_attacks in r.defense_additional_attacks
+            )
             player_tags[player_tag].total_bonus_points = sum(player_tags[player_tag].bonus_points)
             player_tags[player_tag].total_points = (
                     player_tags[player_tag].total_attack_new_stars_points +
                     player_tags[player_tag].total_attack_destruction_percentage_points +
                     player_tags[player_tag].total_attack_map_position_points +
+                    player_tags[player_tag].total_attack_town_hall_bonus_points +
                     player_tags[player_tag].total_attack_skips_points +
                     player_tags[player_tag].total_defense_stars_points +
                     player_tags[player_tag].total_defense_destruction_percentage_points +
+                    player_tags[player_tag].total_defense_additional_attacks_points +
                     player_tags[player_tag].total_bonus_points
             )
         return player_tags

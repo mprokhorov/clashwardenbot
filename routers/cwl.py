@@ -549,14 +549,17 @@ async def cwl_rating_details(
             f'Награды за атаки: {dm.of.format_and_rstrip(
                 r.total_attack_new_stars_points +
                 r.total_attack_destruction_percentage_points +
-                r.total_attack_map_position_points, 3
+                r.total_attack_map_position_points +
+                r.total_attack_town_hall_bonus_points, 3
             )} 🪙\n'
             f'{dm.of.format_and_rstrip(r.total_attack_new_stars_points, 3)} 🪙 '
             f'({', '.join(map(lambda x: f'{x} ⭐', r.attack_new_stars))})\n'
             f'{dm.of.format_and_rstrip(r.total_attack_destruction_percentage_points, 3)} 🪙 '
             f'({', '.join(map(lambda x: f'{x}%', r.attack_destruction_percentage))})\n'
             f'{dm.of.format_and_rstrip(r.total_attack_map_position_points, 3)} 🪙 '
-            f'({', '.join(map(lambda x: f'#{x}', r.attack_map_position))})\n\n'
+            f'({', '.join(map(lambda x: f'#{x}', r.attack_map_position))})\n'
+            f'{dm.of.format_and_rstrip(r.total_attack_town_hall_bonus_points, 3)} 🪙 '
+            f'({', '.join(map(lambda x: f'ТХ{x}', r.attack_town_hall_level))})\n\n'
         )
     if r.total_attack_skips_points != 0:
         text += (
@@ -567,12 +570,15 @@ async def cwl_rating_details(
         text += (
             f'Награды за оборону: {dm.of.format_and_rstrip(
                 r.total_defense_stars_points +
-                r.total_defense_destruction_percentage_points, 3
+                r.total_defense_destruction_percentage_points +
+                r.total_defense_additional_attacks_points, 3
             )} 🪙\n'
             f'{dm.of.format_and_rstrip(r.total_defense_stars_points, 3)} 🪙 '
             f'({', '.join(map(lambda x: f'{x} ⭐', r.defense_stars))})\n'
             f'{dm.of.format_and_rstrip(r.total_defense_destruction_percentage_points, 3)} 🪙 '
-            f'({', '.join(map(lambda x: f'{x}%', r.defense_destruction_percentage))})\n\n'
+            f'({', '.join(map(lambda x: f'{x}%', r.defense_destruction_percentage))})\n'
+            f'{dm.of.format_and_rstrip(r.total_defense_additional_attacks_points, 3)} 🪙 '
+            f'({', '.join(map(lambda x: f'+{x}', r.defense_additional_attacks))})\n\n'
         )
     if r.total_bonus_points != 0:
         text += f'Бонусы: {dm.of.format_and_rstrip(r.total_bonus_points, 3)} 🪙'
@@ -607,15 +613,22 @@ async def cwl_rating_rules(
             f'Рейтинг выключен'
         )
         return text, ParseMode.HTML, None
+    max_town_hall_level = await dm.get_max_town_hall_level()
     text += dm.of.full_dedent(f'''
         <b>Награды за атаки:</b>
         За атаку на 3 звезды даётся {dm.of.points_count_to_text(dm.cwl_rating_config.attack_stars_points[3])}, на 2 звезды — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_stars_points[2])}, на 1 звезду — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_stars_points[1])}, за 0 звезд или пропуск атаки — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_stars_points[0])}. При этом количество звёзд определяется как разница между результатом атаки и последней атакой (в случае, если игрок атаковал уже атакованную базу). Также за каждую атаку начисляются баллы по формуле: [процент разрушения] * {dm.of.points_count_to_text(dm.cwl_rating_config.attack_destruction_points)}. Вне зависимости от результата атаки начисляются баллы по формуле: (31 - [номер места противника на карте]) * {dm.of.points_count_to_text(dm.cwl_rating_config.attack_map_position_points)}.
-        
+
+        <b>Бонус за ТХ цели:</b>
+        Текущий максимальный уровень ратуши в игре: ТХ{max_town_hall_level}. За атаку на базу с ТХ{max_town_hall_level} начисляется дополнительно {dm.of.points_count_to_text(dm.cwl_rating_config.attack_max_town_hall_points)}, на базу с ТХ{max_town_hall_level - 1} — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_max_town_hall_minus_one_points)}, на базу с ТХ{max_town_hall_level - 2} — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_max_town_hall_minus_two_points)}. За атаки на более низкие ТХ дополнительный бонус не начисляется. Максимальный ТХ определяется автоматически и обновляется по мере появления в игре новых уровней ратуши.
+
         <b>Штрафы за пропуски:</b>
         За неучастие в раундах ЛВК штрафы начисляются в зависимости от количества пропусков: 0 пропусков — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[0])}, 1 пропуск — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[1])}, 2 пропуска — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[2])}, 3 пропуска — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[3])}, 4 пропуска — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[4])}, 5 пропусков — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[5])}, 6 пропусков — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[6])}, 7 пропусков — {dm.of.points_count_to_text(dm.cwl_rating_config.attack_skip_points[7])}.
-        
+
         <b>Награды за оборону:</b>
-        Если базу игрока атаковали на 0 звёзд, ему начисляется {dm.of.points_count_to_text(dm.cwl_rating_config.defense_stars_points[0])}, на 1 звезду — {dm.of.points_count_to_text(dm.cwl_rating_config.defense_stars_points[1])}, на 2 звезды — {dm.of.points_count_to_text(dm.cwl_rating_config.defense_stars_points[2])}. Также (в случае, если базу игрока атаковали) начисляются бонусы по формуле: (100 - [процент разрушения]) * {dm.of.points_count_to_text(dm.cwl_rating_config.defense_destruction_points)}.
+        Если базу игрока атаковали на 0 звёзд, ему начисляется {dm.of.points_count_to_text(dm.cwl_rating_config.defense_stars_points[0])}, на 1 звезду — {dm.of.points_count_to_text(dm.cwl_rating_config.defense_stars_points[1])}, на 2 звезды — {dm.of.points_count_to_text(dm.cwl_rating_config.defense_stars_points[2])}. Также (в случае, если базу игрока атаковали) начисляются бонусы по формуле: (100 - [процент разрушения]) * {dm.of.points_count_to_text(dm.cwl_rating_config.defense_destruction_points)}. Если базу за всю войну ни разу не атаковали, начисляется стандартная награда за оборону на 0 звёзд с максимальным бонусом за прочность.
+
+        <b>Доп. награда за оборону:</b>
+        За каждую повторную атаку противника на одну и ту же базу (2-ю, 3-ю и т.д. попытку перебития) начисляется {dm.of.points_count_to_text(dm.cwl_rating_config.defense_additional_attack_points)} независимо от исхода этой атаки.
         ''')
     back_button = InlineKeyboardButton(
         text='⬅️ Назад',

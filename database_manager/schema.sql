@@ -194,7 +194,11 @@ create table clan_war_league_rating_config
     attack_skip_points         double precision[],
     defense_stars_points       double precision[],
     defense_destruction_points double precision,
-    attack_map_position_points double precision
+    attack_map_position_points double precision,
+    attack_max_town_hall_points double precision not null default 0.5,
+    attack_max_town_hall_minus_one_points double precision not null default 0.2,
+    attack_max_town_hall_minus_two_points double precision not null default 0.05,
+    defense_additional_attack_points double precision not null default 0.3
 );
 
 create table clan_war_league_war

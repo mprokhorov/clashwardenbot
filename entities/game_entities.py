@@ -76,8 +76,10 @@ class CWLWPlayerRating:
     attack_new_stars: int
     attack_destruction_percentage: int
     attack_map_position: int
+    attack_town_hall_level: int
     defense_stars: int
     defense_destruction_percentage: int
+    defense_additional_attacks: int
 
 
 @dataclass
@@ -85,15 +87,19 @@ class CWLPlayerRating:
     attack_new_stars: list[int]
     attack_destruction_percentage: list[int]
     attack_map_position: list[int]
+    attack_town_hall_level: list[int]
     defense_stars: list[int]
     defense_destruction_percentage: list[int]
+    defense_additional_attacks: list[int]
     bonus_points: list[float]
     total_attack_new_stars_points: Optional[float]
     total_attack_destruction_percentage_points: Optional[float]
     total_attack_map_position_points: Optional[float]
+    total_attack_town_hall_bonus_points: Optional[float]
     total_attack_skips_points: Optional[float]
     total_defense_stars_points: Optional[float]
     total_defense_destruction_percentage_points: Optional[float]
+    total_defense_additional_attacks_points: Optional[float]
     total_bonus_points: Optional[float]
     total_points: Optional[float]
 
@@ -103,9 +109,13 @@ class CWLRatingConfig:
     attack_stars_points: list[float]
     attack_destruction_points: float
     attack_map_position_points: float
+    attack_max_town_hall_points: float
+    attack_max_town_hall_minus_one_points: float
+    attack_max_town_hall_minus_two_points: float
     attack_skip_points: list[float]
     defense_stars_points: list[float]
     defense_destruction_points: float
+    defense_additional_attack_points: float
 
 
 @dataclass

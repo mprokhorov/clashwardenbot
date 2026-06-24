@@ -145,13 +145,13 @@ create table clan_games
 
 create table clan_war
 (
-    clan_tag   varchar(16) not null
+    clan_tag               varchar(16) not null
         constraint clan_war_clan_clan_tag_fk
             references clan,
-    start_time timestamp   not null,
-    data       jsonb       not null,
+    preparation_start_time timestamp   not null,
+    data                   jsonb       not null,
     constraint clan_war_pk
-        primary key (clan_tag, start_time)
+        primary key (clan_tag, preparation_start_time)
 );
 
 create table clan_war_league
@@ -170,8 +170,8 @@ create table clan_war_league_rating
     clan_tag         varchar(16)      not null,
     season           varchar(16)      not null,
     player_tag       varchar(16)      not null,
-    chat_id          integer          not null,
-    user_id          integer          not null,
+    chat_id          bigint           not null,
+    user_id          bigint           not null,
     change_timestamp timestamp        not null,
     points           double precision not null,
     constraint clan_war_league_rating_bot_user_clan_tag_chat_id_user_id_fk
@@ -218,13 +218,13 @@ create table clan_war_log
     data     jsonb       not null
 );
 
-create table ingore_updates_player
+create table ignore_updates_player
 (
     clan_tag   varchar(16) not null,
     player_tag varchar(16) not null,
-    constraint ingore_updates_player_pk
+    constraint ignore_updates_player_pk
         primary key (clan_tag, player_tag),
-    constraint ingore_updates_player_player_clan_tag_player_tag_fk
+    constraint ignore_updates_player_player_clan_tag_player_tag_fk
         foreign key (clan_tag, player_tag) references player
 );
 
@@ -300,6 +300,34 @@ create table player_bot_user
         foreign key (clan_tag, chat_id, user_id) references bot_user,
     constraint player_bot_user_player_clan_tag_player_tag_fk
         foreign key (clan_tag, player_tag) references player
+);
+
+create table player_league
+(
+    clan_tag    varchar(16) not null,
+    player_tag  varchar(16) not null,
+    league_tier integer     not null,
+    league_date date        not null,
+    trophies    integer     not null,
+    constraint player_league_pk
+        primary key (clan_tag, player_tag, league_date),
+    constraint player_league_player_clan_tag_player_tag_fk
+        foreign key (clan_tag, player_tag) references player
+);
+
+create table player_rating_config
+(
+    clan_tag                  varchar(16) not null
+        constraint player_rating_config_clan_clan_tag_fk
+            references clan,
+    child_clan_tag            varchar(16) not null
+        constraint player_rating_config_clan_clan_tag_fk_2
+            references clan,
+    minimum_average_cwl_stars double precision[],
+    minimum_cwl_wars          integer,
+    cw_bonus                  double precision[],
+    constraint player_rating_config_pk
+        primary key (clan_tag, child_clan_tag)
 );
 
 create table raid_weekend

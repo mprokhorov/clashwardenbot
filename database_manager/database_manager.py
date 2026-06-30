@@ -1336,17 +1336,24 @@ class DatabaseManager:
         cwl_total_wars = {}
         cwl_clan_tag_by_player = {}
         for cwl_clan_tag in cwl_eligibility_config_by_clan_tag:
-            cwl_season_rows = await self.acquired_connection.fetch('''
-                SELECT DISTINCT season
+            cwl_rows = await self.acquired_connection.fetch('''
+                SELECT day, data
                 FROM clan_war_league_war
-                WHERE clan_tag = $1 AND season LIKE $2
-                ORDER BY season
+                WHERE clan_tag = $1 AND season LIKE $2 AND $1 IN (data->'clan'->>'tag', data->'opponent'->>'tag')
+                ORDER BY data->>'preparationStartTime'
             ''', cwl_clan_tag, f'{season}%')
-            for cwl_season_row in cwl_season_rows:
-                cwl_own_wars = await self.load_clan_war_league_own_wars(cwl_season_row['season'], cwl_clan_tag) or []
+            cwl_events = []
+            for cwl_row in cwl_rows:
+                cwl_own_war = json.loads(cwl_row['data'])
+                if cwl_own_war['opponent']['tag'] == cwl_clan_tag:
+                    cwl_own_war['clan'], cwl_own_war['opponent'] = cwl_own_war['opponent'], cwl_own_war['clan']
+                if cwl_row['day'] == 0 or not cwl_events:
+                    cwl_events.append([])
+                cwl_events[-1].append(cwl_own_war)
+            for cwl_event_wars in cwl_events:
                 event_stars_by_player = {}
                 event_wars_by_player = {}
-                for cwl_own_war in cwl_own_wars:
+                for cwl_own_war in cwl_event_wars:
                     for cwlw_member in cwl_own_war['clan']['members']:
                         cwlw_total_stars = sum(attack['stars'] for attack in cwlw_member.get('attacks', []))
                         event_stars_by_player[cwlw_member['tag']] = (

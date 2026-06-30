@@ -130,6 +130,8 @@ class PlayerRating:
     total_cwl_points: Optional[float]
     total_league_points: Optional[float]
     total_place_points: Optional[float]
+    total_raids_attack_points: Optional[float]
+    total_raids_gold_points: Optional[float]
     total_raids_points: Optional[float]
     total_cw_penalty_points: Optional[float]
     total_points: Optional[float]

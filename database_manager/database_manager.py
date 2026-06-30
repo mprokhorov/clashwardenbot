@@ -1125,7 +1125,7 @@ class DatabaseManager:
         return True
 
     async def load_player_rating_config(self) -> bool:
-        rows = await self.acquired_connection.fetchrows('''
+        rows = await self.acquired_connection.fetch('''
             SELECT child_clan_tag, minimum_average_cwl_stars, minimum_cwl_wars, cw_bonus
             FROM player_rating_config
             WHERE clan_tag = $1
@@ -1325,12 +1325,12 @@ class DatabaseManager:
                 raid_attack_list_by_tag[raid_member['tag']] = raid_attack_list_by_tag.get(raid_member['tag'], []) + [raid_member['attacks']]
 
         rows = await self.acquired_connection.fetch('''
-            SELECT cwl_clan_tag, minimum_average_cwl_stars, minimum_cwl_wars
+            SELECT child_clan_tag, minimum_average_cwl_stars, minimum_cwl_wars
             FROM player_rating_config
             WHERE clan_tag = $1 AND minimum_average_cwl_stars IS NOT NULL AND minimum_cwl_wars IS NOT NULL
         ''', self.clan_tag)
         cwl_eligibility_config_by_clan_tag = {
-            row['cwl_clan_tag']: (row['minimum_average_cwl_stars'], row['minimum_cwl_wars']) for row in rows
+            row['child_clan_tag']: (row['minimum_average_cwl_stars'], row['minimum_cwl_wars']) for row in rows
         }
         cwl_total_stars = {}
         cwl_total_wars = {}
@@ -1452,15 +1452,12 @@ class DatabaseManager:
                     place_points_by_tag[player_tag] = place_points_by_tag.get(player_tag, 0) + place_points
                 i = j + 1
 
-        raids_points_by_tag = {}
+        raids_gold_points_by_tag = {}
         for player_tag, gold_values in gold_list_by_tag.items():
-            raids_points_by_tag[player_tag] = raids_points_by_tag.get(player_tag, 0) + sum(
-                gold_points(gold) for gold in gold_values
-            )
+            raids_gold_points_by_tag[player_tag] = sum(gold_points(gold) for gold in gold_values)
+        raids_attack_points_by_tag = {}
         for player_tag, attack_values in raid_attack_list_by_tag.items():
-            raids_points_by_tag[player_tag] = raids_points_by_tag.get(player_tag, 0) + sum(
-                attacks / 6 * 3 for attacks in attack_values
-            )
+            raids_attack_points_by_tag[player_tag] = sum(attacks / 6 * 3 for attacks in attack_values)
 
         days_in_month = calendar.monthrange(*map(int, season.split('-')))[1]
         total_player_tags = {
@@ -1482,6 +1479,8 @@ class DatabaseManager:
                 total_cwl_points=None,
                 total_league_points=None,
                 total_place_points=None,
+                total_raids_attack_points=None,
+                total_raids_gold_points=None,
                 total_raids_points=None,
                 total_cw_penalty_points=None,
                 total_points=None
@@ -1509,9 +1508,13 @@ class DatabaseManager:
             rating.total_cwl_points = rating.cwl_total_stars / 21 * 55 + (5 if rating.cwl_total_stars >= 21 else 0)
             rating.total_league_points = league_points_by_tag.get(tag, 0) / days_in_month
             rating.total_place_points = place_points_by_tag.get(tag, 0) / days_in_month
-            rating.total_raids_points = (
-                raids_points_by_tag.get(tag, 0) / total_raid_weekends if total_raid_weekends > 0 else 0
+            rating.total_raids_attack_points = (
+                raids_attack_points_by_tag.get(tag, 0) / total_raid_weekends if total_raid_weekends > 0 else 0
             )
+            rating.total_raids_gold_points = (
+                raids_gold_points_by_tag.get(tag, 0) / total_raid_weekends if total_raid_weekends > 0 else 0
+            )
+            rating.total_raids_points = rating.total_raids_attack_points + rating.total_raids_gold_points
             rating.total_cw_penalty_points = cw_penalty_points_by_tag.get(tag, 0)
             rating.total_points = (
                 rating.total_cwl_points +

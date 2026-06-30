@@ -70,6 +70,37 @@ class OutputFormatter:
             return f'{month_in_russian[month]} {year}'
 
     @staticmethod
+    def league_name(league_tier: int) -> str:
+        league_brackets = [
+            (1, 3, 'Скелет'),
+            (4, 6, 'Варвар'),
+            (7, 9, 'Лучница'),
+            (10, 12, 'Колдун'),
+            (13, 15, 'Валькирия'),
+            (16, 18, 'Ведьма'),
+            (19, 21, 'Голем'),
+            (22, 24, 'П.Е.К.К.А.'),
+            (25, 27, 'Титан'),
+            (28, 30, 'Дракон'),
+            (31, 33, 'Электродракон')
+        ]
+        legend_league_names = {34: 'Легенда III', 35: 'Легенда II', 36: 'Легенда I'}
+        if league_tier in legend_league_names:
+            return legend_league_names[league_tier]
+        for low, high, name in league_brackets:
+            if low <= league_tier <= high:
+                return f'{name} {league_tier}'
+        return f'Лига {league_tier}'
+
+    @staticmethod
+    def previous_season(season: str) -> str:
+        year, month = map(int, season.split('-'))
+        if month == 1:
+            return f'{year - 1}-12'
+        else:
+            return f'{year}-{str(month - 1).zfill(2)}'
+
+    @staticmethod
     def role(role_data: str) -> str:
         role_in_russian = {
             'leader': 'глава',

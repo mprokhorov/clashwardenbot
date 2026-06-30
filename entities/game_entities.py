@@ -140,5 +140,5 @@ class PlayerRating:
 @dataclass
 class PlayerRatingConfig:
     minimum_average_cwl_stars: list[float]
-    minimum_cwl_stars: int
-    cw_bonus_points: list[float]
+    minimum_cwl_wars: int
+    cw_bonus: list[float]

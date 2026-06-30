@@ -27,6 +27,10 @@ class PlayerRatingCallbackFactory(CallbackData, prefix='player_rating'):
     season: Optional[str] = None
     player_tag: Optional[str] = None
     eligible_only: bool = True
+    page: int = 0
+
+
+PLAYER_RATING_CHOOSE_PAGE_SIZE = 20
 
 
 async def get_season_toggle_button(
@@ -50,6 +54,14 @@ async def get_season_toggle_button(
                 output_view=output_view, season=current_season, player_tag=player_tag, eligible_only=eligible_only
             ).pack()
         )
+
+
+def get_player_rating_pages(player_ratings: dict, page: int) -> tuple[list[tuple], int, int]:
+    sorted_entries = sorted(player_ratings.items(), key=lambda x: x[1].total_points, reverse=True)
+    page_count = max(1, (len(sorted_entries) + PLAYER_RATING_CHOOSE_PAGE_SIZE - 1) // PLAYER_RATING_CHOOSE_PAGE_SIZE)
+    page = min(max(page, 0), page_count - 1)
+    page_entries = sorted_entries[page * PLAYER_RATING_CHOOSE_PAGE_SIZE:(page + 1) * PLAYER_RATING_CHOOSE_PAGE_SIZE]
+    return page_entries, page, page_count
 
 
 async def player_rating_list(
@@ -127,6 +139,7 @@ async def player_rating_choose(
     else:
         season = current_season
     eligible_only = callback_data.eligible_only if callback_data is not None else True
+    requested_page = callback_data.page if callback_data is not None else 0
     title = 'Рейтинг игроков (только допущенные к розыгрышу)' if eligible_only else 'Рейтинг игроков (все игроки)'
     text = (
         f'<b>💎 {title}</b>\n'
@@ -135,18 +148,24 @@ async def player_rating_choose(
     player_ratings = await dm.get_player_ratings(season)
     if eligible_only:
         player_ratings = {player_tag: r for player_tag, r in player_ratings.items() if r.is_eligible_for_prize}
+    page_entries, page, page_count = get_player_rating_pages(player_ratings, requested_page)
     text += (
         f'Сезон: {dm.of.season(season, False)}\n'
         f'\n'
-        f'Выберите игрока:'
+        f'Выберите игрока'
+        f'{f" (страница {page + 1} из {page_count})" if page_count > 1 else ""}:'
     )
     button_rows = [[
         InlineKeyboardButton(
             text=f'{dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 💎',
             callback_data=PlayerRatingCallbackFactory(
-                output_view=OutputView.player_rating_details, season=season, player_tag=player_tag, eligible_only=eligible_only
+                output_view=OutputView.player_rating_details,
+                season=season,
+                player_tag=player_tag,
+                eligible_only=eligible_only,
+                page=page
             ).pack()
-        )] for player_tag, r in sorted(player_ratings.items(), key=lambda x: x[1].total_points, reverse=True)
+        )] for player_tag, r in page_entries
     ]
     if len(player_ratings) == 0:
         text += f'\nСписок пуст'
@@ -165,7 +184,7 @@ async def player_rating_choose(
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
         callback_data=PlayerRatingCallbackFactory(
-            output_view=OutputView.player_rating_choose, season=season, eligible_only=eligible_only, update=True
+            output_view=OutputView.player_rating_choose, season=season, eligible_only=eligible_only, page=page, update=True
         ).pack()
     )
     bottom_row = [back_button, toggle_eligible_only_button, update_button]
@@ -173,6 +192,23 @@ async def player_rating_choose(
     if season_toggle_button is not None:
         bottom_row.append(season_toggle_button)
     button_rows.append(bottom_row)
+    if page_count > 1:
+        page_row = []
+        if page > 0:
+            page_row.append(InlineKeyboardButton(
+                text='◀️ Предыдущая страница',
+                callback_data=PlayerRatingCallbackFactory(
+                    output_view=OutputView.player_rating_choose, season=season, eligible_only=eligible_only, page=page - 1
+                ).pack()
+            ))
+        if page < page_count - 1:
+            page_row.append(InlineKeyboardButton(
+                text='▶️ Следующая страница',
+                callback_data=PlayerRatingCallbackFactory(
+                    output_view=OutputView.player_rating_choose, season=season, eligible_only=eligible_only, page=page + 1
+                ).pack()
+            ))
+        button_rows.append(page_row)
     keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     return text, ParseMode.HTML, keyboard
 
@@ -260,7 +296,10 @@ async def player_rating_details(
     back_button = InlineKeyboardButton(
         text='⬅️ Назад',
         callback_data=PlayerRatingCallbackFactory(
-            output_view=OutputView.player_rating_choose, season=season, eligible_only=callback_data.eligible_only
+            output_view=OutputView.player_rating_choose,
+            season=season,
+            eligible_only=callback_data.eligible_only,
+            page=callback_data.page
         ).pack()
     )
     update_button = InlineKeyboardButton(
@@ -270,6 +309,7 @@ async def player_rating_details(
             season=season,
             player_tag=callback_data.player_tag,
             eligible_only=callback_data.eligible_only,
+            page=callback_data.page,
             update=True
         ).pack()
     )

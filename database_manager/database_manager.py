@@ -1339,7 +1339,7 @@ class DatabaseManager:
             cwl_own_wars = await self.load_clan_war_league_own_wars(season, cwl_clan_tag) or []
             for cwl_own_war in cwl_own_wars:
                 for cwlw_member in cwl_own_war['clan']['members']:
-                    cwlw_total_stars = sum(attack['stars'] for attack in cwlw_member['attacks'])
+                    cwlw_total_stars = sum(attack['stars'] for attack in cwlw_member.get('attacks', []))
                     cwl_total_stars[cwlw_member['tag']] = cwl_total_stars.get(cwlw_member['tag'], 0) + cwlw_total_stars
                     cwl_total_wars[cwlw_member['tag']] = cwl_total_wars.get(cwlw_member['tag'], 0) + 1
                     if cwlw_member['tag'] not in cwl_clan_tag_by_player:

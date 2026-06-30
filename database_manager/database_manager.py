@@ -77,7 +77,7 @@ class DatabaseManager:
 
         self.is_privacy_mode_enabled = None
         self.blocked_user_ids = None
-        self.ingore_updates_player_tags = None
+        self.ignore_updates_player_tags = None
 
         self.player_rating_config = None
         self.cwl_rating_config = None
@@ -135,7 +135,7 @@ class DatabaseManager:
         await self.load_privacy_mode()
         await self.set_actual_commands()
         await self.load_blocked_users()
-        await self.load_ingore_updates_players()
+        await self.load_ignore_updates_players()
         await self.dump_clan()
         were_clan_members_dumped = await self.check_clan_members()
         old_contributions = await self.load_capital_contributions()
@@ -223,13 +223,13 @@ class DatabaseManager:
         ''', self.clan_tag)
         self.blocked_user_ids = [row['user_id'] for row in rows]
 
-    async def load_ingore_updates_players(self) -> None:
+    async def load_ignore_updates_players(self) -> None:
         rows = await self.acquired_connection.fetch('''
             SELECT player_tag
-            FROM ingore_updates_player
+            FROM ignore_updates_player
             WHERE clan_tag = $1
         ''', self.clan_tag)
-        self.ingore_updates_player_tags = [row['player_tag'] for row in rows]
+        self.ignore_updates_player_tags = [row['player_tag'] for row in rows]
 
     async def check_clan_members(self) -> bool:
         were_clan_members_dumped = False
@@ -256,7 +256,7 @@ class DatabaseManager:
         not_ignored_player_tags = [
             player_tag
             for player_tag in left_clan_member_tags + joined_clan_member_tags
-            if player_tag not in self.ingore_updates_player_tags
+            if player_tag not in self.ignore_updates_player_tags
         ]
         if left_clan_member_tags + joined_clan_member_tags:
             were_clan_members_dumped = True

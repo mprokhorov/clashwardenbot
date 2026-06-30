@@ -1262,7 +1262,7 @@ class DatabaseManager:
         raid_attack_list_by_tag = {}
         for row in rows:
             raid_weekend = json.loads(row['data'])
-            gold_by_tag = {}
+            gold_by_tag_raw = {}
             for raids_member in raid_weekend['members']:
                 if raids_member['tag'] not in gold_by_tag_raw:
                     gold_by_tag_raw[raids_member['tag']] = raids_member['capitalResourcesLooted']
@@ -1301,7 +1301,7 @@ class DatabaseManager:
             for player_tag, gold in gold_by_tag.items():
                 gold_list_by_tag[player_tag] = gold_list_by_tag.get(player_tag, []) + [gold]
             for raid_member in raid_weekend['members']:
-                raid_attack_list_by_tag[player_tag] = raid_attack_list_by_tag.get(raid_member['tag'], []) + [raid_member['attacks']]
+                raid_attack_list_by_tag[raid_member['tag']] = raid_attack_list_by_tag.get(raid_member['tag'], []) + [raid_member['attacks']]
 
         rows = await self.acquired_connection.fetch('''
             SELECT cwl_clan_tag

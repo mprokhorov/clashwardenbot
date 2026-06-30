@@ -159,11 +159,11 @@ async def player_rating_details(
         f'Сезон: {dm.of.season(season, False)}\n'
         f'\n'
         f'Итого очков: {dm.of.format_and_rstrip(r.total_points, 3)} 💎\n'
+        f'Допуск к розыгрышу: {"✅" if r.is_eligible_for_prize else "❌"}\n'
         f'\n'
     )
     if r.cwl_total_wars > 0:
         cwl_config = dm.player_rating_config.get(r.cwl_clan_tag)
-        text += f'Допуск к розыгрышу: {"✅" if r.is_eligible_for_prize else "❌"}\n'
         average_cwl_stars = r.cwl_total_stars / r.cwl_total_wars
         if cwl_config is not None:
             bracket = min(r.town_hall_difference, len(cwl_config.minimum_average_cwl_stars) - 1)

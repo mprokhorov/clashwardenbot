@@ -122,7 +122,7 @@ class PlayerRating:
     cwl_total_stars: int
     cwl_total_wars: int
     league_numbers: list[int]
-    leagues_places: list[float]
+    leagues_places: list[tuple[int, int]]
     raids_total_attacks: list[int]
     raids_total_gold: list[int]
     cw_total_attacks: list[int]

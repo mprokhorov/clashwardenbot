@@ -195,7 +195,9 @@ async def player_rating_details(
             f'Дней в лигах: {leagues_text}\n'
         )
         if len(r.leagues_places) > 0:
-            places_text = ', '.join(f'#{dm.of.format_and_rstrip(place, 1)}' for place in r.leagues_places)
+            places_text = ', '.join(
+                f'#{start}' if start == end else f'#{start}-{end}' for start, end in r.leagues_places
+            )
             text += f'Места в клане: {places_text}\n'
         text += f'\n'
     if len(r.raids_total_attacks) > 0:

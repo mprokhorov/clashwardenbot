@@ -1304,7 +1304,7 @@ class DatabaseManager:
                         AND player_bot_user.user_id = bot_user.user_id
                         AND is_user_in_chat
                   WHERE player.clan_tag = $1
-              ''', self.clan_tag, raid_weekend['members'])
+              ''', self.clan_tag, list(gold_by_tag_raw))
             users_by_tag = {player_tag: [] for player_tag in [row_users['player_tag'] for row_users in rows_users]}
             for row_users in rows_users:
                 users_by_tag[row_users['player_tag']].append(row_users['user_id'])

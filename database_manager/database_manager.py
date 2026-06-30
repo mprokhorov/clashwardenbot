@@ -1268,7 +1268,6 @@ class DatabaseManager:
                     gold_by_tag_raw[raids_member['tag']] = raids_member['capitalResourcesLooted']
                 else:
                     gold_by_tag_raw[raids_member['tag']] += raids_member['capitalResourcesLooted']
-            gold_by_tag = {player_tag: 0 for player_tag in gold_by_tag_raw}
             rows_users = await self.acquired_connection.fetch('''
                 SELECT DISTINCT bot_user.user_id, player.player_tag
                 FROM
@@ -1290,7 +1289,7 @@ class DatabaseManager:
             tags_by_user = {user_id: [] for user_id in [row_users['user_id'] for row_users in rows_users]}
             for row_users in rows_users:
                 tags_by_user[row_users['user_id']].append(row_users['player_tag'])
-            gold_by_tag_raw = {}
+            gold_by_tag = {player_tag: 0 for player_tag in gold_by_tag_raw}
             for player_tag in gold_by_tag_raw:
                 if player_tag not in users_by_tag or len(users_by_tag[player_tag]) == 0:
                     gold_by_tag[player_tag] = gold_by_tag_raw[player_tag]

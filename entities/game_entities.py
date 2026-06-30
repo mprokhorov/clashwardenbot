@@ -119,8 +119,8 @@ class HeroEquipment:
 class PlayerRating:
     town_hall_difference: int
     cwl_clan_tag: Optional[str]
-    cwl_total_stars: list[int]
-    cwl_total_wars: list[int]
+    cwl_total_stars: int
+    cwl_total_wars: int
     league_numbers: list[int]
     leagues_places: list[tuple[int, int]]
     raids_total_attacks: list[int]

@@ -162,24 +162,22 @@ async def player_rating_details(
         f'Допуск к розыгрышу: {"✅" if r.is_eligible_for_prize else "❌"}\n'
         f'\n'
     )
-    if sum(r.cwl_total_wars) > 0:
+    if r.cwl_total_wars > 0:
         cwl_config = dm.player_rating_config.get(r.cwl_clan_tag)
-        total_cwl_wars = sum(r.cwl_total_wars)
-        average_cwl_stars = sum(r.cwl_total_stars) / total_cwl_wars
+        average_cwl_stars = r.cwl_total_stars / r.cwl_total_wars
         if cwl_config is not None:
             bracket = min(r.town_hall_difference, len(cwl_config.minimum_average_cwl_stars) - 1)
             text += (
-                f'Войн ЛВК: {total_cwl_wars} ⚔️ / {cwl_config.minimum_cwl_wars} ⚔️\n'
+                f'Войн ЛВК: {r.cwl_total_wars} ⚔️ / {cwl_config.minimum_cwl_wars} ⚔️\n'
                 f'Среднее количество звёзд: '
                 f'{dm.of.format_and_rstrip(average_cwl_stars, 1)} ⭐ / '
                 f'{dm.of.format_and_rstrip(cwl_config.minimum_average_cwl_stars[bracket], 1)} ⭐\n'
             )
         else:
-            text += f'Войн ЛВК: {total_cwl_wars} ⚔️\n'
-        cwl_stars_text = '+'.join(str(event_stars) for event_stars in r.cwl_total_stars)
+            text += f'Войн ЛВК: {r.cwl_total_wars} ⚔️\n'
         text += (
             f'\n'
-            f'Очков за ЛВК: {dm.of.format_and_rstrip(r.total_cwl_points, 3)} 💎 ({cwl_stars_text} ⭐)\n'
+            f'Очков за ЛВК: {dm.of.format_and_rstrip(r.total_cwl_points, 3)} 💎 ({r.cwl_total_stars} ⭐)\n'
             f'\n'
         )
     if len(r.league_numbers) > 0:

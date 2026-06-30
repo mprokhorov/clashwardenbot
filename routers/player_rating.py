@@ -26,10 +26,11 @@ class PlayerRatingCallbackFactory(CallbackData, prefix='player_rating'):
     update: bool = False
     season: Optional[str] = None
     player_tag: Optional[str] = None
+    eligible_only: bool = True
 
 
 async def get_season_toggle_button(
-        dm: DatabaseManager, output_view: OutputView, season: str, player_tag: Optional[str] = None
+        dm: DatabaseManager, output_view: OutputView, season: str, eligible_only: bool, player_tag: Optional[str] = None
 ) -> Optional[InlineKeyboardButton]:
     current_season = dm.of.utc_now().strftime('%Y-%m')
     if season == current_season:
@@ -38,7 +39,7 @@ async def get_season_toggle_button(
             return InlineKeyboardButton(
                 text='⬅️ Прошлый месяц',
                 callback_data=PlayerRatingCallbackFactory(
-                    output_view=output_view, season=previous_season, player_tag=player_tag
+                    output_view=output_view, season=previous_season, player_tag=player_tag, eligible_only=eligible_only
                 ).pack()
             )
         return None
@@ -46,7 +47,7 @@ async def get_season_toggle_button(
         return InlineKeyboardButton(
             text='➡️ Текущий месяц',
             callback_data=PlayerRatingCallbackFactory(
-                output_view=output_view, season=current_season, player_tag=player_tag
+                output_view=output_view, season=current_season, player_tag=player_tag, eligible_only=eligible_only
             ).pack()
         )
 
@@ -54,20 +55,27 @@ async def get_season_toggle_button(
 async def player_rating_list(
         dm: DatabaseManager, callback_data: Optional[PlayerRatingCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (
-        f'<b>💎 Рейтинг игроков (только допущенные к розыгрышу)</b>\n'
-        f'\n'
-    )
     if not await dm.load_player_rating_config():
-        text += f'Рейтинг выключен'
+        text = (
+            f'<b>💎 Рейтинг игроков</b>\n'
+            f'\n'
+            f'Рейтинг выключен'
+        )
         return text, ParseMode.HTML, None
     current_season = dm.of.utc_now().strftime('%Y-%m')
     if callback_data is not None and callback_data.season is not None:
         season = callback_data.season
     else:
         season = current_season
+    eligible_only = callback_data.eligible_only if callback_data is not None else True
+    title = 'Рейтинг игроков (только допущенные к розыгрышу)' if eligible_only else 'Рейтинг игроков (все игроки)'
+    text = (
+        f'<b>💎 {title}</b>\n'
+        f'\n'
+    )
     player_ratings = await dm.get_player_ratings(season)
-    player_ratings = {player_tag: r for player_tag, r in player_ratings.items() if r.is_eligible_for_prize}
+    if eligible_only:
+        player_ratings = {player_tag: r for player_tag, r in player_ratings.items() if r.is_eligible_for_prize}
     text += (
         f'Сезон: {dm.of.season(season, False)}\n'
         f'\n'
@@ -78,36 +86,55 @@ async def player_rating_list(
         text += f'Список пуст\n'
     details_button = InlineKeyboardButton(
         text='📋 Подробнее',
-        callback_data=PlayerRatingCallbackFactory(output_view=OutputView.player_rating_choose, season=season).pack()
+        callback_data=PlayerRatingCallbackFactory(
+            output_view=OutputView.player_rating_choose, season=season, eligible_only=eligible_only
+        ).pack()
+    )
+    toggle_eligible_only_button = InlineKeyboardButton(
+        text='👥 Показать всех' if eligible_only else '✅ Только допущенные',
+        callback_data=PlayerRatingCallbackFactory(
+            output_view=OutputView.player_rating_list, season=season, eligible_only=not eligible_only
+        ).pack()
     )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=PlayerRatingCallbackFactory(output_view=OutputView.player_rating_list, season=season, update=True).pack()
+        callback_data=PlayerRatingCallbackFactory(
+            output_view=OutputView.player_rating_list, season=season, eligible_only=eligible_only, update=True
+        ).pack()
     )
-    button_upper_row = [details_button]
-    season_toggle_button = await get_season_toggle_button(dm, OutputView.player_rating_list, season)
+    button_upper_row = [details_button, toggle_eligible_only_button]
+    bottom_row = [update_button]
+    season_toggle_button = await get_season_toggle_button(dm, OutputView.player_rating_list, season, eligible_only)
     if season_toggle_button is not None:
-        button_upper_row.append(season_toggle_button)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[button_upper_row, [update_button]])
+        bottom_row.append(season_toggle_button)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[button_upper_row, bottom_row])
     return text, ParseMode.HTML, keyboard
 
 
 async def player_rating_choose(
         dm: DatabaseManager, callback_data: Optional[PlayerRatingCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    text = (
-        f'<b>💎 Рейтинг игроков (все игроки)</b>\n'
-        f'\n'
-    )
     if not await dm.load_player_rating_config():
-        text += f'Рейтинг выключен'
+        text = (
+            f'<b>💎 Рейтинг игроков</b>\n'
+            f'\n'
+            f'Рейтинг выключен'
+        )
         return text, ParseMode.HTML, None
     current_season = dm.of.utc_now().strftime('%Y-%m')
     if callback_data is not None and callback_data.season is not None:
         season = callback_data.season
     else:
         season = current_season
+    eligible_only = callback_data.eligible_only if callback_data is not None else True
+    title = 'Рейтинг игроков (только допущенные к розыгрышу)' if eligible_only else 'Рейтинг игроков (все игроки)'
+    text = (
+        f'<b>💎 {title}</b>\n'
+        f'\n'
+    )
     player_ratings = await dm.get_player_ratings(season)
+    if eligible_only:
+        player_ratings = {player_tag: r for player_tag, r in player_ratings.items() if r.is_eligible_for_prize}
     text += (
         f'Сезон: {dm.of.season(season, False)}\n'
         f'\n'
@@ -117,20 +144,32 @@ async def player_rating_choose(
         InlineKeyboardButton(
             text=f'{dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 💎',
             callback_data=PlayerRatingCallbackFactory(
-                output_view=OutputView.player_rating_details, season=season, player_tag=player_tag
+                output_view=OutputView.player_rating_details, season=season, player_tag=player_tag, eligible_only=eligible_only
             ).pack()
         )] for player_tag, r in sorted(player_ratings.items(), key=lambda x: x[1].total_points, reverse=True)
     ]
+    if len(player_ratings) == 0:
+        text += f'\nСписок пуст'
     back_button = InlineKeyboardButton(
         text='⬅️ Назад',
-        callback_data=PlayerRatingCallbackFactory(output_view=OutputView.player_rating_list, season=season).pack()
+        callback_data=PlayerRatingCallbackFactory(
+            output_view=OutputView.player_rating_list, season=season, eligible_only=eligible_only
+        ).pack()
+    )
+    toggle_eligible_only_button = InlineKeyboardButton(
+        text='👥 Показать всех' if eligible_only else '✅ Только допущенные',
+        callback_data=PlayerRatingCallbackFactory(
+            output_view=OutputView.player_rating_choose, season=season, eligible_only=not eligible_only
+        ).pack()
     )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=PlayerRatingCallbackFactory(output_view=OutputView.player_rating_choose, season=season, update=True).pack()
+        callback_data=PlayerRatingCallbackFactory(
+            output_view=OutputView.player_rating_choose, season=season, eligible_only=eligible_only, update=True
+        ).pack()
     )
-    bottom_row = [back_button, update_button]
-    season_toggle_button = await get_season_toggle_button(dm, OutputView.player_rating_choose, season)
+    bottom_row = [back_button, toggle_eligible_only_button, update_button]
+    season_toggle_button = await get_season_toggle_button(dm, OutputView.player_rating_choose, season, eligible_only)
     if season_toggle_button is not None:
         bottom_row.append(season_toggle_button)
     button_rows.append(bottom_row)
@@ -220,7 +259,9 @@ async def player_rating_details(
         )
     back_button = InlineKeyboardButton(
         text='⬅️ Назад',
-        callback_data=PlayerRatingCallbackFactory(output_view=OutputView.player_rating_choose, season=season).pack()
+        callback_data=PlayerRatingCallbackFactory(
+            output_view=OutputView.player_rating_choose, season=season, eligible_only=callback_data.eligible_only
+        ).pack()
     )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
@@ -228,12 +269,13 @@ async def player_rating_details(
             output_view=OutputView.player_rating_details,
             season=season,
             player_tag=callback_data.player_tag,
+            eligible_only=callback_data.eligible_only,
             update=True
         ).pack()
     )
     bottom_row = [back_button, update_button]
     season_toggle_button = await get_season_toggle_button(
-        dm, OutputView.player_rating_details, season, player_tag=callback_data.player_tag
+        dm, OutputView.player_rating_details, season, callback_data.eligible_only, player_tag=callback_data.player_tag
     )
     if season_toggle_button is not None:
         bottom_row.append(season_toggle_button)

@@ -1524,6 +1524,11 @@ class DatabaseManager:
                 rating.total_cw_penalty_points
             )
 
+        player_rating = {
+            player_tag: rating for player_tag, rating in player_rating.items()
+            if player_tag in town_hall_levels or rating.total_points != 0
+        }
+
         return player_rating
 
     async def dump_user(self, chat: Chat, user: User) -> None:

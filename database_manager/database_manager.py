@@ -1371,7 +1371,9 @@ class DatabaseManager:
         rows = await self.acquired_connection.fetch('''
             SELECT DISTINCT ON (player_tag) player_tag, town_hall_level
             FROM player
-            WHERE clan_tag = $1 OR clan_tag IN (SELECT child_clan_tag FROM child_clan WHERE father_clan_tag = $1)
+            WHERE
+                is_player_in_clan
+                AND (clan_tag = $1 OR clan_tag IN (SELECT child_clan_tag FROM child_clan WHERE father_clan_tag = $1))
             ORDER BY player_tag, town_hall_level DESC
         ''', self.clan_tag)
         town_hall_levels = {row['player_tag']: row['town_hall_level'] for row in rows}

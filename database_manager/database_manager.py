@@ -1466,7 +1466,7 @@ class DatabaseManager:
         }
         player_rating = {
             player_tag: PlayerRating(
-                town_hall_difference=MAX_TOWN_HALL_LEVEL - town_hall_levels[player_tag],
+                town_hall_difference=MAX_TOWN_HALL_LEVEL - town_hall_levels.get(player_tag, MAX_TOWN_HALL_LEVEL),
                 cwl_clan_tag=None,
                 cwl_total_stars=0,
                 cwl_total_wars=0,

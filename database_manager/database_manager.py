@@ -417,6 +417,7 @@ class DatabaseManager:
             VALUES ($1, $2, NOW() AT TIME ZONE 'UTC', $3, $4)
             ON CONFLICT (clan_tag, player_tag, league_date)
             DO UPDATE SET (league_tier, trophies) = ($3, $4)
+            WHERE (player_league.league_tier, player_league.trophies) < ($3, $4)
         ''', league_tier_rows)
         return True
 

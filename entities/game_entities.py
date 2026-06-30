@@ -122,11 +122,17 @@ class PlayerRating:
     cwl_total_stars: int
     cwl_total_wars: int
     league_numbers: list[int]
-    leagues_places: list[int]
+    leagues_places: list[float]
     raids_total_attacks: list[int]
     raids_total_gold: list[int]
     cw_total_attacks: list[int]
     is_eligible_for_prize: bool
+    total_cwl_points: Optional[float]
+    total_league_points: Optional[float]
+    total_place_points: Optional[float]
+    total_raids_points: Optional[float]
+    total_cw_penalty_points: Optional[float]
+    total_points: Optional[float]
 
 
 @dataclass

@@ -55,7 +55,7 @@ async def player_rating_list(
         dm: DatabaseManager, callback_data: Optional[PlayerRatingCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = (
-        f'<b>💎 Рейтинг игроков</b>\n'
+        f'<b>💎 Рейтинг игроков (только допущенные к розыгрышу)</b>\n'
         f'\n'
     )
     if not await dm.load_player_rating_config():
@@ -67,6 +67,7 @@ async def player_rating_list(
     else:
         season = current_season
     player_ratings = await dm.get_player_ratings(season)
+    player_ratings = {player_tag: r for player_tag, r in player_ratings.items() if r.is_eligible_for_prize}
     text += (
         f'Сезон: {dm.of.season(season, False)}\n'
         f'\n'
@@ -95,7 +96,7 @@ async def player_rating_choose(
         dm: DatabaseManager, callback_data: Optional[PlayerRatingCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = (
-        f'<b>💎 Рейтинг игроков</b>\n'
+        f'<b>💎 Рейтинг игроков (все игроки)</b>\n'
         f'\n'
     )
     if not await dm.load_player_rating_config():

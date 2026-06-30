@@ -1335,29 +1335,29 @@ class DatabaseManager:
         cwl_total_stars = {}
         cwl_total_wars = {}
         cwl_clan_tag_by_player = {}
-        cwl_season_count_by_clan_tag = {}
         for cwl_clan_tag in cwl_eligibility_config_by_clan_tag:
-            cwl_event_count = await self.acquired_connection.fetchval('''
-                SELECT COUNT(*)
+            cwl_season_rows = await self.acquired_connection.fetch('''
+                SELECT DISTINCT season
                 FROM clan_war_league_war
-                WHERE clan_tag = $1 AND season LIKE $2 AND day = 0
+                WHERE clan_tag = $1 AND season LIKE $2
+                ORDER BY season
             ''', cwl_clan_tag, f'{season}%')
-            cwl_season_count_by_clan_tag[cwl_clan_tag] = max(cwl_event_count, 1)
-            cwl_rows = await self.acquired_connection.fetch('''
-                SELECT data
-                FROM clan_war_league_war
-                WHERE clan_tag = $1 AND season LIKE $2 AND $1 IN (data->'clan'->>'tag', data->'opponent'->>'tag')
-            ''', cwl_clan_tag, f'{season}%')
-            for cwl_row in cwl_rows:
-                cwl_own_war = json.loads(cwl_row['data'])
-                if cwl_own_war['opponent']['tag'] == cwl_clan_tag:
-                    cwl_own_war['clan'], cwl_own_war['opponent'] = cwl_own_war['opponent'], cwl_own_war['clan']
-                for cwlw_member in cwl_own_war['clan']['members']:
-                    cwlw_total_stars = sum(attack['stars'] for attack in cwlw_member.get('attacks', []))
-                    cwl_total_stars[cwlw_member['tag']] = cwl_total_stars.get(cwlw_member['tag'], 0) + cwlw_total_stars
-                    cwl_total_wars[cwlw_member['tag']] = cwl_total_wars.get(cwlw_member['tag'], 0) + 1
-                    if cwlw_member['tag'] not in cwl_clan_tag_by_player:
-                        cwl_clan_tag_by_player[cwlw_member['tag']] = cwl_own_war['clan']['tag']
+            for cwl_season_row in cwl_season_rows:
+                cwl_own_wars = await self.load_clan_war_league_own_wars(cwl_season_row['season'], cwl_clan_tag) or []
+                event_stars_by_player = {}
+                event_wars_by_player = {}
+                for cwl_own_war in cwl_own_wars:
+                    for cwlw_member in cwl_own_war['clan']['members']:
+                        cwlw_total_stars = sum(attack['stars'] for attack in cwlw_member.get('attacks', []))
+                        event_stars_by_player[cwlw_member['tag']] = (
+                            event_stars_by_player.get(cwlw_member['tag'], 0) + cwlw_total_stars
+                        )
+                        event_wars_by_player[cwlw_member['tag']] = event_wars_by_player.get(cwlw_member['tag'], 0) + 1
+                        if cwlw_member['tag'] not in cwl_clan_tag_by_player:
+                            cwl_clan_tag_by_player[cwlw_member['tag']] = cwl_own_war['clan']['tag']
+                for player_tag, event_wars in event_wars_by_player.items():
+                    cwl_total_stars.setdefault(player_tag, []).append(event_stars_by_player[player_tag])
+                    cwl_total_wars.setdefault(player_tag, []).append(event_wars)
 
         rows = await self.acquired_connection.fetch('''
             SELECT child_clan_tag, cw_bonus
@@ -1403,12 +1403,12 @@ class DatabaseManager:
             ):
                 continue
             minimum_average_cwl_stars, minimum_cwl_wars = cwl_eligibility_config_by_clan_tag[cwl_clan_tag]
-            total_wars = cwl_total_wars.get(player_tag, 0)
+            total_wars = sum(cwl_total_wars.get(player_tag, []))
             if total_wars < minimum_cwl_wars:
                 continue
             town_hall_difference = MAX_TOWN_HALL_LEVEL - town_hall_levels[player_tag]
             bracket = min(town_hall_difference, len(minimum_average_cwl_stars) - 1)
-            average_cwl_stars = cwl_total_stars.get(player_tag, 0) / total_wars
+            average_cwl_stars = sum(cwl_total_stars.get(player_tag, [])) / total_wars
             is_eligible_for_prize[player_tag] = average_cwl_stars >= minimum_average_cwl_stars[bracket]
 
         rows = await self.acquired_connection.fetch('''
@@ -1484,8 +1484,8 @@ class DatabaseManager:
             player_tag: PlayerRating(
                 town_hall_difference=MAX_TOWN_HALL_LEVEL - town_hall_levels.get(player_tag, MAX_TOWN_HALL_LEVEL),
                 cwl_clan_tag=None,
-                cwl_total_stars=0,
-                cwl_total_wars=0,
+                cwl_total_stars=[],
+                cwl_total_wars=[],
                 league_numbers=[],
                 leagues_places=[],
                 raids_total_attacks=[],
@@ -1521,9 +1521,8 @@ class DatabaseManager:
             player_rating[tag].leagues_places = leagues_places
 
         for tag, rating in player_rating.items():
-            cwl_season_count = cwl_season_count_by_clan_tag.get(rating.cwl_clan_tag, 1) or 1
-            rating.total_cwl_points = (
-                (rating.cwl_total_stars / 21 * 55 + (5 if rating.cwl_total_stars >= 21 else 0)) / cwl_season_count
+            rating.total_cwl_points = sum(
+                event_stars / 21 * 55 + (5 if event_stars >= 21 else 0) for event_stars in rating.cwl_total_stars
             )
             rating.total_league_points = league_points_by_tag.get(tag, 0) / days_in_month
             rating.total_place_points = place_points_by_tag.get(tag, 0) / days_in_month

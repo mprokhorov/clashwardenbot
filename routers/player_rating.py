@@ -1,4 +1,4 @@
-from contextlib import suppress
+import logging
 from enum import auto, IntEnum
 from typing import Optional
 
@@ -299,8 +299,10 @@ async def callback_player_rating_list(
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await player_rating_list(dm, callback_data)
-        with suppress(TelegramBadRequest):
+        try:
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        except TelegramBadRequest as e:
+            logging.info(f'player_rating edit_text failed: {e}')
     if callback_data.update:
         await callback_query.answer('Сообщение обновлено')
     else:
@@ -316,8 +318,10 @@ async def callback_player_rating_choose(
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await player_rating_choose(dm, callback_data)
-        with suppress(TelegramBadRequest):
+        try:
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        except TelegramBadRequest as e:
+            logging.info(f'player_rating edit_text failed: {e}')
     if callback_data.update:
         await callback_query.answer('Сообщение обновлено')
     else:
@@ -333,8 +337,10 @@ async def callback_player_rating_details(
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await player_rating_details(dm, callback_data)
-        with suppress(TelegramBadRequest):
+        try:
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        except TelegramBadRequest as e:
+            logging.info(f'player_rating edit_text failed: {e}')
     if callback_data.update:
         await callback_query.answer('Сообщение обновлено')
     else:

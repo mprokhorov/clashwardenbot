@@ -1629,6 +1629,17 @@ class DatabaseManager:
         return row is not None
 
     @staticmethod
+    def get_player_rating_giveaway_entries(player_ratings: dict[str, PlayerRating]) -> list[PlayerRatingGiveawayEntry]:
+        return sorted(
+            (
+                PlayerRatingGiveawayEntry(player_tag=player_tag, weight=rating.total_points)
+                for player_tag, rating in player_ratings.items()
+                if rating.is_eligible_for_prize and rating.total_points > 0
+            ),
+            key=lambda entry: entry.player_tag
+        )
+
+    @staticmethod
     def roll_player_rating_giveaway_winner(
             seed: str, entries: list[PlayerRatingGiveawayEntry]
     ) -> tuple[float, str]:
@@ -1642,18 +1653,45 @@ class DatabaseManager:
                 return roll, entry.player_tag
         return roll, entries[-1].player_tag
 
+    async def get_player_rating_giveaway_seasons(self) -> list[str]:
+        rows = await self.acquired_connection.fetch('''
+            SELECT child_clan_tag
+            FROM child_clan
+            WHERE father_clan_tag = $1
+        ''', self.clan_tag)
+        family_clan_tags = [self.clan_tag] + [row['child_clan_tag'] for row in rows]
+        season_rows = await self.acquired_connection.fetch('''
+            SELECT DISTINCT TO_CHAR(start_time + INTERVAL '3 days', 'YYYY-MM') AS season
+            FROM raid_weekend
+            WHERE clan_tag = $1
+            UNION
+            SELECT DISTINCT TO_CHAR((data->>'endTime')::timestamp, 'YYYY-MM') AS season
+            FROM clan_war
+            WHERE clan_tag = ANY($2::varchar[])
+            UNION
+            SELECT DISTINCT TO_CHAR(league_date, 'YYYY-MM') AS season
+            FROM player_league
+            WHERE clan_tag = ANY($2::varchar[])
+            UNION
+            SELECT DISTINCT SUBSTRING(season FROM 1 FOR 7) AS season
+            FROM clan_war_league_war
+            WHERE clan_tag = ANY($2::varchar[])
+            ORDER BY season DESC
+        ''', self.clan_tag, family_clan_tags)
+        seasons_with_eligible_players = []
+        for row in season_rows:
+            if row['season'] is None:
+                continue
+            player_ratings = await self.get_player_ratings(row['season'])
+            if len(self.get_player_rating_giveaway_entries(player_ratings)) > 0:
+                seasons_with_eligible_players.append(row['season'])
+        return seasons_with_eligible_players
+
     async def run_player_rating_giveaway(
             self, chat_id: int, season: str, started_by_user_id: int
     ) -> Optional[PlayerRatingGiveaway]:
         player_ratings = await self.get_player_ratings(season)
-        entries = sorted(
-            (
-                PlayerRatingGiveawayEntry(player_tag=player_tag, weight=rating.total_points)
-                for player_tag, rating in player_ratings.items()
-                if rating.is_eligible_for_prize and rating.total_points > 0
-            ),
-            key=lambda entry: entry.player_tag
-        )
+        entries = self.get_player_rating_giveaway_entries(player_ratings)
         if len(entries) == 0:
             return None
         seed = secrets.token_hex(16)

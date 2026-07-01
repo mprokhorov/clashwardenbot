@@ -1,4 +1,5 @@
 from enum import auto, IntEnum
+from typing import Optional
 
 from aiogram import Router
 from aiogram.enums import ChatType, ParseMode
@@ -14,13 +15,35 @@ router = Router()
 
 
 class OutputView(IntEnum):
+    player_rating_giveaway_season_select = auto()
     player_rating_giveaway_result = auto()
     player_rating_giveaway_verify = auto()
 
 
 class PlayerRatingGiveawayCallbackFactory(CallbackData, prefix='player_rating_giveaway'):
     output_view: OutputView
-    giveaway_id: int
+    season: Optional[str] = None
+    giveaway_id: Optional[int] = None
+
+
+def player_rating_giveaway_season_select_view(
+        dm: DatabaseManager, seasons: list[str]
+) -> tuple[str, ParseMode, InlineKeyboardMarkup]:
+    text = (
+        f'<b>🎉 Розыгрыш по рейтингу игроков</b>\n'
+        f'\n'
+        f'Выберите сезон для розыгрыша:'
+    )
+    button_rows = [[
+        InlineKeyboardButton(
+            text=dm.of.season(season, False),
+            callback_data=PlayerRatingGiveawayCallbackFactory(
+                output_view=OutputView.player_rating_giveaway_result, season=season
+            ).pack()
+        )
+    ] for season in seasons]
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
+    return text, ParseMode.HTML, keyboard
 
 
 def player_rating_giveaway_result_text(dm: DatabaseManager, giveaway: PlayerRatingGiveaway) -> str:
@@ -56,10 +79,32 @@ async def command_player_rating_giveaway(message: Message, dm: DatabaseManager) 
     if not await dm.load_player_rating_config():
         await message.reply(text='Рейтинг игроков выключен')
         return
-    season = dm.of.utc_now().strftime('%Y-%m')
-    giveaway = await dm.run_player_rating_giveaway(message.chat.id, season, message.from_user.id)
+    seasons = await dm.get_player_rating_giveaway_seasons()
+    if len(seasons) == 0:
+        await message.reply(
+            text='Нет ни одного сезона с допущенными к розыгрышу игроками с положительным количеством очков'
+        )
+        return
+    text, parse_mode, reply_markup = player_rating_giveaway_season_select_view(dm, seasons)
+    reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+    await dm.dump_message_owner(reply_from_bot, message.from_user)
+
+
+@router.callback_query(
+    PlayerRatingGiveawayCallbackFactory.filter(F.output_view == OutputView.player_rating_giveaway_result)
+)
+async def callback_player_rating_giveaway_result(
+        callback_query: CallbackQuery, callback_data: PlayerRatingGiveawayCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    if not user_is_message_owner:
+        await callback_query.answer('Эта кнопка не работает для вас')
+        return
+    giveaway = await dm.run_player_rating_giveaway(
+        callback_query.message.chat.id, callback_data.season, callback_query.from_user.id
+    )
     if giveaway is None:
-        await message.reply(text='Нет ни одного допущенного к розыгрышу игрока с положительным количеством очков')
+        await callback_query.answer('Нет ни одного допущенного к розыгрышу игрока с положительным количеством очков', show_alert=True)
         return
     verify_button = InlineKeyboardButton(
         text='🔍 Проверить честность розыгрыша',
@@ -68,9 +113,10 @@ async def command_player_rating_giveaway(message: Message, dm: DatabaseManager) 
         ).pack()
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[verify_button]])
-    await message.reply(
+    await callback_query.message.edit_text(
         text=player_rating_giveaway_result_text(dm, giveaway), parse_mode=ParseMode.HTML, reply_markup=keyboard
     )
+    await callback_query.answer()
 
 
 @router.callback_query(PlayerRatingGiveawayCallbackFactory.filter(F.output_view == OutputView.player_rating_giveaway_verify))

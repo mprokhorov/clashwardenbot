@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import datetime
 from enum import IntEnum, auto
 from typing import Optional
 
@@ -152,3 +153,20 @@ class PlayerRatingConfig:
     minimum_average_cwl_stars: list[float]
     minimum_cwl_wars: int
     cw_bonus: list[float]
+
+
+@dataclass
+class PlayerRatingGiveawayEntry:
+    player_tag: str
+    weight: float
+
+
+@dataclass
+class PlayerRatingGiveaway:
+    id: int
+    season: str
+    created_at: datetime
+    seed: str
+    roll: float
+    entries: list[PlayerRatingGiveawayEntry]
+    winner_player_tag: str

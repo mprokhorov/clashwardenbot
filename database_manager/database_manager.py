@@ -1,6 +1,8 @@
 import asyncio
 import calendar
+import hashlib
 import json
+import secrets
 from datetime import datetime, UTC
 from typing import Optional, Any
 
@@ -15,7 +17,15 @@ from async_client import AsyncClient
 from bot.commands import bot_cmd_list, get_shown_bot_commands
 from config import config
 from entities import ClanWarLeagueWar, BotUser, RaidsMember, WarMember
-from entities.game_entities import CWLWPlayerRating, CWLPlayerRating, CWLRatingConfig, PlayerRating, PlayerRatingConfig
+from entities.game_entities import (
+    CWLWPlayerRating,
+    CWLPlayerRating,
+    CWLRatingConfig,
+    PlayerRating,
+    PlayerRatingConfig,
+    PlayerRatingGiveaway,
+    PlayerRatingGiveawayEntry
+)
 from output_formatter import OutputFormatter
 
 
@@ -1607,6 +1617,88 @@ class DatabaseManager:
         }
 
         return player_rating
+
+    async def can_user_start_player_rating_giveaway(self, chat_id: int, user_id: int) -> bool:
+        row = await self.acquired_connection.fetchrow('''
+            SELECT clan_tag, chat_id, user_id
+            FROM bot_user
+            WHERE
+                ((clan_tag, chat_id, user_id) = ($1, $2, $3) OR (clan_tag, chat_id, user_id) = ($1, $3, $3))
+                AND can_start_player_rating_giveaway
+        ''', self.clan_tag, chat_id, user_id)
+        return row is not None
+
+    @staticmethod
+    def roll_player_rating_giveaway_winner(
+            seed: str, entries: list[PlayerRatingGiveawayEntry]
+    ) -> tuple[float, str]:
+        roll = int(hashlib.sha256(seed.encode()).hexdigest(), 16) / 2 ** 256
+        total_weight = sum(entry.weight for entry in entries)
+        target = roll * total_weight
+        cumulative_weight = 0
+        for entry in entries:
+            cumulative_weight += entry.weight
+            if target < cumulative_weight:
+                return roll, entry.player_tag
+        return roll, entries[-1].player_tag
+
+    async def run_player_rating_giveaway(
+            self, chat_id: int, season: str, started_by_user_id: int
+    ) -> Optional[PlayerRatingGiveaway]:
+        player_ratings = await self.get_player_ratings(season)
+        entries = sorted(
+            (
+                PlayerRatingGiveawayEntry(player_tag=player_tag, weight=rating.total_points)
+                for player_tag, rating in player_ratings.items()
+                if rating.is_eligible_for_prize and rating.total_points > 0
+            ),
+            key=lambda entry: entry.player_tag
+        )
+        if len(entries) == 0:
+            return None
+        seed = secrets.token_hex(16)
+        roll, winner_player_tag = self.roll_player_rating_giveaway_winner(seed, entries)
+        created_at = self.of.utc_now()
+        giveaway_id = await self.acquired_connection.fetchval('''
+            INSERT INTO player_rating_giveaway
+                (clan_tag, chat_id, season, started_by_user_id, created_at, seed, roll, entries, winner_player_tag)
+            VALUES
+                ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+            RETURNING id
+        ''', self.clan_tag, chat_id, season, started_by_user_id, created_at, seed, roll,
+              json.dumps([{'player_tag': entry.player_tag, 'weight': entry.weight} for entry in entries]),
+              winner_player_tag)
+        return PlayerRatingGiveaway(
+            id=giveaway_id,
+            season=season,
+            created_at=created_at,
+            seed=seed,
+            roll=roll,
+            entries=entries,
+            winner_player_tag=winner_player_tag
+        )
+
+    async def load_player_rating_giveaway(self, giveaway_id: int) -> Optional[PlayerRatingGiveaway]:
+        row = await self.acquired_connection.fetchrow('''
+            SELECT season, created_at, seed, roll, entries, winner_player_tag
+            FROM player_rating_giveaway
+            WHERE (clan_tag, id) = ($1, $2)
+        ''', self.clan_tag, giveaway_id)
+        if row is None:
+            return None
+        entries = [
+            PlayerRatingGiveawayEntry(player_tag=entry['player_tag'], weight=entry['weight'])
+            for entry in json.loads(row['entries'])
+        ]
+        return PlayerRatingGiveaway(
+            id=giveaway_id,
+            season=row['season'],
+            created_at=row['created_at'],
+            seed=row['seed'],
+            roll=row['roll'],
+            entries=entries,
+            winner_player_tag=row['winner_player_tag']
+        )
 
     async def dump_user(self, chat: Chat, user: User) -> None:
         if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:

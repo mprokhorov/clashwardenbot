@@ -1,0 +1,103 @@
+from enum import auto, IntEnum
+
+from aiogram import Router
+from aiogram.enums import ChatType, ParseMode
+from aiogram.filters import Command
+from aiogram.filters.callback_data import CallbackData
+from aiogram.types import CallbackQuery, Message, InlineKeyboardButton, InlineKeyboardMarkup
+from magic_filter import F
+
+from database_manager import DatabaseManager
+from entities.game_entities import PlayerRatingGiveaway
+
+router = Router()
+
+
+class OutputView(IntEnum):
+    player_rating_giveaway_result = auto()
+    player_rating_giveaway_verify = auto()
+
+
+class PlayerRatingGiveawayCallbackFactory(CallbackData, prefix='player_rating_giveaway'):
+    output_view: OutputView
+    giveaway_id: int
+
+
+def player_rating_giveaway_result_text(dm: DatabaseManager, giveaway: PlayerRatingGiveaway) -> str:
+    total_weight = sum(entry.weight for entry in giveaway.entries)
+    entries_text = '\n'.join(
+        f'{dm.load_name(entry.player_tag)}: {dm.of.format_and_rstrip(entry.weight, 3)} 💎 '
+        f'({dm.of.format_and_rstrip(entry.weight / total_weight * 100, 1)}%)'
+        for entry in sorted(giveaway.entries, key=lambda entry: entry.weight, reverse=True)
+    )
+    return (
+        f'<b>🎉 Розыгрыш по рейтингу игроков</b>\n'
+        f'\n'
+        f'Сезон: {dm.of.season(giveaway.season, False)}\n'
+        f'\n'
+        f'Победитель: {dm.load_name(giveaway.winner_player_tag)} 🏆\n'
+        f'\n'
+        f'Шансы участников (пропорционально набранным очкам):\n'
+        f'{entries_text}\n'
+        f'\n'
+        f'ID розыгрыша: {giveaway.id}\n'
+    )
+
+
+@router.message(Command('player_rating_giveaway'))
+async def command_player_rating_giveaway(message: Message, dm: DatabaseManager) -> None:
+    if message.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        await message.reply(text='Эта команда работает только в группах')
+        return
+    user_can_start_giveaway = await dm.can_user_start_player_rating_giveaway(message.chat.id, message.from_user.id)
+    if not user_can_start_giveaway:
+        await message.reply(text='У вас нет прав на использование этой команды')
+        return
+    if not await dm.load_player_rating_config():
+        await message.reply(text='Рейтинг игроков выключен')
+        return
+    season = dm.of.utc_now().strftime('%Y-%m')
+    giveaway = await dm.run_player_rating_giveaway(message.chat.id, season, message.from_user.id)
+    if giveaway is None:
+        await message.reply(text='Нет ни одного допущенного к розыгрышу игрока с положительным количеством очков')
+        return
+    verify_button = InlineKeyboardButton(
+        text='🔍 Проверить честность розыгрыша',
+        callback_data=PlayerRatingGiveawayCallbackFactory(
+            output_view=OutputView.player_rating_giveaway_verify, giveaway_id=giveaway.id
+        ).pack()
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[verify_button]])
+    await message.reply(
+        text=player_rating_giveaway_result_text(dm, giveaway), parse_mode=ParseMode.HTML, reply_markup=keyboard
+    )
+
+
+@router.callback_query(PlayerRatingGiveawayCallbackFactory.filter(F.output_view == OutputView.player_rating_giveaway_verify))
+async def callback_player_rating_giveaway_verify(
+        callback_query: CallbackQuery, callback_data: PlayerRatingGiveawayCallbackFactory, dm: DatabaseManager
+) -> None:
+    giveaway = await dm.load_player_rating_giveaway(callback_data.giveaway_id)
+    if giveaway is None:
+        await callback_query.answer('Розыгрыш не найден', show_alert=True)
+        return
+    recomputed_roll, recomputed_winner_player_tag = dm.roll_player_rating_giveaway_winner(
+        giveaway.seed, giveaway.entries
+    )
+    matches = (
+        abs(recomputed_roll - giveaway.roll) < 1e-12 and recomputed_winner_player_tag == giveaway.winner_player_tag
+    )
+    verification_text = (
+        f'\n'
+        f'<b>🔍 Проверка честности</b>\n'
+        f'Seed: <code>{giveaway.seed}</code>\n'
+        f'Пересчитанное случайное число: {giveaway.roll:.10f}\n'
+        f'Пересчитанный победитель: {dm.load_name(recomputed_winner_player_tag)}\n'
+        f'Результат совпадает с сохранённым: {"✅" if matches else "❌"}\n'
+    )
+    text = player_rating_giveaway_result_text(dm, giveaway) + verification_text
+    await callback_query.message.edit_text(text=text, parse_mode=ParseMode.HTML)
+    if matches:
+        await callback_query.answer('Розыгрыш подтверждён, победитель определён честно')
+    else:
+        await callback_query.answer('Не удалось подтвердить результат розыгрыша', show_alert=True)

@@ -64,6 +64,7 @@ create table bot_user
     can_link_group_members         boolean,
     can_edit_cw_list               boolean,
     can_send_messages_from_bot     boolean,
+    can_start_player_rating_giveaway boolean,
     constraint bot_user_pk
         primary key (clan_tag, chat_id, user_id),
     constraint bot_user_chat_clan_tag_chat_id_fk
@@ -332,6 +333,24 @@ create table player_rating_config
     cw_bonus                  double precision[],
     constraint player_rating_config_pk
         primary key (clan_tag, child_clan_tag)
+);
+
+create table player_rating_giveaway
+(
+    id                  serial      not null
+        constraint player_rating_giveaway_pk
+            primary key,
+    clan_tag            varchar(16) not null
+        constraint player_rating_giveaway_clan_clan_tag_fk
+            references clan,
+    chat_id             bigint      not null,
+    season              varchar(16) not null,
+    started_by_user_id  bigint      not null,
+    created_at          timestamp   not null,
+    seed                varchar(64) not null,
+    roll                double precision not null,
+    entries             jsonb       not null,
+    winner_player_tag   varchar(16) not null
 );
 
 create table raid_weekend

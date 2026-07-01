@@ -1653,38 +1653,14 @@ class DatabaseManager:
                 return roll, entry.player_tag
         return roll, entries[-1].player_tag
 
-    async def get_player_rating_giveaway_seasons(self) -> list[str]:
-        rows = await self.acquired_connection.fetch('''
-            SELECT child_clan_tag
-            FROM child_clan
-            WHERE father_clan_tag = $1
-        ''', self.clan_tag)
-        family_clan_tags = [self.clan_tag] + [row['child_clan_tag'] for row in rows]
-        season_rows = await self.acquired_connection.fetch('''
-            SELECT DISTINCT TO_CHAR(start_time + INTERVAL '3 days', 'YYYY-MM') AS season
-            FROM raid_weekend
-            WHERE clan_tag = $1
-            UNION
-            SELECT DISTINCT TO_CHAR((data->>'endTime')::timestamp, 'YYYY-MM') AS season
-            FROM clan_war
-            WHERE clan_tag = ANY($2::varchar[])
-            UNION
-            SELECT DISTINCT TO_CHAR(league_date, 'YYYY-MM') AS season
-            FROM player_league
-            WHERE clan_tag = ANY($2::varchar[])
-            UNION
-            SELECT DISTINCT SUBSTRING(season FROM 1 FOR 7) AS season
-            FROM clan_war_league_war
-            WHERE clan_tag = ANY($2::varchar[])
-            ORDER BY season DESC
-        ''', self.clan_tag, family_clan_tags)
+    async def get_player_rating_giveaway_seasons(self, lookback_months: int = 12) -> list[str]:
+        season = self.of.utc_now().strftime('%Y-%m')
         seasons_with_eligible_players = []
-        for row in season_rows:
-            if row['season'] is None:
-                continue
-            player_ratings = await self.get_player_ratings(row['season'])
+        for _ in range(lookback_months):
+            player_ratings = await self.get_player_ratings(season)
             if len(self.get_player_rating_giveaway_entries(player_ratings)) > 0:
-                seasons_with_eligible_players.append(row['season'])
+                seasons_with_eligible_players.append(season)
+            season = self.of.previous_season(season)
         return seasons_with_eligible_players
 
     async def run_player_rating_giveaway(

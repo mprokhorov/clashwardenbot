@@ -1636,7 +1636,7 @@ class DatabaseManager:
                 for player_tag, rating in player_ratings.items()
                 if rating.is_eligible_for_prize and rating.total_points > 0
             ),
-            key=lambda entry: entry.player_tag
+            key=lambda entry: (-entry.weight, entry.player_tag)
         )
 
     @staticmethod

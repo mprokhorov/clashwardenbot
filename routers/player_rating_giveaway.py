@@ -18,12 +18,23 @@ class OutputView(IntEnum):
     player_rating_giveaway_season_select = auto()
     player_rating_giveaway_result = auto()
     player_rating_giveaway_verify = auto()
+    player_rating_giveaway_hide_verify = auto()
 
 
 class PlayerRatingGiveawayCallbackFactory(CallbackData, prefix='player_rating_giveaway'):
     output_view: OutputView
     season: Optional[str] = None
     giveaway_id: Optional[int] = None
+
+
+def player_rating_giveaway_result_keyboard(giveaway_id: int) -> InlineKeyboardMarkup:
+    verify_button = InlineKeyboardButton(
+        text='🔍 Проверить честность розыгрыша',
+        callback_data=PlayerRatingGiveawayCallbackFactory(
+            output_view=OutputView.player_rating_giveaway_verify, giveaway_id=giveaway_id
+        ).pack()
+    )
+    return InlineKeyboardMarkup(inline_keyboard=[[verify_button]])
 
 
 def player_rating_giveaway_season_select_view(
@@ -51,7 +62,7 @@ def player_rating_giveaway_result_text(dm: DatabaseManager, giveaway: PlayerRati
     entries_text = '\n'.join(
         f'{dm.load_name(entry.player_tag)}: {dm.of.format_and_rstrip(entry.weight, 3)} 💎 '
         f'({dm.of.format_and_rstrip(entry.weight / total_weight * 100, 1)}%)'
-        for entry in sorted(giveaway.entries, key=lambda entry: entry.weight, reverse=True)
+        for entry in giveaway.entries
     )
     return (
         f'<b>🎉 Розыгрыш по рейтингу игроков</b>\n'
@@ -104,15 +115,10 @@ async def callback_player_rating_giveaway_result(
     if giveaway is None:
         await callback_query.answer('Нет ни одного допущенного к розыгрышу игрока с положительным количеством очков', show_alert=True)
         return
-    verify_button = InlineKeyboardButton(
-        text='🔍 Проверить честность розыгрыша',
-        callback_data=PlayerRatingGiveawayCallbackFactory(
-            output_view=OutputView.player_rating_giveaway_verify, giveaway_id=giveaway.id
-        ).pack()
-    )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[verify_button]])
     await callback_query.message.edit_text(
-        text=player_rating_giveaway_result_text(dm, giveaway), parse_mode=ParseMode.HTML, reply_markup=keyboard
+        text=player_rating_giveaway_result_text(dm, giveaway),
+        parse_mode=ParseMode.HTML,
+        reply_markup=player_rating_giveaway_result_keyboard(giveaway.id)
     )
     await callback_query.answer()
 
@@ -132,15 +138,15 @@ async def callback_player_rating_giveaway_verify(
         abs(recomputed_roll - giveaway.roll) < 1e-12 and recomputed_winner_player_tag == giveaway.winner_player_tag
     )
     ordered_entries_text = ', '.join(
-        f'{entry.player_tag}={dm.of.format_and_rstrip(entry.weight, 3)}'
-        for entry in sorted(giveaway.entries, key=lambda entry: entry.player_tag)
+        f'{dm.load_name(entry.player_tag)}={dm.of.format_and_rstrip(entry.weight, 3)}'
+        for entry in giveaway.entries
     )
     verification_text = (
         f'\n'
         f'<b>🔍 Проверка честности</b>\n'
         f'Это можно пересчитать самостоятельно, не полагаясь на бота:\n'
         f'1. roll = int(sha256(seed).hexdigest(), 16) / 2^256, где seed — строка ниже.\n'
-        f'2. Участники в порядке подсчёта (по тегу), вес — очки: {ordered_entries_text}.\n'
+        f'2. Участники в порядке подсчёта (по убыванию рейтинга), вес — очки: {ordered_entries_text}.\n'
         f'3. Победитель — первый по этому списку, у кого сумма весов от начала списка '
         f'превышает roll × сумму всех весов.\n'
         f'\n'
@@ -150,8 +156,33 @@ async def callback_player_rating_giveaway_verify(
         f'Совпадает с сохранённым результатом: {"✅" if matches else "❌"}\n'
     )
     text = player_rating_giveaway_result_text(dm, giveaway) + verification_text
-    await callback_query.message.edit_text(text=text, parse_mode=ParseMode.HTML)
+    hide_button = InlineKeyboardButton(
+        text='🙈 Скрыть подробности честности',
+        callback_data=PlayerRatingGiveawayCallbackFactory(
+            output_view=OutputView.player_rating_giveaway_hide_verify, giveaway_id=giveaway.id
+        ).pack()
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[hide_button]])
+    await callback_query.message.edit_text(text=text, parse_mode=ParseMode.HTML, reply_markup=keyboard)
     if matches:
         await callback_query.answer('Розыгрыш подтверждён, победитель определён честно')
     else:
         await callback_query.answer('Не удалось подтвердить результат розыгрыша', show_alert=True)
+
+
+@router.callback_query(
+    PlayerRatingGiveawayCallbackFactory.filter(F.output_view == OutputView.player_rating_giveaway_hide_verify)
+)
+async def callback_player_rating_giveaway_hide_verify(
+        callback_query: CallbackQuery, callback_data: PlayerRatingGiveawayCallbackFactory, dm: DatabaseManager
+) -> None:
+    giveaway = await dm.load_player_rating_giveaway(callback_data.giveaway_id)
+    if giveaway is None:
+        await callback_query.answer('Розыгрыш не найден', show_alert=True)
+        return
+    await callback_query.message.edit_text(
+        text=player_rating_giveaway_result_text(dm, giveaway),
+        parse_mode=ParseMode.HTML,
+        reply_markup=player_rating_giveaway_result_keyboard(giveaway.id)
+    )
+    await callback_query.answer()

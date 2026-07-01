@@ -1653,7 +1653,7 @@ class DatabaseManager:
                 return roll, entry.player_tag
         return roll, entries[-1].player_tag
 
-    async def get_player_rating_giveaway_seasons(self, lookback_months: int = 12) -> list[str]:
+    async def get_player_rating_giveaway_seasons(self, lookback_months: int = 2) -> list[str]:
         season = self.of.utc_now().strftime('%Y-%m')
         seasons_with_eligible_players = []
         for _ in range(lookback_months):

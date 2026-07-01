@@ -62,8 +62,6 @@ def player_rating_giveaway_result_text(dm: DatabaseManager, giveaway: PlayerRati
         f'\n'
         f'Шансы участников (пропорционально набранным очкам):\n'
         f'{entries_text}\n'
-        f'\n'
-        f'ID розыгрыша: {giveaway.id}\n'
     )
 
 
@@ -133,13 +131,23 @@ async def callback_player_rating_giveaway_verify(
     matches = (
         abs(recomputed_roll - giveaway.roll) < 1e-12 and recomputed_winner_player_tag == giveaway.winner_player_tag
     )
+    ordered_entries_text = ', '.join(
+        f'{entry.player_tag}={dm.of.format_and_rstrip(entry.weight, 3)}'
+        for entry in sorted(giveaway.entries, key=lambda entry: entry.player_tag)
+    )
     verification_text = (
         f'\n'
         f'<b>🔍 Проверка честности</b>\n'
+        f'Это можно пересчитать самостоятельно, не полагаясь на бота:\n'
+        f'1. roll = int(sha256(seed).hexdigest(), 16) / 2^256, где seed — строка ниже.\n'
+        f'2. Участники в порядке подсчёта (по тегу), вес — очки: {ordered_entries_text}.\n'
+        f'3. Победитель — первый по этому списку, у кого сумма весов от начала списка '
+        f'превышает roll × сумму всех весов.\n'
+        f'\n'
         f'Seed: <code>{giveaway.seed}</code>\n'
-        f'Пересчитанное случайное число: {giveaway.roll:.10f}\n'
+        f'roll: {giveaway.roll:.10f}\n'
         f'Пересчитанный победитель: {dm.load_name(recomputed_winner_player_tag)}\n'
-        f'Результат совпадает с сохранённым: {"✅" if matches else "❌"}\n'
+        f'Совпадает с сохранённым результатом: {"✅" if matches else "❌"}\n'
     )
     text = player_rating_giveaway_result_text(dm, giveaway) + verification_text
     await callback_query.message.edit_text(text=text, parse_mode=ParseMode.HTML)

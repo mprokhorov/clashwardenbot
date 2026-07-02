@@ -88,6 +88,8 @@ async def player_rating_list(
     player_ratings = await dm.get_player_ratings(season)
     if eligible_only:
         player_ratings = {player_tag: r for player_tag, r in player_ratings.items() if r.is_eligible_for_prize}
+    else:
+        player_ratings = {player_tag: r for player_tag, r in player_ratings.items() if r.total_points != 0}
     text += (
         f'Сезон: {dm.of.season(season, False)}\n'
         f'\n'
@@ -148,6 +150,8 @@ async def player_rating_choose(
     player_ratings = await dm.get_player_ratings(season)
     if eligible_only:
         player_ratings = {player_tag: r for player_tag, r in player_ratings.items() if r.is_eligible_for_prize}
+    else:
+        player_ratings = {player_tag: r for player_tag, r in player_ratings.items() if r.total_points != 0}
     page_entries, page, page_count = get_player_rating_pages(player_ratings, requested_page)
     text += (
         f'Сезон: {dm.of.season(season, False)}\n'

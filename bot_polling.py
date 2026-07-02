@@ -3,8 +3,10 @@ import asyncio
 import logging
 
 from aiogram import Bot, Dispatcher
+from aiogram.client.session.aiohttp import AiohttpSession
 
 from bot.middlewares import MessageMiddleware, CallbackQueryMiddleware
+from bot.session_middleware import MessageLoggingMiddleware
 from config import config
 from database_manager import DatabaseManager
 from routers import admin, cw, cwl, miscellaneous, player_rating, player_rating_giveaway, raids
@@ -22,9 +24,11 @@ async def main():
         handlers=[logging.FileHandler(f'bot_polling_{bot_number}.log', 'w'), logging.StreamHandler()]
     )
 
-    bot = Bot(token=config.telegram_bot_api_tokens[bot_number].get_secret_value())
+    session = AiohttpSession()
+    bot = Bot(token=config.telegram_bot_api_tokens[bot_number].get_secret_value(), session=session)
 
     dm = DatabaseManager(clan_tag=config.clan_tags[bot_number].get_secret_value(), bot=bot)
+    session.middleware(MessageLoggingMiddleware(dm))
     await dm.connect_to_pool()
     await dm.infrequent_jobs()
 

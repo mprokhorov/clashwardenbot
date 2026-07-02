@@ -92,6 +92,7 @@ class DatabaseManager:
 
         self.player_rating_config = None
         self.cwl_rating_config = None
+        self.monospace_player_tags: set[str] = set()
 
     async def connect_to_pool(self) -> None:
         self.connection_pool = await asyncpg.create_pool(
@@ -459,6 +460,11 @@ class DatabaseManager:
         self.name_and_tag = {
             row['player_tag']: f'{row['player_name']} ({row['player_tag']})' for row in rows
         }
+
+        rows = await self.acquired_connection.fetch('''
+            SELECT player_tag FROM monospace_player_tag WHERE clan_tag = $1
+        ''', self.clan_tag)
+        self.monospace_player_tags = {row['player_tag'] for row in rows}
 
         rows = await self.acquired_connection.fetch('''
             SELECT chat_id, user_id, username, first_name, last_name
@@ -1776,10 +1782,27 @@ class DatabaseManager:
             ''', self.clan_tag, chat.id, chat.type, chat.username, chat.first_name, chat.last_name)
 
     def load_name(self, player_tag: str) -> str:
-        return self.name.get(player_tag, player_tag)
+        name = self.name.get(player_tag, player_tag)
+        if player_tag in self.monospace_player_tags:
+            return f'<code>{self.of.to_html(name)}</code>'
+        return name
 
     def load_name_and_tag(self, player_tag: str) -> str:
+        name = self.name.get(player_tag, player_tag)
+        if player_tag in self.monospace_player_tags:
+            return f'<code>{self.of.to_html(name)}</code> ({player_tag})'
         return self.name_and_tag.get(player_tag, player_tag)
+
+    async def log_bot_message(self, chat_id: int, message_id: int, html_text: str) -> None:
+        try:
+            await self.acquired_connection.execute('''
+                INSERT INTO bot_message_log (clan_tag, chat_id, message_id, html_text)
+                VALUES ($1, $2, $3, $4)
+                ON CONFLICT (clan_tag, chat_id, message_id)
+                DO UPDATE SET html_text = EXCLUDED.html_text
+            ''', self.clan_tag, chat_id, message_id, html_text)
+        except Exception:
+            pass
 
     def load_first_name(self, chat_id: int, user_id: int) -> str:
         return self.first_name.get((chat_id, user_id), f'{chat_id}:{user_id}')

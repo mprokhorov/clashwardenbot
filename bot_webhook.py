@@ -2,11 +2,13 @@ import argparse
 import logging
 
 from aiogram import Dispatcher, Router, Bot
+from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.webhook.aiohttp_server import SimpleRequestHandler, setup_application
 from aiohttp.web import run_app
 from aiohttp.web_app import Application
 
 from bot.middlewares import MessageMiddleware, CallbackQueryMiddleware
+from bot.session_middleware import MessageLoggingMiddleware
 from config import config
 from database_manager import DatabaseManager
 from routers import admin, cw, cwl, miscellaneous, player_rating, player_rating_giveaway, raids
@@ -48,9 +50,11 @@ def main():
         handlers=[logging.FileHandler(f'bot_webhook_{bot_number}.log', 'w'), logging.StreamHandler()]
     )
 
-    bot = Bot(token=config.telegram_bot_api_tokens[bot_number].get_secret_value())
+    session = AiohttpSession()
+    bot = Bot(token=config.telegram_bot_api_tokens[bot_number].get_secret_value(), session=session)
 
     dm = DatabaseManager(clan_tag=config.clan_tags[bot_number].get_secret_value(), bot=bot)
+    session.middleware(MessageLoggingMiddleware(dm))
 
     dispatcher = Dispatcher()
     dispatcher['webhook_url'] = WEBHOOK_URL

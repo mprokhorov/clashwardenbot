@@ -371,3 +371,26 @@ create table war_win_streak
             primary key,
     war_win_streak integer     not null
 );
+
+create table monospace_player_tag
+(
+    clan_tag   varchar(16) not null
+        constraint monospace_player_tag_clan_clan_tag_fk
+            references clan,
+    player_tag varchar(16) not null,
+    constraint monospace_player_tag_pk
+        primary key (clan_tag, player_tag)
+);
+
+create table bot_message_log
+(
+    clan_tag   varchar(16) not null
+        constraint bot_message_log_clan_clan_tag_fk
+            references clan,
+    chat_id    bigint      not null,
+    message_id bigint      not null,
+    html_text  text        not null,
+    created_at timestamp   not null default now(),
+    constraint bot_message_log_pk
+        primary key (clan_tag, chat_id, message_id)
+);

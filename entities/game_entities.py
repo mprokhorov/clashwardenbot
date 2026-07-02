@@ -132,6 +132,7 @@ class PlayerRating:
     cwl_clan_tag: Optional[str]
     cwl_total_stars: int
     cwl_total_wars: int
+    cwl_event_count: int
     league_numbers: list[int]
     leagues_places: list[tuple[int, int]]
     raids_total_attacks: list[int]

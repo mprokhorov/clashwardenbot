@@ -1478,8 +1478,9 @@ class DatabaseManager:
             ):
                 continue
             minimum_average_cwl_stars, minimum_cwl_wars = cwl_eligibility_config_by_clan_tag[cwl_clan_tag]
+            cwl_event_count = cwl_event_count_by_clan_tag.get(cwl_clan_tag, 1)
             total_wars = cwl_total_wars.get(player_tag, 0)
-            if total_wars < minimum_cwl_wars:
+            if total_wars < minimum_cwl_wars * cwl_event_count:
                 continue
             town_hall_difference = MAX_TOWN_HALL_LEVEL - town_hall_levels[player_tag]
             bracket = min(town_hall_difference, len(minimum_average_cwl_stars) - 1)
@@ -1561,6 +1562,7 @@ class DatabaseManager:
                 cwl_clan_tag=None,
                 cwl_total_stars=0,
                 cwl_total_wars=0,
+                cwl_event_count=1,
                 league_numbers=[],
                 leagues_places=[],
                 raids_total_attacks=[],
@@ -1590,15 +1592,15 @@ class DatabaseManager:
             player_rating[tag].cw_total_attacks = total_attacks
         for tag, cwl_clan_tag in cwl_clan_tag_by_player.items():
             player_rating[tag].cwl_clan_tag = cwl_clan_tag
+            player_rating[tag].cwl_event_count = cwl_event_count_by_clan_tag.get(cwl_clan_tag, 1)
         for tag, league_numbers in league_numbers_by_tag.items():
             player_rating[tag].league_numbers = league_numbers
         for tag, leagues_places in leagues_places_by_tag.items():
             player_rating[tag].leagues_places = leagues_places
 
         for tag, rating in player_rating.items():
-            cwl_event_count = cwl_event_count_by_clan_tag.get(rating.cwl_clan_tag, 1)
             rating.total_cwl_points = (
-                (rating.cwl_total_stars / 21 * 55 + (5 if rating.cwl_total_stars >= 21 else 0)) / cwl_event_count
+                (rating.cwl_total_stars / 21 * 55 + (5 if rating.cwl_total_stars >= 21 else 0)) / rating.cwl_event_count
             )
             rating.total_league_points = league_points_by_tag.get(tag, 0) / days_in_month
             rating.total_place_points = place_points_by_tag.get(tag, 0) / days_in_month

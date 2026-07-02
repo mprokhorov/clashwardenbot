@@ -442,10 +442,17 @@ class DatabaseManager:
         }
 
         rows = await self.acquired_connection.fetch('''
+            SELECT child_clan_tag
+            FROM child_clan
+            WHERE father_clan_tag = $1
+        ''', self.clan_tag)
+        family_clan_tags = [self.clan_tag] + [row['child_clan_tag'] for row in rows]
+
+        rows = await self.acquired_connection.fetch('''
             SELECT player_tag, player_name
             FROM player
-            WHERE clan_tag = $1
-        ''', self.clan_tag)
+            WHERE clan_tag = ANY($1::varchar[])
+        ''', family_clan_tags)
         self.name = {
             row['player_tag']: row['player_name'] for row in rows
         }

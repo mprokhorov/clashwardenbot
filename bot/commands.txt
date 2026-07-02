@@ -19,7 +19,6 @@ raids_skips             | 🕒 Не проатаковавшие в рейдах
 raids_ping              | 🔔 Напомнить об атаках в рейдах         | group          |
 raids_analysis          | 📊 Анализ атак в рейдах                 | group, private |
 player_rating           | 💎 Рейтинг игроков                      | group, private |
-player_rating_giveaway  | 🎉 Розыгрыш по рейтингу игроков         | group          |
 player_info             | 👤 Аккаунты пользователя                | group, private |
 members                 | 🪖 Участники клана                      | group, private |
 hero_equipment          | 🔧 Снаряжения героев игроков            | group, private |

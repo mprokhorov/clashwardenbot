@@ -157,7 +157,7 @@ async def callback_player_rating_giveaway_verify(
     )
     text = player_rating_giveaway_result_text(dm, giveaway) + verification_text
     hide_button = InlineKeyboardButton(
-        text='🙈 Скрыть подробности честности',
+        text='🙈 Скрыть подробности',
         callback_data=PlayerRatingGiveawayCallbackFactory(
             output_view=OutputView.player_rating_giveaway_hide_verify, giveaway_id=giveaway.id
         ).pack()

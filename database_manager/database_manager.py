@@ -1123,7 +1123,7 @@ class DatabaseManager:
         return True
 
     async def load_player_rating_config(self) -> bool:
-        rows = await self.acquired_connection.fetchrows('''
+        rows = await self.acquired_connection.fetch('''
             SELECT child_clan_tag, minimum_average_cwl_stars, minimum_cwl_wars, cw_bonus
             FROM player_rating_config
             WHERE clan_tag = $1

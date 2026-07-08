@@ -458,7 +458,7 @@ async def cwl_rating_list(
         callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_rules, count_bonus_points=count_bonus_points).pack()
     )
     for i, (player_tag, r) in enumerate(sorted(player_tags.items(), key=lambda x: x[1].total_points, reverse=True)):
-        text += f'{i + 1}. {dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n'
+        text += f'{i + 1}. {dm.load_name_html(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n'
     if len(player_tags) == 0:
         text += f'Список пуст\n'
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[details_button, count_bonus_points_button, rules_button], [update_button]])
@@ -525,7 +525,7 @@ async def cwl_rating_details(
     else:
         count_bonus_points = True
     text = (
-        f'<b>🪙 Рейтинг игрока {dm.load_name(callback_data.player_tag)} ({'с бонусами' if count_bonus_points else 'без бонусов'})</b>\n'
+        f'<b>🪙 Рейтинг игрока {dm.load_name_html(callback_data.player_tag)} ({'с бонусами' if count_bonus_points else 'без бонусов'})</b>\n'
         f'\n'
     )
     if not await dm.load_clan_war_league_rating_config():
@@ -799,7 +799,7 @@ async def cwl_list(
     button_row.append(update_button)
     if len(rows) > 0:
         for i, row in enumerate(rows):
-            text += (f'{i + 1}. {dm.load_name(row['player_tag'])} {dm.of.get_player_info_with_emoji(
+            text += (f'{i + 1}. {dm.load_name_html(row['player_tag'])} {dm.of.get_player_info_with_emoji(
                 row['town_hall_level'],
                 row['barbarian_king_level'],
                 row['archer_queen_level'],

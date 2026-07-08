@@ -95,7 +95,7 @@ async def player_rating_list(
         f'\n'
     )
     for i, (player_tag, r) in enumerate(sorted(player_ratings.items(), key=lambda x: x[1].total_points, reverse=True)):
-        text += f'{i + 1}. {dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 💎\n'
+        text += f'{i + 1}. {dm.load_name_html(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 💎\n'
     if len(player_ratings) == 0:
         text += f'Список пуст\n'
     details_button = InlineKeyboardButton(
@@ -221,7 +221,7 @@ async def player_rating_details(
         dm: DatabaseManager, callback_data: PlayerRatingCallbackFactory
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = (
-        f'<b>💎 Рейтинг игрока {dm.load_name(callback_data.player_tag)}</b>\n'
+        f'<b>💎 Рейтинг игрока {dm.load_name_html(callback_data.player_tag)}</b>\n'
         f'\n'
     )
     if not await dm.load_player_rating_config():

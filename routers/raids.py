@@ -97,7 +97,7 @@ async def raids_attacks(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[I
         )
         for i, raids_member in enumerate(raids_members):
             text += (
-                f'{i + 1}. {dm.of.to_html(dm.load_name(raids_member.player_tag))}: '
+                f'{i + 1}. {dm.load_name_html(raids_member.player_tag)}: '
                 f'{raids_member.gold_looted} {dm.of.get_capital_gold_emoji()} '
                 f'({raids_member.attacks_spent} / {raids_member.attacks_limit})\n'
             )

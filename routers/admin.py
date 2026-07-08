@@ -280,7 +280,7 @@ async def link_finish(
         text = (
             f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
             f'\n'
-            f'Аккаунт {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
+            f'Аккаунт {dm.load_name_and_tag_html(callback_data.player_tag)} '
             f'привязан к пользователю '
             f'{dm.of.to_html(dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id))}\n'
         )
@@ -292,7 +292,7 @@ async def link_finish(
         text = (
             f'<b>🔗 Привязка аккаунта к пользователю</b>\n'
             f'\n'
-            f'Аккаунт {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
+            f'Аккаунт {dm.load_name_and_tag_html(callback_data.player_tag)} '
             f'уже был привязан к пользователю '
             f'{dm.of.to_html(dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id))}\n'
         )
@@ -450,7 +450,7 @@ async def unlink_finish(
         text = (
             f'<b>⛓️ Отвязка аккаунта от пользователя</b>\n'
             f'\n'
-            f'Аккаунт {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
+            f'Аккаунт {dm.load_name_and_tag_html(callback_data.player_tag)} '
             f'не был привязан к пользователю '
             f'{dm.of.to_html(dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id))}\n'
         )
@@ -467,7 +467,7 @@ async def unlink_finish(
         text = (
             f'<b>⛓️ Отвязка аккаунта от пользователя</b>\n'
             f'\n'
-            f'Аккаунт {dm.of.to_html(dm.load_name_and_tag(callback_data.player_tag))} '
+            f'Аккаунт {dm.load_name_and_tag_html(callback_data.player_tag)} '
             f'был отвязан от пользователя '
             f'{dm.of.to_html(dm.load_full_name_and_username(callback_data.chat_id, callback_data.user_id))}\n'
         )
@@ -764,7 +764,7 @@ async def give_bonus_finish(
     text += (
         f'Сезон ЛВК: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
         f'\n'
-        f'Игроку {dm.load_name(callback_data.player_tag)} выдано {dm.of.format_and_rstrip(callback_data.bonus_points, 3)} 🪙\n'
+        f'Игроку {dm.load_name_html(callback_data.player_tag)} выдано {dm.of.format_and_rstrip(callback_data.bonus_points, 3)} 🪙\n'
     )
     await dm.acquired_connection.execute('''
         INSERT INTO clan_war_league_rating

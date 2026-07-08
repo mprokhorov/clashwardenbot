@@ -60,7 +60,7 @@ def player_rating_giveaway_season_select_view(
 def player_rating_giveaway_result_text(dm: DatabaseManager, giveaway: PlayerRatingGiveaway) -> str:
     total_weight = sum(entry.weight for entry in giveaway.entries)
     entries_text = '\n'.join(
-        f'{dm.load_name(entry.player_tag)}: {dm.of.format_and_rstrip(entry.weight, 3)} 💎 '
+        f'{dm.load_name_html(entry.player_tag)}: {dm.of.format_and_rstrip(entry.weight, 3)} 💎 '
         f'({dm.of.format_and_rstrip(entry.weight / total_weight * 100, 1)}%)'
         for entry in giveaway.entries
     )
@@ -69,7 +69,7 @@ def player_rating_giveaway_result_text(dm: DatabaseManager, giveaway: PlayerRati
         f'\n'
         f'Сезон: {dm.of.season(giveaway.season, False)}\n'
         f'\n'
-        f'Победитель: {dm.load_name(giveaway.winner_player_tag)} 🏆\n'
+        f'Победитель: {dm.load_name_html(giveaway.winner_player_tag)} 🏆\n'
         f'\n'
         f'Шансы участников (пропорционально набранным очкам):\n'
         f'{entries_text}\n'
@@ -138,7 +138,7 @@ async def callback_player_rating_giveaway_verify(
         abs(recomputed_roll - giveaway.roll) < 1e-12 and recomputed_winner_player_tag == giveaway.winner_player_tag
     )
     ordered_entries_text = ', '.join(
-        f'{dm.load_name(entry.player_tag)}={dm.of.format_and_rstrip(entry.weight, 3)}'
+        f'{dm.load_name_html(entry.player_tag)}={dm.of.format_and_rstrip(entry.weight, 3)}'
         for entry in giveaway.entries
     )
     verification_text = (
@@ -154,7 +154,7 @@ async def callback_player_rating_giveaway_verify(
         f'\n'
         f'Seed: <code>{giveaway.seed}</code>\n'
         f'roll: {giveaway.roll:.10f}\n'
-        f'Пересчитанный победитель: {dm.load_name(recomputed_winner_player_tag)}\n'
+        f'Пересчитанный победитель: {dm.load_name_html(recomputed_winner_player_tag)}\n'
         f'Совпадает с сохранённым результатом: {"✅" if matches else "❌"}\n'
     )
     text = player_rating_giveaway_result_text(dm, giveaway) + verification_text

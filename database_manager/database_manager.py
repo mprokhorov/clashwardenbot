@@ -1803,16 +1803,26 @@ class DatabaseManager:
             ''', self.clan_tag, chat.id, chat.type, chat.username, chat.first_name, chat.last_name)
 
     def load_name(self, player_tag: str) -> str:
+        """Plain text — for button labels, sort keys, logging, and as argument to to_html()."""
+        return self.name.get(player_tag, player_tag)
+
+    def load_name_html(self, player_tag: str) -> str:
+        """HTML-safe — for direct insertion into HTML message text."""
         name = self.name.get(player_tag, player_tag)
         if player_tag in self.monospace_player_tags:
             return f'<code>{self.of.to_html(name)}</code>'
-        return name
+        return self.of.to_html(name)
 
     def load_name_and_tag(self, player_tag: str) -> str:
+        """Plain text — for button labels and logging."""
+        return self.name_and_tag.get(player_tag, player_tag)
+
+    def load_name_and_tag_html(self, player_tag: str) -> str:
+        """HTML-safe — for direct insertion into HTML message text."""
         name = self.name.get(player_tag, player_tag)
         if player_tag in self.monospace_player_tags:
             return f'<code>{self.of.to_html(name)}</code> ({player_tag})'
-        return self.name_and_tag.get(player_tag, player_tag)
+        return self.of.to_html(self.name_and_tag.get(player_tag, player_tag))
 
     async def log_bot_message(self, chat_id: int, message_id: int, html_text: str) -> None:
         try:

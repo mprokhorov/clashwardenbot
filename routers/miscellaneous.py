@@ -135,7 +135,7 @@ async def player_info(dm: DatabaseManager, bot_user: BotUser) -> tuple[str, Pars
         )
     for row in rows:
         text += (
-            f'<b>{dm.load_name(row['player_tag'])}</b>, {dm.of.role(row['player_role'])}\n'
+            f'<b>{dm.load_name_html(row['player_tag'])}</b>, {dm.of.role(row['player_role'])}\n'
             f'Статус участия в КВ: {'✅' if row['is_player_set_for_clan_wars'] else '❌'}\n'
             f'{dm.of.get_player_info_with_custom_emoji(
                 row['town_hall_level'],
@@ -184,7 +184,7 @@ async def members_players(
     )
     for i, row in enumerate(rows):
         text += (
-            f'{i + 1}. {dm.load_name(row['player_tag'])} {dm.of.get_player_info_with_emoji(
+            f'{i + 1}. {dm.load_name_html(row['player_tag'])} {dm.of.get_player_info_with_emoji(
                 row['town_hall_level'],
                 row['barbarian_king_level'],
                 row['archer_queen_level'],
@@ -359,7 +359,7 @@ async def members_users(
         text += (
             f'👤 {dm.of.to_html(dm.load_full_name(chat_id, user_id))}: '
             f'{', '.join(
-                f'{dm.of.to_html(dm.load_name(player.player_tag))} '
+                f'{dm.load_name_html(player.player_tag)} '
                 f'{dm.of.get_player_info_with_custom_emoji(player.town_hall_level)}'
                 for player in sorted(
                     players,
@@ -378,7 +378,7 @@ async def members_users(
         text += (
             f'<b>Неизвестные аккаунты:</b>\n'
             f'{'\n'.join(
-                f'{dm.of.to_html(dm.load_name(player.player_tag))} '
+                f'{dm.load_name_html(player.player_tag)} '
                 f'{dm.of.get_player_info_with_custom_emoji(player.town_hall_level)}'
                 for player in sorted(
                     players_without_users,
@@ -412,7 +412,7 @@ async def members_users(
             if len(players) > 0:
                 text += (
                     f': {', '.join(
-                        f'{dm.of.to_html(dm.load_name(player.player_tag))} '
+                        f'{dm.load_name_html(player.player_tag)} '
                         f'{dm.of.get_player_info_with_custom_emoji(player.town_hall_level)}'
                         f' ({dm.clan_name[player.clan_tag] if player.clan_tag is not None else 'не в клане'})'
                         for player in sorted(
@@ -486,7 +486,7 @@ async def hero_equipment_list(
         for row in rows
     ]
     for i, (player_tag, level_progress) in enumerate(sorted(equipments_by_levels, key=lambda item: item[1], reverse=True)):
-        text += f'{i + 1}. {dm.of.to_html(dm.load_name(player_tag))}: {format(level_progress * 100, '.2f')}%\n'
+        text += f'{i + 1}. {dm.load_name_html(player_tag)}: {format(level_progress * 100, '.2f')}%\n'
     choose_button = InlineKeyboardButton(
         text='📋 Подробнее',
         callback_data=MiscellaneousCallbackFactory(
@@ -620,7 +620,7 @@ async def hero_equipment_details(
         name in player_hero_equipments.keys() for name, _ in available_hero_equipments.items()
     )
     text = (
-        f'<b>🔧 Снаряжения героев игрока {dm.load_name(callback_data.player_tag)}</b>\n'
+        f'<b>🔧 Снаряжения героев игрока {dm.load_name_html(callback_data.player_tag)}</b>\n'
         f'\n'
         f'⏳ Прогресс ({available_equipments_for_player} / {len(available_hero_equipments)})\n'
         f'Уровни: {dm.of.separate_thousands(levels_amount)} / {dm.of.separate_thousands(total_levels_amount)} '
@@ -720,7 +720,7 @@ async def contributions(
             if len(rows) > 0:
                 for i, row in enumerate(rows):
                     text += (
-                        f'{i + 1}. {dm.of.to_html(dm.load_name(row['player_tag']))}: '
+                        f'{i + 1}. {dm.load_name_html(row['player_tag'])}: '
                         f'{row['sum_gold_amount']} {dm.of.get_capital_gold_emoji()}\n'
                     )
                 val = await dm.acquired_connection.fetchval('''
@@ -756,7 +756,7 @@ async def contributions(
         )
         for i, row in enumerate(rows):
             text += (
-                f'{dm.of.to_html(dm.load_name(row['player_tag']))}: '
+                f'{dm.load_name_html(row['player_tag'])}: '
                 f'{row['gold_amount']} {dm.of.get_capital_gold_emoji()} '
                 f'({dm.of.shortest_datetime(row['contribution_timestamp'])})\n'
             )
@@ -795,7 +795,7 @@ async def donations(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, 
     )
     for i, row in enumerate(rows):
         text += (
-            f'{i + 1}. {dm.load_name(row['player_tag'])}, {dm.of.role(row['player_role'])}: '
+            f'{i + 1}. {dm.load_name_html(row['player_tag'])}, {dm.of.role(row['player_role'])}: '
             f'{row['donations_given']}🏅\n'
         )
     consider_donations = await dm.acquired_connection.fetchval('''
@@ -819,13 +819,13 @@ async def donations(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, 
             text += (
                 f'\n'
                 f'<b>⬇️ Будет понижен</b>\n'
-                f'{dm.load_name(rows[0]['player_tag'])}: {rows[0]['donations_given']}🏅\n'
+                f'{dm.load_name_html(rows[0]['player_tag'])}: {rows[0]['donations_given']}🏅\n'
             )
         elif len(rows) > 1:
             text += (
                 f'\n'
                 f'<b>⬇️ Будут понижены</b>\n'
-                f'{', '.join(f'{dm.load_name(row['player_tag'])}: {row['donations_given']}🏅' for row in rows)}\n'
+                f'{', '.join(f'{dm.load_name_html(row['player_tag'])}: {row['donations_given']}🏅' for row in rows)}\n'
             )
 
         rows = await dm.acquired_connection.fetch('''
@@ -843,13 +843,13 @@ async def donations(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, 
             text += (
                 f'\n'
                 f'<b>⬆️ Будет повышен</b>\n'
-                f'{dm.load_name(rows[0]['player_tag'])}: {rows[0]['donations_given']}🏅\n'
+                f'{dm.load_name_html(rows[0]['player_tag'])}: {rows[0]['donations_given']}🏅\n'
             )
         elif len(rows) > 1:
             text += (
                 f'\n'
                 f'<b>⬆️ Будут повышены</b>\n'
-                f'{', '.join(f'{dm.load_name(row['player_tag'])}: {row['donations_given']}🏅' for row in rows)}\n'
+                f'{', '.join(f'{dm.load_name_html(row['player_tag'])}: {row['donations_given']}🏅' for row in rows)}\n'
             )
     button_row = []
     update_button = InlineKeyboardButton(

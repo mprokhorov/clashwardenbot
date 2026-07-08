@@ -295,7 +295,7 @@ async def command_raids_info(message: Message, dm: DatabaseManager) -> None:
 async def callback_raids_info(
         callback_query: CallbackQuery, callback_data: RaidsCallbackFactory, dm: DatabaseManager
 ) -> None:
-    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    user_is_message_owner = callback_data.update or await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     if not user_is_message_owner:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
@@ -319,7 +319,7 @@ async def command_raids_attacks(message: Message, dm: DatabaseManager) -> None:
 async def callback_raids_attacks(
         callback_query: CallbackQuery, callback_data: RaidsCallbackFactory, dm: DatabaseManager
 ) -> None:
-    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    user_is_message_owner = callback_data.update or await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     if not user_is_message_owner:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
@@ -344,7 +344,7 @@ async def command_raids_skips(message: Message, dm: DatabaseManager) -> None:
 async def callback_raids_skips(
         callback_query: CallbackQuery, callback_data: RaidsCallbackFactory, dm: DatabaseManager
 ) -> None:
-    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    user_is_message_owner = callback_data.update or await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     if not user_is_message_owner:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
@@ -382,7 +382,7 @@ async def command_raids_analysis(message: Message, dm: DatabaseManager) -> None:
 async def callback_raids_analysis(
         callback_query: CallbackQuery, callback_data: RaidsCallbackFactory, dm: DatabaseManager
 ) -> None:
-    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    user_is_message_owner = callback_data.update or await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     if not user_is_message_owner:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:

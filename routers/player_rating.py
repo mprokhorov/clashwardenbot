@@ -336,7 +336,7 @@ async def command_player_rating(message: Message, dm: DatabaseManager) -> None:
 async def callback_player_rating_list(
         callback_query: CallbackQuery, callback_data: PlayerRatingCallbackFactory, dm: DatabaseManager
 ) -> None:
-    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    user_is_message_owner = callback_data.update or await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     if not user_is_message_owner:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
@@ -355,7 +355,7 @@ async def callback_player_rating_list(
 async def callback_player_rating_choose(
         callback_query: CallbackQuery, callback_data: PlayerRatingCallbackFactory, dm: DatabaseManager
 ) -> None:
-    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    user_is_message_owner = callback_data.update or await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     if not user_is_message_owner:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
@@ -374,7 +374,7 @@ async def callback_player_rating_choose(
 async def callback_player_rating_details(
         callback_query: CallbackQuery, callback_data: PlayerRatingCallbackFactory, dm: DatabaseManager
 ) -> None:
-    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    user_is_message_owner = callback_data.update or await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
     if not user_is_message_owner:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:

@@ -1410,16 +1410,22 @@ class DatabaseManager:
         rows = await self.acquired_connection.fetch('''
             SELECT child_clan_tag, minimum_average_cwl_stars, minimum_cwl_wars
             FROM player_rating_config
-            WHERE clan_tag = $1 AND minimum_average_cwl_stars IS NOT NULL AND minimum_cwl_wars IS NOT NULL
+            WHERE clan_tag = $1
         ''', self.clan_tag)
-        cwl_eligibility_config_by_clan_tag = {
-            row['child_clan_tag']: (row['minimum_average_cwl_stars'], row['minimum_cwl_wars']) for row in rows
-        }
+        cwl_eligibility_config_by_clan_tag = {}
+        no_cwl_requirement_clans = set()
+        for row in rows:
+            if row['minimum_average_cwl_stars'] is not None and row['minimum_cwl_wars'] is not None:
+                cwl_eligibility_config_by_clan_tag[row['child_clan_tag']] = (
+                    row['minimum_average_cwl_stars'], row['minimum_cwl_wars']
+                )
+            else:
+                no_cwl_requirement_clans.add(row['child_clan_tag'])
         cwl_total_stars = {}
         cwl_total_wars = {}
         cwl_clan_tag_by_player = {}
         cwl_event_count_by_clan_tag = {}
-        for cwl_clan_tag in cwl_eligibility_config_by_clan_tag:
+        for cwl_clan_tag in {*cwl_eligibility_config_by_clan_tag, *no_cwl_requirement_clans}:
             cwl_rows = await self.acquired_connection.fetch('''
                 SELECT day, data
                 FROM clan_war_league_war
@@ -1469,7 +1475,7 @@ class DatabaseManager:
                 )
 
         rows = await self.acquired_connection.fetch('''
-            SELECT DISTINCT ON (player_tag) player_tag, town_hall_level
+            SELECT DISTINCT ON (player_tag) player_tag, clan_tag, town_hall_level
             FROM player
             WHERE
                 is_player_in_clan
@@ -1477,12 +1483,16 @@ class DatabaseManager:
             ORDER BY player_tag, town_hall_level DESC
         ''', self.clan_tag)
         town_hall_levels = {row['player_tag']: row['town_hall_level'] for row in rows}
+        current_clan_by_player = {row['player_tag']: row['clan_tag'] for row in rows}
         MAX_TOWN_HALL_LEVEL = await self.get_max_town_hall_level()
 
         is_eligible_for_prize = {}
         cwl_minimum_wars_by_tag = {}
         cwl_minimum_average_stars_by_tag = {}
         for player_tag in {*cwl_total_stars, *cwl_total_wars}:
+            # Players in clans with no CWL requirement are auto-eligible — skip the stars/wars check
+            if current_clan_by_player.get(player_tag) in no_cwl_requirement_clans:
+                continue
             cwl_clan_tag = cwl_clan_tag_by_player.get(player_tag)
             if (
                 cwl_clan_tag is None or
@@ -1501,6 +1511,10 @@ class DatabaseManager:
             average_cwl_stars = cwl_total_stars.get(player_tag, 0) / total_wars
             cwl_minimum_average_stars_by_tag[player_tag] = minimum_average_cwl_stars[bracket]
             is_eligible_for_prize[player_tag] = average_cwl_stars >= minimum_average_cwl_stars[bracket]
+        # Auto-eligible: all current members of clans with no CWL requirement
+        for player_tag, clan_tag in current_clan_by_player.items():
+            if clan_tag in no_cwl_requirement_clans:
+                is_eligible_for_prize[player_tag] = True
 
         rows = await self.acquired_connection.fetch('''
             SELECT child_clan_tag

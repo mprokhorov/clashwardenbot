@@ -94,23 +94,26 @@ async def run(bot_number: int, export_file: str) -> None:
     messages = export.get('messages', [])
     bot_from_id = f'user{bot_user_id}'
 
+    bot_messages = [
+        msg for msg in messages
+        if msg.get('type') == 'message'
+        and msg.get('from_id') == bot_from_id
+        and msg.get('text')
+    ]
+    logging.info(f'Всего сообщений в экспорте: {len(messages)}, из них от бота: {len(bot_messages)}')
+
     pool = await asyncpg.create_pool(
         host=config.postgres_host.get_secret_value(),
         database=config.postgres_database.get_secret_value(),
         user=config.postgres_user.get_secret_value(),
         password=config.postgres_password.get_secret_value(),
     )
+    logging.info('Подключение к БД успешно. Начинаю вставку...')
 
     inserted = 0
     skipped = 0
-    for msg in messages:
-        if msg.get('type') != 'message':
-            continue
-        if msg.get('from_id') != bot_from_id:
-            continue
+    for i, msg in enumerate(bot_messages, 1):
         text_field = msg.get('text')
-        if not text_field:
-            continue
         html_text = entities_to_html(text_field)
         if not html_text.strip():
             continue
@@ -126,6 +129,8 @@ async def run(bot_number: int, export_file: str) -> None:
         except Exception as e:
             logging.warning(f'Ошибка при вставке message_id={message_id}: {e}')
             skipped += 1
+        if i % 200 == 0:
+            logging.info(f'Обработано {i}/{len(bot_messages)}, вставлено: {inserted}, ошибок: {skipped}')
 
     await pool.close()
     logging.info(f'Готово. Вставлено/обновлено: {inserted}, пропущено с ошибкой: {skipped}')

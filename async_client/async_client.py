@@ -1,5 +1,7 @@
 import base64
 import json
+import random
+import time
 
 import httpx
 import requests
@@ -41,19 +43,23 @@ class AsyncClient:
         if self.email is not None and self.password is not None:
             self.update_key()
 
-    def update_key(self) -> bool:
-        if self.email is None or self.password is None:
-            return False
+    def _update_key_once(self) -> bool:
         session = requests.Session()
         login = session.post(
             url='https://developer.clashofclans.com/api/login',
             json={'email': self.email, 'password': self.password}
         )
+        login_json = login.json()
+        if 'temporaryAPIToken' not in login_json:
+            raise ValueError(f'CoC login failed: {login_json}')
         current_ip = json.loads(
-            base64.b64decode(login.json()['temporaryAPIToken'].split('.')[1] + '====').decode('utf-8')
+            base64.b64decode(login_json['temporaryAPIToken'].split('.')[1] + '====').decode('utf-8')
         )['limits'][1]['cidrs'][0].split('/')[0]
         retrieved_key_to_update = None
-        retrieved_key_list = session.post(url=f"https://developer.clashofclans.com/api/apikey/list").json()['keys']
+        key_list_json = session.post(url='https://developer.clashofclans.com/api/apikey/list').json()
+        if 'keys' not in key_list_json:
+            raise ValueError(f'CoC apikey/list failed: {key_list_json}')
+        retrieved_key_list = key_list_json['keys']
         for retrieved_key in retrieved_key_list:
             if retrieved_key['name'] == self.key_name:
                 retrieved_key_to_update = retrieved_key
@@ -86,7 +92,10 @@ class AsyncClient:
                         'scopes': ['clash']
                     }
                 )
-        updated_key_list = session.post(url='https://developer.clashofclans.com/api/apikey/list').json()['keys']
+        updated_key_json = session.post(url='https://developer.clashofclans.com/api/apikey/list').json()
+        if 'keys' not in updated_key_json:
+            raise ValueError(f'CoC apikey/list (post-update) failed: {updated_key_json}')
+        updated_key_list = updated_key_json['keys']
         session.post(url='https://developer.clashofclans.com/api/logout')
         self.key = None
         for updated_key in updated_key_list:
@@ -96,6 +105,21 @@ class AsyncClient:
         if self.key is None:
             return False
         return True
+
+    def update_key(self) -> bool:
+        if self.email is None or self.password is None:
+            return False
+        # Random initial jitter spreads simultaneous starts across instances.
+        time.sleep(random.uniform(0, 3))
+        last_exc: Optional[Exception] = None
+        for attempt in range(5):
+            try:
+                return self._update_key_once()
+            except Exception as exc:
+                last_exc = exc
+                wait = 2 ** attempt + random.uniform(0, 1)
+                time.sleep(wait)
+        raise RuntimeError(f'update_key failed after 5 attempts') from last_exc
 
     async def get_data(self, url: str):
         async with self.throttler:

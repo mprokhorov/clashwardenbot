@@ -135,7 +135,7 @@ async def player_info(dm: DatabaseManager, bot_user: BotUser) -> tuple[str, Pars
         )
     for row in rows:
         text += (
-            f'<b>{dm.of.to_html(row['player_name'])}</b>, {dm.of.role(row['player_role'])}\n'
+            f'<b>{dm.load_name(row['player_tag'])}</b>, {dm.of.role(row['player_role'])}\n'
             f'Статус участия в КВ: {'✅' if row['is_player_set_for_clan_wars'] else '❌'}\n'
             f'{dm.of.get_player_info_with_custom_emoji(
                 row['town_hall_level'],
@@ -167,7 +167,7 @@ async def members_players(
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     rows = await dm.acquired_connection.fetch('''
         SELECT
-            player_name,
+            player_tag, player_name,
             town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
         FROM player
         WHERE clan_tag = $1 AND is_player_in_clan
@@ -184,7 +184,7 @@ async def members_players(
     )
     for i, row in enumerate(rows):
         text += (
-            f'{i + 1}. {dm.of.to_html(row['player_name'])} {dm.of.get_player_info_with_emoji(
+            f'{i + 1}. {dm.load_name(row['player_tag'])} {dm.of.get_player_info_with_emoji(
                 row['town_hall_level'],
                 row['barbarian_king_level'],
                 row['archer_queen_level'],
@@ -783,7 +783,7 @@ async def contributions(
 
 async def donations(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     rows = await dm.acquired_connection.fetch('''
-        SELECT player_name, player_role, donations_given
+        SELECT player_tag, player_name, player_role, donations_given
         FROM player
         WHERE clan_tag = $1 AND is_player_in_clan
         ORDER BY donations_given DESC
@@ -795,7 +795,7 @@ async def donations(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, 
     )
     for i, row in enumerate(rows):
         text += (
-            f'{i + 1}. {dm.of.to_html(row['player_name'])}, {dm.of.role(row['player_role'])}: '
+            f'{i + 1}. {dm.load_name(row['player_tag'])}, {dm.of.role(row['player_role'])}: '
             f'{row['donations_given']}🏅\n'
         )
     consider_donations = await dm.acquired_connection.fetchval('''
@@ -805,7 +805,7 @@ async def donations(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, 
     ''', dm.clan_tag, chat_id)
     if consider_donations:
         rows = await dm.acquired_connection.fetch('''
-            SELECT player_name, donations_given
+            SELECT player_tag, player_name, donations_given
             FROM player
             WHERE clan_tag = $1 AND is_player_in_clan AND player_role = 'admin' AND player_tag NOT IN (
                 SELECT player_tag
@@ -819,17 +819,17 @@ async def donations(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, 
             text += (
                 f'\n'
                 f'<b>⬇️ Будет понижен</b>\n'
-                f'{dm.of.to_html(rows[0]['player_name'])}: {rows[0]['donations_given']}🏅\n'
+                f'{dm.load_name(rows[0]['player_tag'])}: {rows[0]['donations_given']}🏅\n'
             )
         elif len(rows) > 1:
             text += (
                 f'\n'
                 f'<b>⬇️ Будут понижены</b>\n'
-                f'{', '.join(f'{dm.of.to_html(row['player_name'])}: {row['donations_given']}🏅' for row in rows)}\n'
+                f'{', '.join(f'{dm.load_name(row['player_tag'])}: {row['donations_given']}🏅' for row in rows)}\n'
             )
 
         rows = await dm.acquired_connection.fetch('''
-            SELECT player_name, donations_given
+            SELECT player_tag, player_name, donations_given
             FROM player
             WHERE clan_tag = $1 AND is_player_in_clan AND player_role = 'member' AND player_tag IN (
                 SELECT player_tag
@@ -843,13 +843,13 @@ async def donations(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, 
             text += (
                 f'\n'
                 f'<b>⬆️ Будет повышен</b>\n'
-                f'{dm.of.to_html(rows[0]['player_name'])}: {rows[0]['donations_given']}🏅\n'
+                f'{dm.load_name(rows[0]['player_tag'])}: {rows[0]['donations_given']}🏅\n'
             )
         elif len(rows) > 1:
             text += (
                 f'\n'
                 f'<b>⬆️ Будут повышены</b>\n'
-                f'{', '.join(f'{dm.of.to_html(row['player_name'])}: {row['donations_given']}🏅' for row in rows)}\n'
+                f'{', '.join(f'{dm.load_name(row['player_tag'])}: {row['donations_given']}🏅' for row in rows)}\n'
             )
     button_row = []
     update_button = InlineKeyboardButton(

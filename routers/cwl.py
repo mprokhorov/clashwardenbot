@@ -768,7 +768,7 @@ async def cwl_list(
     if cwl_list_order == CWLListOrder.by_town_hall_and_heroes:
         rows = await dm.acquired_connection.fetch('''
             SELECT
-                player_name,
+                player_tag, player_name,
                 town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
             FROM player
             WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_war_league
@@ -785,7 +785,7 @@ async def cwl_list(
     else:
         rows = await dm.acquired_connection.fetch('''
             SELECT
-                player_name,
+                player_tag, player_name,
                 town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level, grand_warden_level, royal_champion_level, dragon_duke_level
             FROM player
             WHERE clan_tag = $1 AND player.is_player_in_clan AND is_player_set_for_clan_war_league
@@ -799,7 +799,7 @@ async def cwl_list(
     button_row.append(update_button)
     if len(rows) > 0:
         for i, row in enumerate(rows):
-            text += (f'{i + 1}. {dm.of.to_html(row['player_name'])} {dm.of.get_player_info_with_emoji(
+            text += (f'{i + 1}. {dm.load_name(row['player_tag'])} {dm.of.get_player_info_with_emoji(
                 row['town_hall_level'],
                 row['barbarian_king_level'],
                 row['archer_queen_level'],

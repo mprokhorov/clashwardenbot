@@ -1,6 +1,6 @@
 import logging
 
-from aiogram.client.session.middleware import BaseRequestMiddleware
+from aiogram.client.session.middlewares.base import BaseRequestMiddleware
 from aiogram.enums import ParseMode
 from aiogram.methods import SendMessage, EditMessageText
 

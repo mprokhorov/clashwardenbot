@@ -276,13 +276,14 @@ async def player_rating_details(
     )
     if r.cwl_total_wars > 0:
         average_cwl_stars = r.cwl_total_stars / r.cwl_total_wars
-        if r.cwl_minimum_wars is not None and r.cwl_minimum_average_stars is not None:
-            text += (
-                f'Войн ЛВК: {r.cwl_total_wars} ⚔️ / {r.cwl_minimum_wars} ⚔️\n'
-                f'Среднее количество звёзд: '
-                f'{dm.of.format_and_rstrip(average_cwl_stars, 1)} ⭐ / '
-                f'{dm.of.format_and_rstrip(r.cwl_minimum_average_stars, 1)} ⭐\n'
-            )
+        if r.cwl_minimum_wars is not None:
+            text += f'Войн ЛВК: {r.cwl_total_wars} ⚔️ / {r.cwl_minimum_wars} ⚔️\n'
+            if r.cwl_minimum_average_stars is not None:
+                text += (
+                    f'Среднее количество звёзд: '
+                    f'{dm.of.format_and_rstrip(average_cwl_stars, 1)} ⭐ / '
+                    f'{dm.of.format_and_rstrip(r.cwl_minimum_average_stars, 1)} ⭐\n'
+                )
         else:
             text += f'Войн ЛВК: {r.cwl_total_wars} ⚔️\n'
         text += (

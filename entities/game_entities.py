@@ -139,6 +139,8 @@ class PlayerRating:
     raids_total_gold: list[int]
     cw_total_attacks: list[int]
     is_eligible_for_prize: bool
+    cwl_minimum_wars: Optional[int]
+    cwl_minimum_average_stars: Optional[float]
     total_cwl_points: Optional[float]
     total_league_points: Optional[float]
     total_place_points: Optional[float]

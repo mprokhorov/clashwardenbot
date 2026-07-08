@@ -1480,6 +1480,8 @@ class DatabaseManager:
         MAX_TOWN_HALL_LEVEL = await self.get_max_town_hall_level()
 
         is_eligible_for_prize = {}
+        cwl_minimum_wars_by_tag = {}
+        cwl_minimum_average_stars_by_tag = {}
         for player_tag in {*cwl_total_stars, *cwl_total_wars}:
             cwl_clan_tag = cwl_clan_tag_by_player.get(player_tag)
             if (
@@ -1491,11 +1493,13 @@ class DatabaseManager:
             minimum_average_cwl_stars, minimum_cwl_wars = cwl_eligibility_config_by_clan_tag[cwl_clan_tag]
             cwl_event_count = cwl_event_count_by_clan_tag.get(cwl_clan_tag, 1)
             total_wars = cwl_total_wars.get(player_tag, 0)
+            cwl_minimum_wars_by_tag[player_tag] = minimum_cwl_wars * cwl_event_count
             if total_wars < minimum_cwl_wars * cwl_event_count:
                 continue
             town_hall_difference = MAX_TOWN_HALL_LEVEL - town_hall_levels[player_tag]
             bracket = min(town_hall_difference, len(minimum_average_cwl_stars) - 1)
             average_cwl_stars = cwl_total_stars.get(player_tag, 0) / total_wars
+            cwl_minimum_average_stars_by_tag[player_tag] = minimum_average_cwl_stars[bracket]
             is_eligible_for_prize[player_tag] = average_cwl_stars >= minimum_average_cwl_stars[bracket]
 
         rows = await self.acquired_connection.fetch('''
@@ -1580,6 +1584,8 @@ class DatabaseManager:
                 raids_total_gold=[],
                 cw_total_attacks=[],
                 is_eligible_for_prize=is_eligible_for_prize.get(player_tag, False),
+                cwl_minimum_wars=cwl_minimum_wars_by_tag.get(player_tag),
+                cwl_minimum_average_stars=cwl_minimum_average_stars_by_tag.get(player_tag),
                 total_cwl_points=None,
                 total_league_points=None,
                 total_place_points=None,

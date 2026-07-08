@@ -21,7 +21,7 @@ async def main():
     logging.basicConfig(
         level=logging.INFO,
         format='%(filename)s:%(lineno)d #%(levelname)s [%(asctime)s] - %(name)s - %(message)s',
-        handlers=[logging.FileHandler(f'bot_polling_{bot_number}.log', 'w'), logging.StreamHandler()]
+        handlers=[logging.FileHandler(f'bot_polling_{bot_number}.log', 'a'), logging.StreamHandler()]
     )
 
     session = AiohttpSession()
@@ -53,3 +53,5 @@ if __name__ == '__main__':
         logging.info('KeyboardInterrupt')
     except SystemExit:
         logging.info('SystemExit')
+    except Exception:
+        logging.exception('Unhandled exception')

@@ -2,6 +2,7 @@ import asyncio
 import calendar
 import hashlib
 import json
+import math
 import secrets
 from datetime import datetime, UTC
 from typing import Optional, Any
@@ -1432,7 +1433,11 @@ class DatabaseManager:
                 cwl_own_war = json.loads(cwl_row['data'])
                 if cwl_own_war['opponent']['tag'] == cwl_clan_tag:
                     cwl_own_war['clan'], cwl_own_war['opponent'] = cwl_own_war['opponent'], cwl_own_war['clan']
+                war_ended = cwl_own_war.get('state') == 'warEnded'
                 for cwlw_member in cwl_own_war['clan']['members']:
+                    player_attacked = len(cwlw_member.get('attacks', [])) > 0
+                    if not war_ended and not player_attacked:
+                        continue
                     cwlw_total_stars = sum(attack['stars'] for attack in cwlw_member.get('attacks', []))
                     cwl_total_stars[cwlw_member['tag']] = cwl_total_stars.get(cwlw_member['tag'], 0) + cwlw_total_stars
                     cwl_total_wars[cwlw_member['tag']] = cwl_total_wars.get(cwlw_member['tag'], 0) + 1
@@ -1645,12 +1650,22 @@ class DatabaseManager:
 
     @staticmethod
     def get_player_rating_giveaway_entries(player_ratings: dict[str, PlayerRating]) -> list[PlayerRatingGiveawayEntry]:
+        eligible = [
+            (player_tag, rating.total_points)
+            for player_tag, rating in player_ratings.items()
+            if rating.is_eligible_for_prize and rating.total_points > 0
+        ]
+        if not eligible:
+            return []
+        points = [p for _, p in eligible]
+        mu = sum(points) / len(points)
+        sigma = math.sqrt(sum((p - mu) ** 2 for p in points) / len(points))
+        if sigma == 0:
+            weights = [(tag, 1.0) for tag, _ in eligible]
+        else:
+            weights = [(tag, math.exp((p - mu) / sigma)) for tag, p in eligible]
         return sorted(
-            (
-                PlayerRatingGiveawayEntry(player_tag=player_tag, weight=rating.total_points)
-                for player_tag, rating in player_ratings.items()
-                if rating.is_eligible_for_prize and rating.total_points > 0
-            ),
+            [PlayerRatingGiveawayEntry(player_tag=tag, weight=w) for tag, w in weights],
             key=lambda entry: (-entry.weight, entry.player_tag)
         )
 

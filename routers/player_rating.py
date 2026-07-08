@@ -1,4 +1,5 @@
 import logging
+import math
 from enum import auto, IntEnum
 from typing import Optional
 
@@ -28,13 +29,15 @@ class PlayerRatingCallbackFactory(CallbackData, prefix='player_rating'):
     player_tag: Optional[str] = None
     eligible_only: bool = True
     page: int = 0
+    show_chances: bool = False
 
 
 PLAYER_RATING_CHOOSE_PAGE_SIZE = 20
 
 
 async def get_season_toggle_button(
-        dm: DatabaseManager, output_view: OutputView, season: str, eligible_only: bool, player_tag: Optional[str] = None
+        dm: DatabaseManager, output_view: OutputView, season: str, eligible_only: bool,
+        player_tag: Optional[str] = None, show_chances: bool = False
 ) -> Optional[InlineKeyboardButton]:
     current_season = dm.of.utc_now().strftime('%Y-%m')
     if season == current_season:
@@ -43,7 +46,8 @@ async def get_season_toggle_button(
             return InlineKeyboardButton(
                 text='⬅️ Прошлый месяц',
                 callback_data=PlayerRatingCallbackFactory(
-                    output_view=output_view, season=previous_season, player_tag=player_tag, eligible_only=eligible_only
+                    output_view=output_view, season=previous_season, player_tag=player_tag,
+                    eligible_only=eligible_only, show_chances=show_chances
                 ).pack()
             )
         return None
@@ -51,7 +55,8 @@ async def get_season_toggle_button(
         return InlineKeyboardButton(
             text='➡️ Текущий месяц',
             callback_data=PlayerRatingCallbackFactory(
-                output_view=output_view, season=current_season, player_tag=player_tag, eligible_only=eligible_only
+                output_view=output_view, season=current_season, player_tag=player_tag,
+                eligible_only=eligible_only, show_chances=show_chances
             ).pack()
         )
 
@@ -80,6 +85,7 @@ async def player_rating_list(
     else:
         season = current_season
     eligible_only = callback_data.eligible_only if callback_data is not None else True
+    show_chances = callback_data.show_chances if callback_data is not None else False
     title = 'Рейтинг игроков (только допущенные к розыгрышу)' if eligible_only else 'Рейтинг игроков (все игроки)'
     text = (
         f'<b>💎 {title}</b>\n'
@@ -90,12 +96,25 @@ async def player_rating_list(
         player_ratings = {player_tag: r for player_tag, r in player_ratings.items() if r.is_eligible_for_prize}
     else:
         player_ratings = {player_tag: r for player_tag, r in player_ratings.items() if r.total_points != 0}
+    sorted_entries = sorted(player_ratings.items(), key=lambda x: x[1].total_points, reverse=True)
+    if eligible_only and show_chances and len(sorted_entries) > 0:
+        points_list = [r.total_points for _, r in sorted_entries]
+        mean = sum(points_list) / len(points_list)
+        std_dev = math.sqrt(sum((x - mean) ** 2 for x in points_list) / len(points_list)) if len(points_list) > 1 else 1.0
+        if std_dev == 0:
+            std_dev = 1.0
+        weights = {tag: math.exp((r.total_points - mean) / std_dev) for tag, r in sorted_entries}
+        total_weight = sum(weights.values())
+        chances = {tag: w / total_weight * 100 for tag, w in weights.items()}
+    else:
+        chances = {}
     text += (
         f'Сезон: {dm.of.season(season, False)}\n'
         f'\n'
     )
-    for i, (player_tag, r) in enumerate(sorted(player_ratings.items(), key=lambda x: x[1].total_points, reverse=True)):
-        text += f'{i + 1}. {dm.load_name_html(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 💎\n'
+    for i, (player_tag, r) in enumerate(sorted_entries):
+        chance_str = f' ({dm.of.format_and_rstrip(chances[player_tag], 1)}%)' if chances else ''
+        text += f'{i + 1}. {dm.load_name_html(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 💎{chance_str}\n'
     if len(player_ratings) == 0:
         text += f'Список пуст\n'
     details_button = InlineKeyboardButton(
@@ -113,15 +132,29 @@ async def player_rating_list(
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
         callback_data=PlayerRatingCallbackFactory(
-            output_view=OutputView.player_rating_list, season=season, eligible_only=eligible_only, update=True
+            output_view=OutputView.player_rating_list, season=season, eligible_only=eligible_only,
+            show_chances=show_chances, update=True
         ).pack()
     )
     button_upper_row = [details_button, toggle_eligible_only_button]
     bottom_row = [update_button]
-    season_toggle_button = await get_season_toggle_button(dm, OutputView.player_rating_list, season, eligible_only)
+    season_toggle_button = await get_season_toggle_button(
+        dm, OutputView.player_rating_list, season, eligible_only, show_chances=show_chances
+    )
     if season_toggle_button is not None:
         bottom_row.append(season_toggle_button)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[button_upper_row, bottom_row])
+    inline_keyboard = [button_upper_row]
+    if eligible_only:
+        show_chances_button = InlineKeyboardButton(
+            text='🎲 Скрыть шансы' if show_chances else '🎲 Показать шансы',
+            callback_data=PlayerRatingCallbackFactory(
+                output_view=OutputView.player_rating_list, season=season, eligible_only=eligible_only,
+                show_chances=not show_chances
+            ).pack()
+        )
+        inline_keyboard.append([show_chances_button])
+    inline_keyboard.append(bottom_row)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=inline_keyboard)
     return text, ParseMode.HTML, keyboard
 
 

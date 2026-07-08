@@ -15,6 +15,7 @@ import asyncpg
 from aiogram import Bot
 from aiogram.client.session.aiohttp import AiohttpSession
 from aiogram.enums import ParseMode
+from aiogram.exceptions import TelegramRetryAfter, TelegramBadRequest
 
 from config import config
 
@@ -57,22 +58,31 @@ async def run(bot_number: int, target_name: str, edit_all: bool) -> None:
             logging.info(f'[{i+1}/{len(to_process)}] message_id={row["message_id"]} уже содержит <code>, пропуск')
             continue
         new_text = old_text.replace(target_name, monospace_name)
-        try:
-            await bot.edit_message_text(
-                chat_id=row['chat_id'],
-                message_id=row['message_id'],
-                text=new_text,
-                parse_mode=ParseMode.HTML,
-            )
-            await pool.execute('''
-                UPDATE bot_message_log SET html_text = $1
-                WHERE clan_tag = $2 AND chat_id = $3 AND message_id = $4
-            ''', new_text, clan_tag, row['chat_id'], row['message_id'])
-            logging.info(f'[{i+1}/{len(to_process)}] Отредактировано message_id={row["message_id"]} '
-                         f'в чате {row["chat_id"]}')
-        except Exception as e:
-            logging.warning(f'[{i+1}/{len(to_process)}] Ошибка для message_id={row["message_id"]}: {e}')
-        await asyncio.sleep(0.5)
+        for attempt in range(5):
+            try:
+                await bot.edit_message_text(
+                    chat_id=row['chat_id'],
+                    message_id=row['message_id'],
+                    text=new_text,
+                    parse_mode=ParseMode.HTML,
+                )
+                await pool.execute('''
+                    UPDATE bot_message_log SET html_text = $1
+                    WHERE clan_tag = $2 AND chat_id = $3 AND message_id = $4
+                ''', new_text, clan_tag, row['chat_id'], row['message_id'])
+                logging.info(f'[{i+1}/{len(to_process)}] Отредактировано message_id={row["message_id"]} '
+                             f'в чате {row["chat_id"]}')
+                break
+            except TelegramRetryAfter as e:
+                logging.warning(f'[{i+1}/{len(to_process)}] Flood control, жду {e.retry_after} сек...')
+                await asyncio.sleep(e.retry_after + 1)
+            except TelegramBadRequest as e:
+                logging.warning(f'[{i+1}/{len(to_process)}] Пропуск message_id={row["message_id"]}: {e}')
+                break
+            except Exception as e:
+                logging.warning(f'[{i+1}/{len(to_process)}] Ошибка message_id={row["message_id"]}: {e}')
+                break
+        await asyncio.sleep(2)
 
     await session.close()
     await pool.close()

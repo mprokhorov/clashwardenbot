@@ -628,7 +628,7 @@ async def give_bonus_select_player(
         f'\n'
         f'Выберите участника ЛВК:'
     )
-    player_tags = await dm.get_cwl_ratings(cwl_season, cwlws)
+    player_tags = await dm.get_cwl_ratings(cwl_season, cwlws, True)
     button_rows = [
         [InlineKeyboardButton(
             text=f'{dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n',

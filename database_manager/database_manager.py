@@ -1464,6 +1464,7 @@ class DatabaseManager:
         ''', season, list(cw_bonus_by_clan_tag))
         cw_total_attacks_by_tag = {}
         cw_penalty_points_by_tag = {}
+        cw_clan_by_player = {}
         for row in rows:
             cw = json.loads(row['data'])
             cw_bonus = cw_bonus_by_clan_tag[row['clan_tag']]
@@ -1473,6 +1474,8 @@ class DatabaseManager:
                 cw_penalty_points_by_tag[member['tag']] = (
                     cw_penalty_points_by_tag.get(member['tag'], 0) + cw_bonus[min(attacks_made, len(cw_bonus) - 1)]
                 )
+                if member['tag'] not in cw_clan_by_player:
+                    cw_clan_by_player[member['tag']] = row['clan_tag']
 
         rows = await self.acquired_connection.fetch('''
             SELECT DISTINCT ON (player_tag) player_tag, clan_tag, town_hall_level
@@ -1511,10 +1514,13 @@ class DatabaseManager:
             average_cwl_stars = cwl_total_stars.get(player_tag, 0) / total_wars
             cwl_minimum_average_stars_by_tag[player_tag] = minimum_average_cwl_stars[bracket]
             is_eligible_for_prize[player_tag] = average_cwl_stars >= minimum_average_cwl_stars[bracket]
-        # Auto-eligible: all current members of clans with no CWL requirement
-        for player_tag, clan_tag in current_clan_by_player.items():
-            if clan_tag in no_cwl_requirement_clans:
-                is_eligible_for_prize[player_tag] = True
+        # Auto-eligible: players who are in or participated in clans with no CWL requirement.
+        # Three sources are checked because is_player_in_clan may be stale for child-clan members:
+        # current player table, CWL participation, CW participation.
+        for source in (current_clan_by_player, cwl_clan_tag_by_player, cw_clan_by_player):
+            for player_tag, clan_tag in source.items():
+                if clan_tag in no_cwl_requirement_clans:
+                    is_eligible_for_prize[player_tag] = True
 
         rows = await self.acquired_connection.fetch('''
             SELECT child_clan_tag

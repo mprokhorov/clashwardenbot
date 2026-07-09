@@ -1467,6 +1467,8 @@ class DatabaseManager:
         cw_clan_by_player = {}
         for row in rows:
             cw = json.loads(row['data'])
+            if cw.get('state') != 'warEnded':
+                continue
             cw_bonus = cw_bonus_by_clan_tag[row['clan_tag']]
             for member in cw['clan']['members']:
                 attacks_made = len(member.get('attacks', []))

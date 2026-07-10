@@ -121,16 +121,27 @@ class PlayerRating:
     cwl_clan_tag: Optional[str]
     cwl_total_stars: int
     cwl_total_wars: int
+    cwl_event_count: int
     league_numbers: list[int]
-    leagues_places: list[int]
+    leagues_places: list[tuple[int, int]]
     raids_total_attacks: list[int]
     raids_total_gold: list[int]
     cw_total_attacks: list[int]
     is_eligible_for_prize: bool
+    cwl_minimum_wars: Optional[int]
+    cwl_minimum_average_stars: Optional[float]
+    total_cwl_points: Optional[float]
+    total_league_points: Optional[float]
+    total_place_points: Optional[float]
+    total_raids_attack_points: Optional[float]
+    total_raids_gold_points: Optional[float]
+    total_raids_points: Optional[float]
+    total_cw_penalty_points: Optional[float]
+    total_points: Optional[float]
 
 
 @dataclass
 class PlayerRatingConfig:
     minimum_average_cwl_stars: list[float]
-    minimum_cwl_stars: int
+    minimum_cwl_wars: int
     cw_bonus_points: list[float]

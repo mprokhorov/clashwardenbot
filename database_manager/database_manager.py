@@ -1,4 +1,5 @@
 import asyncio
+import calendar
 import json
 from datetime import datetime, UTC
 from typing import Optional, Any
@@ -417,6 +418,7 @@ class DatabaseManager:
             VALUES ($1, $2, NOW() AT TIME ZONE 'UTC', $3, $4)
             ON CONFLICT (clan_tag, player_tag, league_date)
             DO UPDATE SET (league_tier, trophies) = ($3, $4)
+            WHERE (EXCLUDED.league_tier, EXCLUDED.trophies) > (player_league.league_tier, player_league.trophies)
         ''', league_tier_rows)
         return True
 
@@ -1251,23 +1253,69 @@ class DatabaseManager:
             )
         return player_tags
 
-    async def get_player_ratings(self, season: str) -> dict[str, PlayerRating]:
+    async def get_max_town_hall_level(self) -> int:
+        return await self.acquired_connection.fetchval('''
+            SELECT MAX(town_hall_level)
+            FROM (
+                SELECT town_hall_level FROM player
+                UNION ALL
+                SELECT town_hall_level FROM opponent_player
+            ) AS combined_town_hall_levels
+        ''')
+
+    async def get_family_clan_tags(self) -> list[str]:
         rows = await self.acquired_connection.fetch('''
-            SELECT data
+            SELECT child_clan_tag
+            FROM child_clan
+            WHERE father_clan_tag = $1
+        ''', self.clan_tag)
+        return list(dict.fromkeys([self.clan_tag] + [row['child_clan_tag'] for row in rows]))
+
+    async def get_player_rating_seasons(self) -> list[str]:
+        family_clan_tags = await self.get_family_clan_tags()
+        rows = await self.acquired_connection.fetch('''
+            SELECT DISTINCT TO_CHAR(league_date, 'YYYY-MM') AS season
+            FROM player_league
+            WHERE clan_tag = ANY($1::varchar[])
+            ORDER BY season
+        ''', family_clan_tags)
+        return [row['season'] for row in rows]
+
+    async def get_player_ratings(self, season: str) -> dict[str, PlayerRating]:
+        LEAGUE_POINTS_BY_LEAGUE_NUMBER = {36: 20, 35: 15, 34: 10, 33: 5, 32: 3, 31: 1}
+        GOLD_POINTS_THRESHOLDS = [(50000, 7), (40000, 6), (30000, 5), (25000, 4), (20000, 3), (15000, 2), (10000, 1)]
+
+        def gold_points(gold_amount: float) -> int:
+            for threshold, points in GOLD_POINTS_THRESHOLDS:
+                if gold_amount >= threshold:
+                    return points
+            return 0
+
+        family_clan_tags = await self.get_family_clan_tags()
+
+        rows = await self.acquired_connection.fetch('''
+            SELECT start_time, data
             FROM raid_weekend
-            WHERE clan_tag = $1 AND TO_CHAR(start_time + INTERVAL '3 days', 'YYYY-MM') = $2
+            WHERE clan_tag = ANY($2::varchar[]) AND TO_CHAR(start_time + INTERVAL '3 days', 'YYYY-MM') = $1
             ORDER BY start_time DESC
-        ''', self.clan_tag, season)
+        ''', season, family_clan_tags)
+        raid_weekends_by_start_time = {}
+        for row in rows:
+            raid_weekends_by_start_time.setdefault(row['start_time'], []).append(json.loads(row['data']))
+        total_raid_weekends = len(raid_weekends_by_start_time)
         gold_list_by_tag = {}
         raid_attack_list_by_tag = {}
-        for row in rows:
-            raid_weekend = json.loads(row['data'])
+        for raid_weekends in raid_weekends_by_start_time.values():
             gold_by_tag_raw = {}
-            for raids_member in raid_weekend['members']:
-                if raids_member['tag'] not in gold_by_tag_raw:
-                    gold_by_tag_raw[raids_member['tag']] = raids_member['capitalResourcesLooted']
-                else:
-                    gold_by_tag_raw[raids_member['tag']] += raids_member['capitalResourcesLooted']
+            attacks_by_tag_raw = {}
+            for raid_weekend in raid_weekends:
+                for raids_member in raid_weekend.get('members', []):
+                    gold_by_tag_raw[raids_member['tag']] = (
+                        gold_by_tag_raw.get(raids_member['tag'], 0) + raids_member['capitalResourcesLooted']
+                    )
+                    attacks_by_tag_raw[raids_member['tag']] = (
+                        attacks_by_tag_raw.get(raids_member['tag'], 0) + raids_member['attacks']
+                    )
             rows_users = await self.acquired_connection.fetch('''
                 SELECT DISTINCT bot_user.user_id, player.player_tag
                 FROM
@@ -1275,20 +1323,19 @@ class DatabaseManager:
                     JOIN player ON
                         player_bot_user.clan_tag = player.clan_tag
                         AND player_bot_user.player_tag = player.player_tag
-                        AND player.player_tag = any($2::varchar[])
+                        AND player.player_tag = ANY($2::varchar[])
                     JOIN bot_user ON
                         player_bot_user.clan_tag = bot_user.clan_tag
                         AND player_bot_user.chat_id = bot_user.chat_id
                         AND player_bot_user.user_id = bot_user.user_id
                         AND is_user_in_chat
-                  WHERE player.clan_tag = $1
-              ''', self.clan_tag, raid_weekend['members'])
-            users_by_tag = {player_tag: [] for player_tag in [row_users['player_tag'] for row_users in rows_users]}
+                WHERE player.clan_tag = ANY($1::varchar[])
+            ''', family_clan_tags, list(gold_by_tag_raw))
+            users_by_tag = {}
+            tags_by_user = {}
             for row_users in rows_users:
-                users_by_tag[row_users['player_tag']].append(row_users['user_id'])
-            tags_by_user = {user_id: [] for user_id in [row_users['user_id'] for row_users in rows_users]}
-            for row_users in rows_users:
-                tags_by_user[row_users['user_id']].append(row_users['player_tag'])
+                users_by_tag.setdefault(row_users['player_tag'], []).append(row_users['user_id'])
+                tags_by_user.setdefault(row_users['user_id'], []).append(row_users['player_tag'])
             gold_by_tag = {player_tag: 0 for player_tag in gold_by_tag_raw}
             for player_tag in gold_by_tag_raw:
                 if player_tag not in users_by_tag or len(users_by_tag[player_tag]) == 0:
@@ -1298,66 +1345,212 @@ class DatabaseManager:
                         for tag in tags_by_user[user_id]:
                             gold_by_tag[tag] += gold_by_tag_raw[player_tag] / (len(tags_by_user[user_id]) * len(users_by_tag[player_tag]))
             for player_tag, gold in gold_by_tag.items():
-                gold_list_by_tag[player_tag] = gold_list_by_tag.get(player_tag, []) + [gold]
-            for raid_member in raid_weekend['members']:
-                raid_attack_list_by_tag[raid_member['tag']] = raid_attack_list_by_tag.get(raid_member['tag'], []) + [raid_member['attacks']]
+                gold_list_by_tag.setdefault(player_tag, []).append(gold)
+            for player_tag, attacks in attacks_by_tag_raw.items():
+                raid_attack_list_by_tag.setdefault(player_tag, []).append(attacks)
 
         rows = await self.acquired_connection.fetch('''
-            SELECT cwl_clan_tag
+            SELECT child_clan_tag, minimum_average_cwl_stars, minimum_cwl_wars
             FROM player_rating_config
-            WHERE clan_tag = $1 AND minimum_average_cwl_stars IS NOT NULL AND minimum_cwl_wars IS NOT NULL
+            WHERE clan_tag = $1
         ''', self.clan_tag)
+        cwl_eligibility_config_by_clan_tag = {}
+        no_cwl_requirement_clans = set()
+        for row in rows:
+            if row['minimum_average_cwl_stars'] is not None and row['minimum_cwl_wars'] is not None:
+                cwl_eligibility_config_by_clan_tag[row['child_clan_tag']] = (
+                    row['minimum_average_cwl_stars'], row['minimum_cwl_wars']
+                )
+            else:
+                no_cwl_requirement_clans.add(row['child_clan_tag'])
         cwl_total_stars = {}
         cwl_total_wars = {}
         cwl_clan_tag_by_player = {}
-        for row in rows:
-            cwl_own_wars = await self.load_clan_war_league_own_wars(season, row['cwl_clan_tag']) or []
-            for cwl_own_war in cwl_own_wars:
+        cwl_event_count_by_clan_tag = {}
+        for cwl_clan_tag in {*cwl_eligibility_config_by_clan_tag, *no_cwl_requirement_clans}:
+            cwl_rows = await self.acquired_connection.fetch('''
+                SELECT day, data
+                FROM clan_war_league_war
+                WHERE clan_tag = $1 AND season LIKE $2 AND $1 IN (data->'clan'->>'tag', data->'opponent'->>'tag')
+                ORDER BY data->>'preparationStartTime'
+            ''', cwl_clan_tag, f'{season}%')
+            cwl_event_count = 0
+            for cwl_row in cwl_rows:
+                if cwl_row['day'] == 0 or cwl_event_count == 0:
+                    cwl_event_count += 1
+                cwl_own_war = json.loads(cwl_row['data'])
+                if cwl_own_war['opponent']['tag'] == cwl_clan_tag:
+                    cwl_own_war['clan'], cwl_own_war['opponent'] = cwl_own_war['opponent'], cwl_own_war['clan']
+                war_ended = cwl_own_war.get('state') == 'warEnded'
                 for cwlw_member in cwl_own_war['clan']['members']:
-                    cwlw_total_stars = sum(attack['stars'] for attack in cwlw_member['attacks'])
+                    player_attacked = len(cwlw_member.get('attacks', [])) > 0
+                    if not war_ended and not player_attacked:
+                        continue
+                    cwlw_total_stars = sum(attack['stars'] for attack in cwlw_member.get('attacks', []))
                     cwl_total_stars[cwlw_member['tag']] = cwl_total_stars.get(cwlw_member['tag'], 0) + cwlw_total_stars
                     cwl_total_wars[cwlw_member['tag']] = cwl_total_wars.get(cwlw_member['tag'], 0) + 1
                     if cwlw_member['tag'] not in cwl_clan_tag_by_player:
                         cwl_clan_tag_by_player[cwlw_member['tag']] = cwl_own_war['clan']['tag']
+            cwl_event_count_by_clan_tag[cwl_clan_tag] = max(cwl_event_count, 1)
 
         rows = await self.acquired_connection.fetch('''
-            SELECT data
-            FROM clan_wars
-            WHERE TO_CHAR((data->>'endTime')::timestamp, 'YYYY-MM') = $1 and clan_tag IN (
-                SELECT child_clan_tag
-                FROM player_rating_config
-                WHERE clan_tag = $2 AND cw_bonus IS NOT NULL
-            )
-        ''', season, self.clan_tag)
+            SELECT child_clan_tag, cw_bonus
+            FROM player_rating_config
+            WHERE clan_tag = $1 AND cw_bonus IS NOT NULL
+        ''', self.clan_tag)
+        cw_bonus_by_clan_tag = {row['child_clan_tag']: row['cw_bonus'] for row in rows}
+        rows = await self.acquired_connection.fetch('''
+            SELECT clan_tag, data
+            FROM clan_war
+            WHERE TO_CHAR((data->>'endTime')::timestamp, 'YYYY-MM') = $1 AND clan_tag = ANY($2::varchar[])
+        ''', season, list(cw_bonus_by_clan_tag))
         cw_total_attacks_by_tag = {}
+        cw_penalty_points_by_tag = {}
+        cw_clan_by_player = {}
         for row in rows:
             cw = json.loads(row['data'])
-            for member in cw['members']:
-                cw_total_attacks_by_tag[member['tag']] = cw_total_attacks_by_tag.get(member['tag'], []) + [len(member['attacks'])]
+            if cw.get('state') != 'warEnded':
+                continue
+            cw_bonus = cw_bonus_by_clan_tag[row['clan_tag']]
+            for member in cw['clan']['members']:
+                attacks_made = len(member.get('attacks', []))
+                cw_total_attacks_by_tag[member['tag']] = cw_total_attacks_by_tag.get(member['tag'], []) + [attacks_made]
+                cw_penalty_points_by_tag[member['tag']] = (
+                    cw_penalty_points_by_tag.get(member['tag'], 0) + cw_bonus[min(attacks_made, len(cw_bonus) - 1)]
+                )
+                if member['tag'] not in cw_clan_by_player:
+                    cw_clan_by_player[member['tag']] = row['clan_tag']
 
         rows = await self.acquired_connection.fetch('''
-            SELECT DISTINCT ON (player_tag) player_tag, town_hall_level
+            SELECT DISTINCT ON (player_tag) player_tag, clan_tag, town_hall_level
             FROM player
-            WHERE clan_tag = $1 OR clan_tag IN (SELECT child_clan_tag FROM child_clan WHERE father_clan_tag = $1)
+            WHERE is_player_in_clan AND clan_tag = ANY($1::varchar[])
             ORDER BY player_tag, town_hall_level DESC
-        ''', self.clan_tag)
+        ''', family_clan_tags)
         town_hall_levels = {row['player_tag']: row['town_hall_level'] for row in rows}
-
-        total_player_tags = {
-            *gold_list_by_tag, *raid_attack_list_by_tag, *cwl_total_stars, *cwl_total_wars, *cw_total_attacks_by_tag
-        }
+        current_clan_by_player = {row['player_tag']: row['clan_tag'] for row in rows}
         MAX_TOWN_HALL_LEVEL = await self.get_max_town_hall_level()
+
+        is_eligible_for_prize = {}
+        cwl_minimum_wars_by_tag = {}
+        cwl_minimum_average_stars_by_tag = {}
+        for player_tag in {*cwl_total_stars, *cwl_total_wars}:
+            # Players in clans with no CWL requirement are auto-eligible — skip the stars/wars check
+            if current_clan_by_player.get(player_tag) in no_cwl_requirement_clans:
+                continue
+            cwl_clan_tag = cwl_clan_tag_by_player.get(player_tag)
+            if (
+                cwl_clan_tag is None or
+                cwl_clan_tag not in cwl_eligibility_config_by_clan_tag or
+                player_tag not in town_hall_levels
+            ):
+                continue
+            minimum_average_cwl_stars, minimum_cwl_wars = cwl_eligibility_config_by_clan_tag[cwl_clan_tag]
+            cwl_event_count = cwl_event_count_by_clan_tag.get(cwl_clan_tag, 1)
+            total_wars = cwl_total_wars.get(player_tag, 0)
+            cwl_minimum_wars_by_tag[player_tag] = minimum_cwl_wars * cwl_event_count
+            if total_wars < minimum_cwl_wars * cwl_event_count:
+                continue
+            town_hall_difference = MAX_TOWN_HALL_LEVEL - town_hall_levels[player_tag]
+            bracket = min(town_hall_difference, len(minimum_average_cwl_stars) - 1)
+            average_cwl_stars = cwl_total_stars.get(player_tag, 0) / total_wars
+            cwl_minimum_average_stars_by_tag[player_tag] = minimum_average_cwl_stars[bracket]
+            is_eligible_for_prize[player_tag] = average_cwl_stars >= minimum_average_cwl_stars[bracket]
+        # Auto-eligible: players who are in or participated in clans with no CWL requirement.
+        # Three sources are checked because is_player_in_clan may be stale for child-clan members:
+        # current player table, CWL participation, CW participation.
+        for source in (current_clan_by_player, cwl_clan_tag_by_player, cw_clan_by_player):
+            for player_tag, clan_tag in source.items():
+                if clan_tag in no_cwl_requirement_clans:
+                    is_eligible_for_prize[player_tag] = True
+
+        rows = await self.acquired_connection.fetch('''
+            SELECT player_tag, league_date, league_tier, trophies
+            FROM player_league
+            WHERE TO_CHAR(league_date, 'YYYY-MM') = $1 AND clan_tag = ANY($2::varchar[])
+        ''', season, family_clan_tags)
+        best_league_reading_by_day = {}
+        for row in rows:
+            key = (row['player_tag'], row['league_date'])
+            candidate = (row['league_tier'], row['trophies'])
+            if key not in best_league_reading_by_day or candidate > best_league_reading_by_day[key]:
+                best_league_reading_by_day[key] = candidate
+        readings_by_day = {}
+        for (player_tag, league_date), (league_tier, trophies) in best_league_reading_by_day.items():
+            readings_by_day.setdefault(league_date, []).append((player_tag, league_tier, trophies))
+
+        league_numbers_by_tag = {}
+        leagues_places_by_tag = {}
+        league_points_by_tag = {}
+        place_points_by_tag = {}
+        for entries in readings_by_day.values():
+            for player_tag, league_tier, _ in entries:
+                league_numbers_by_tag.setdefault(player_tag, []).append(league_tier)
+                league_points_by_tag[player_tag] = (
+                    league_points_by_tag.get(player_tag, 0) + LEAGUE_POINTS_BY_LEAGUE_NUMBER.get(league_tier, 0)
+                )
+            eligible_entries = sorted(
+                (entry for entry in entries if is_eligible_for_prize.get(entry[0], False)),
+                key=lambda entry: (entry[1], entry[2]),
+                reverse=True
+            )
+            count_eligible = len(eligible_entries)
+            if count_eligible == 0:
+                continue
+            if count_eligible == 1:
+                player_tag = eligible_entries[0][0]
+                leagues_places_by_tag.setdefault(player_tag, []).append((1, 1))
+                place_points_by_tag[player_tag] = place_points_by_tag.get(player_tag, 0) + 10
+                continue
+            i = 0
+            while i < count_eligible:
+                j = i
+                while j + 1 < count_eligible and eligible_entries[j + 1][1:] == eligible_entries[i][1:]:
+                    j += 1
+                # Players sharing a league and trophy count share the averaged place, e.g. places 5-8 all count as 6.5
+                place = (i + 1 + j + 1) / 2
+                place_points = 10 * (count_eligible - place) / (count_eligible - 1)
+                for k in range(i, j + 1):
+                    player_tag = eligible_entries[k][0]
+                    leagues_places_by_tag.setdefault(player_tag, []).append((i + 1, j + 1))
+                    place_points_by_tag[player_tag] = place_points_by_tag.get(player_tag, 0) + place_points
+                i = j + 1
+
+        raids_gold_points_by_tag = {}
+        for player_tag, gold_values in gold_list_by_tag.items():
+            raids_gold_points_by_tag[player_tag] = sum(gold_points(gold) for gold in gold_values)
+        raids_attack_points_by_tag = {}
+        for player_tag, attack_values in raid_attack_list_by_tag.items():
+            raids_attack_points_by_tag[player_tag] = sum(attacks / 6 * 3 for attacks in attack_values)
+
+        days_in_month = calendar.monthrange(*map(int, season.split('-')))[1]
+        total_player_tags = {
+            *gold_list_by_tag, *raid_attack_list_by_tag, *cwl_total_stars, *cwl_total_wars, *cw_total_attacks_by_tag,
+            *league_numbers_by_tag
+        }
         player_rating = {
             player_tag: PlayerRating(
-                town_hall_difference=MAX_TOWN_HALL_LEVEL - town_hall_levels[player_tag],
+                town_hall_difference=MAX_TOWN_HALL_LEVEL - town_hall_levels.get(player_tag, MAX_TOWN_HALL_LEVEL),
                 cwl_clan_tag=None,
                 cwl_total_stars=0,
                 cwl_total_wars=0,
+                cwl_event_count=1,
                 league_numbers=[],
+                leagues_places=[],
                 raids_total_attacks=[],
                 raids_total_gold=[],
                 cw_total_attacks=[],
-                is_eligible_for_prize=False
+                is_eligible_for_prize=is_eligible_for_prize.get(player_tag, False),
+                cwl_minimum_wars=cwl_minimum_wars_by_tag.get(player_tag),
+                cwl_minimum_average_stars=cwl_minimum_average_stars_by_tag.get(player_tag),
+                total_cwl_points=None,
+                total_league_points=None,
+                total_place_points=None,
+                total_raids_attack_points=None,
+                total_raids_gold_points=None,
+                total_raids_points=None,
+                total_cw_penalty_points=None,
+                total_points=None
             )
             for player_tag in total_player_tags
         }
@@ -1373,7 +1566,41 @@ class DatabaseManager:
             player_rating[tag].cw_total_attacks = total_attacks
         for tag, cwl_clan_tag in cwl_clan_tag_by_player.items():
             player_rating[tag].cwl_clan_tag = cwl_clan_tag
+            player_rating[tag].cwl_event_count = cwl_event_count_by_clan_tag.get(cwl_clan_tag, 1)
+        for tag, league_numbers in league_numbers_by_tag.items():
+            player_rating[tag].league_numbers = league_numbers
+        for tag, leagues_places in leagues_places_by_tag.items():
+            player_rating[tag].leagues_places = leagues_places
 
+        for tag, rating in player_rating.items():
+            rating.total_cwl_points = (
+                (rating.cwl_total_stars / 21 * 55 + (5 if rating.cwl_total_stars >= 21 else 0)) / rating.cwl_event_count
+            )
+            rating.total_league_points = league_points_by_tag.get(tag, 0) / days_in_month
+            rating.total_place_points = place_points_by_tag.get(tag, 0) / days_in_month
+            rating.total_raids_attack_points = (
+                raids_attack_points_by_tag.get(tag, 0) / total_raid_weekends if total_raid_weekends > 0 else 0
+            )
+            rating.total_raids_gold_points = (
+                raids_gold_points_by_tag.get(tag, 0) / total_raid_weekends if total_raid_weekends > 0 else 0
+            )
+            rating.total_raids_points = rating.total_raids_attack_points + rating.total_raids_gold_points
+            rating.total_cw_penalty_points = cw_penalty_points_by_tag.get(tag, 0)
+            rating.total_points = (
+                rating.total_cwl_points +
+                rating.total_league_points +
+                rating.total_place_points +
+                rating.total_raids_points +
+                rating.total_cw_penalty_points
+            )
+
+        # Only players currently in a family clan are shown, and only if they have something to show
+        player_rating = {
+            player_tag: rating for player_tag, rating in player_rating.items()
+            if player_tag in town_hall_levels and (rating.is_eligible_for_prize or rating.total_points != 0)
+        }
+
+        return player_rating
 
     async def dump_user(self, chat: Chat, user: User) -> None:
         if chat.type in [ChatType.GROUP, ChatType.SUPERGROUP]:

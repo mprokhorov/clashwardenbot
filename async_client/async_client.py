@@ -123,18 +123,21 @@ class AsyncClient:
 
     async def get_data(self, url: str):
         async with self.throttler:
-            response = await self.http_client.get(
-                url=url,
-                headers={'authorization': f'Bearer {self.key}', 'accept': 'application/json'},
-                timeout=60
-            )
-            if response.status_code == HTTPStatus.FORBIDDEN and self.update_key():
+            try:
                 response = await self.http_client.get(
                     url=url,
                     headers={'authorization': f'Bearer {self.key}', 'accept': 'application/json'},
                     timeout=60
                 )
-            return response.json() if response.status_code == HTTPStatus.OK else None
+                if response.status_code == HTTPStatus.FORBIDDEN and self.update_key():
+                    response = await self.http_client.get(
+                        url=url,
+                        headers={'authorization': f'Bearer {self.key}', 'accept': 'application/json'},
+                        timeout=60
+                    )
+                return response.json() if response.status_code == HTTPStatus.OK else None
+            except httpx.RequestError:
+                return None
 
     async def get_clan(self, clan_tag: str):
         return await self.get_data(

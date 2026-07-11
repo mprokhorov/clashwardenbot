@@ -66,3 +66,4 @@ if __name__ == '__main__':
         logging.info('SystemExit')
     except Exception:
         logging.exception('Unhandled exception')
+        sys.exit(1)

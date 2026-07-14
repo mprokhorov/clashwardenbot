@@ -2,6 +2,7 @@ import argparse
 import asyncio
 import logging
 import sys
+from logging.handlers import RotatingFileHandler
 
 # Parse bot_number early so the log file is open before any other imports.
 # This ensures import errors are also captured in the log file.
@@ -12,7 +13,10 @@ _bot_number = _pre.parse_known_args()[0].bot_number
 logging.basicConfig(
     level=logging.INFO,
     format='%(filename)s:%(lineno)d #%(levelname)s [%(asctime)s] - %(name)s - %(message)s',
-    handlers=[logging.FileHandler(f'bot_polling_{_bot_number}.log', 'a'), logging.StreamHandler()]
+    handlers=[
+        RotatingFileHandler(f'bot_polling_{_bot_number}.log', maxBytes=8 * 1024 * 1024, backupCount=1),
+        logging.StreamHandler(),
+    ]
 )
 
 

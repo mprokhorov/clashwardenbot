@@ -431,11 +431,13 @@ class DatabaseManager:
             row['clan_tag']: row['clan_name'] for row in rows
         }
 
+        family_clan_tags = await self.get_family_clan_tags()
         rows = await self.acquired_connection.fetch('''
-            SELECT player_tag, player_name
+            SELECT DISTINCT ON (player_tag) player_tag, player_name
             FROM player
-            WHERE clan_tag = $1
-        ''', self.clan_tag)
+            WHERE clan_tag = ANY($1::varchar[])
+            ORDER BY player_tag, last_seen DESC
+        ''', family_clan_tags)
         self.name = {
             row['player_tag']: row['player_name'] for row in rows
         }

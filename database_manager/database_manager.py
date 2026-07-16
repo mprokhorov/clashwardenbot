@@ -1131,7 +1131,7 @@ class DatabaseManager:
             SELECT child_clan_tag, minimum_average_cwl_stars, minimum_cwl_wars, cw_bonus
             FROM player_rating_config
             WHERE clan_tag = $1
-        ''', self.clan_tag)
+        ''', await self.get_family_root_clan_tag())
         if len(rows) == 0:
             return False
         self.player_rating_config = {
@@ -1265,13 +1265,24 @@ class DatabaseManager:
             ) AS combined_town_hall_levels
         ''')
 
+    async def get_family_root_clan_tag(self) -> str:
+        father_clan_tag = await self.acquired_connection.fetchval('''
+            SELECT father_clan_tag
+            FROM child_clan
+            WHERE child_clan_tag = $1
+        ''', self.clan_tag)
+        return father_clan_tag or self.clan_tag
+
     async def get_family_clan_tags(self) -> list[str]:
+        family_root_clan_tag = await self.get_family_root_clan_tag()
         rows = await self.acquired_connection.fetch('''
             SELECT child_clan_tag
             FROM child_clan
             WHERE father_clan_tag = $1
-        ''', self.clan_tag)
-        return list(dict.fromkeys([self.clan_tag] + [row['child_clan_tag'] for row in rows]))
+        ''', family_root_clan_tag)
+        return list(dict.fromkeys(
+            [family_root_clan_tag] + [row['child_clan_tag'] for row in rows] + [self.clan_tag]
+        ))
 
     async def get_player_rating_seasons(self) -> list[str]:
         family_clan_tags = await self.get_family_clan_tags()
@@ -1293,6 +1304,7 @@ class DatabaseManager:
                     return points
             return 0
 
+        family_root_clan_tag = await self.get_family_root_clan_tag()
         family_clan_tags = await self.get_family_clan_tags()
 
         rows = await self.acquired_connection.fetch('''
@@ -1355,7 +1367,7 @@ class DatabaseManager:
             SELECT child_clan_tag, minimum_average_cwl_stars, minimum_cwl_wars
             FROM player_rating_config
             WHERE clan_tag = $1
-        ''', self.clan_tag)
+        ''', family_root_clan_tag)
         cwl_eligibility_config_by_clan_tag = {}
         no_cwl_requirement_clans = set()
         for row in rows:
@@ -1399,7 +1411,7 @@ class DatabaseManager:
             SELECT child_clan_tag, cw_bonus
             FROM player_rating_config
             WHERE clan_tag = $1 AND cw_bonus IS NOT NULL
-        ''', self.clan_tag)
+        ''', family_root_clan_tag)
         cw_bonus_by_clan_tag = {row['child_clan_tag']: row['cw_bonus'] for row in rows}
         rows = await self.acquired_connection.fetch('''
             SELECT clan_tag, data

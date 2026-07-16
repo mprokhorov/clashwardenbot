@@ -1251,6 +1251,17 @@ class DatabaseManager:
             )
         return player_tags
 
+    async def get_max_town_hall_level(self) -> int:
+        row = await self.acquired_connection.fetchrow('''
+            SELECT MAX(town_hall_level) AS max_town_hall_level
+            FROM (
+                SELECT town_hall_level FROM player
+                UNION ALL
+                SELECT town_hall_level FROM opponent_player
+            ) AS town_hall_levels
+        ''')
+        return row['max_town_hall_level']
+
     async def get_player_ratings(self, season: str) -> dict[str, PlayerRating]:
         rows = await self.acquired_connection.fetch('''
             SELECT data

@@ -121,8 +121,8 @@ class PlayerRating:
     cwl_clan_tag: Optional[str]
     cwl_total_stars: int
     cwl_total_wars: int
-    league_numbers: list[int]
-    leagues_places: list[int]
+    league_numbers: list[Optional[int]]
+    leagues_places: list[Optional[int]]
     raids_total_attacks: list[int]
     raids_total_gold: list[int]
     cw_total_attacks: list[int]

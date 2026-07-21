@@ -123,15 +123,31 @@ class DatabaseManager:
             self.frequent_jobs,
             'cron',
             minute=frequent_jobs_minutes_str,
-            second=str(bot_number * self.job_timespan_seconds)
+            second=str(bot_number * self.job_timespan_seconds),
+            max_instances=1,
+            coalesce=True
         )
         self.scheduler.add_job(
             self.infrequent_jobs,
             'cron',
             minute=infrequent_jobs_minutes_str,
-            second=str(bot_number * self.job_timespan_seconds)
+            second=str(bot_number * self.job_timespan_seconds),
+            max_instances=1,
+            coalesce=True
         )
         self.scheduler.start()
+
+    async def shutdown(self, **kwargs) -> None:
+        if getattr(self, 'is_shutting_down', False):
+            return
+        self.is_shutting_down = True
+        if self.scheduler is not None and self.scheduler.running:
+            self.scheduler.shutdown(wait=False)
+        http_client = getattr(self.api_client, 'http_client', None)
+        if http_client is not None:
+            await http_client.aclose()
+        if self.connection_pool is not None:
+            self.connection_pool.terminate()
 
     async def frequent_jobs(self) -> None:
         were_clan_members_dumped = await self.check_clan_members()

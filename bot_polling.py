@@ -65,9 +65,13 @@ async def main() -> None:
     )
 
     await dm.start_scheduler(_bot_number)
+    dp.shutdown.register(dm.shutdown)
 
-    await bot.delete_webhook(drop_pending_updates=True)
-    await dp.start_polling(bot)
+    try:
+        await bot.delete_webhook(drop_pending_updates=True)
+        await dp.start_polling(bot)
+    finally:
+        await dm.shutdown()
 
 
 if __name__ == '__main__':

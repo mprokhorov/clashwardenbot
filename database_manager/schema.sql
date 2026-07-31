@@ -114,6 +114,8 @@ create table clan
     clan_name            varchar(16) not null,
     main_chat_id         bigint,
     privacy_mode_enabled boolean     not null,
+    war_league_id        integer,
+    war_league_name      varchar(32),
     constraint clan_clan_chat_clan_tag_chat_id_fk
         foreign key (clan_tag, main_chat_id) references clan_chat (clan_tag, chat_id)
 );
@@ -393,4 +395,14 @@ create table bot_message_log
     created_at timestamp   not null default now(),
     constraint bot_message_log_pk
         primary key (clan_tag, chat_id, message_id)
+);
+
+create table cwl_roster_member
+(
+    clan_tag    varchar(16) not null,
+    season      varchar(16) not null,
+    player_tag  varchar(16) not null,
+    is_included boolean     not null,
+    constraint cwl_roster_member_pk
+        primary key (clan_tag, season, player_tag)
 );

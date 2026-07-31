@@ -11,7 +11,7 @@ from bot.middlewares import MessageMiddleware, CallbackQueryMiddleware
 from bot.session_middleware import MessageLoggingMiddleware
 from config import config
 from database_manager import DatabaseManager
-from routers import admin, cw, cwl, miscellaneous, player_rating, player_rating_giveaway, raids
+from routers import admin, cw, cwl, cwl_roster, miscellaneous, player_rating, player_rating_giveaway, raids
 
 WEBHOOK_HOST = config.webhook_host.get_secret_value()
 WEBHOOK_PATH = config.webhook_path.get_secret_value()
@@ -63,8 +63,8 @@ def main():
     dispatcher.message.outer_middleware(MessageMiddleware())
     dispatcher.callback_query.outer_middleware(CallbackQueryMiddleware())
     dispatcher.include_routers(
-        router, cw.router, raids.router, cwl.router, player_rating.router, player_rating_giveaway.router,
-        miscellaneous.router, admin.router
+        router, cw.router, raids.router, cwl.router, cwl_roster.router, player_rating.router,
+        player_rating_giveaway.router, miscellaneous.router, admin.router
     )
 
     app = Application()

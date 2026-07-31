@@ -11,6 +11,7 @@ cwl_attacks             | 🗡️ Атаки в ЛВК                          
 cwl_rating              | 🪙 Рейтинг участников ЛВК               | group, private | CWL
 cwl_list                | 📋 Список участников ЛВК                | group, private | CWL
 cwl_clans               | 📶 Уровни ТХ кланов в ЛВК               | group, private | CWL
+cwl_roster              | 🗓️ Составы ЛВК                          | group, private | CWL
 cwl_skips               | 🕒 Не проатаковавшие в ЛВК              | group, private | CWL
 cwl_ping                | 🔔 Напомнить об атаках в ЛВК            | group          | CWL
 raids_info              | ⚔️ Информация о рейдах                  | group, private |

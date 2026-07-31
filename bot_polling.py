@@ -44,7 +44,7 @@ from bot.middlewares import MessageMiddleware, CallbackQueryMiddleware
 from bot.session_middleware import MessageLoggingMiddleware
 from config import config
 from database_manager import DatabaseManager
-from routers import admin, cw, cwl, miscellaneous, player_rating, player_rating_giveaway, raids
+from routers import admin, cw, cwl, cwl_roster, miscellaneous, player_rating, player_rating_giveaway, raids
 
 
 async def main() -> None:
@@ -60,8 +60,8 @@ async def main() -> None:
     dp.message.outer_middleware(MessageMiddleware())
     dp.callback_query.outer_middleware(CallbackQueryMiddleware())
     dp.include_routers(
-        cw.router, raids.router, cwl.router, player_rating.router, player_rating_giveaway.router,
-        miscellaneous.router, admin.router
+        cw.router, raids.router, cwl.router, cwl_roster.router, player_rating.router,
+        player_rating_giveaway.router, miscellaneous.router, admin.router
     )
 
     await dm.start_scheduler(_bot_number)

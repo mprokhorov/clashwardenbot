@@ -20,6 +20,7 @@ class OutputView(IntEnum):
     cwl_roster_choose = auto()
     cwl_roster_details = auto()
     cwl_roster_toggle = auto()
+    cwl_roster_help = auto()
 
 
 class CWLRosterCallbackFactory(CallbackData, prefix='cwl_roster'):
@@ -135,9 +136,15 @@ async def cwl_roster_list(
             substitutes=min(substitutes + 1, dm.CWL_ROSTER_MAX_SUBSTITUTES)
         ).pack()
     )
+    help_button = InlineKeyboardButton(
+        text='❓ Помощь',
+        callback_data=CWLRosterCallbackFactory(
+            output_view=OutputView.cwl_roster_help, substitutes=substitutes
+        ).pack()
+    )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [fewer_substitutes_button, substitutes_button, more_substitutes_button],
-        [members_button, update_button]
+        [members_button, help_button, update_button]
     ])
     return text, ParseMode.HTML, keyboard
 
@@ -264,6 +271,43 @@ async def cwl_roster_details(
     return text, ParseMode.HTML, keyboard
 
 
+async def cwl_roster_help(
+        dm: DatabaseManager, callback_data: Optional[CWLRosterCallbackFactory]
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    substitutes = get_substitutes(dm, callback_data)
+    text = f'<b>🗓️ Как составляются составы ЛВК</b>\n'
+    text += dm.of.full_dedent(f'''
+        <b>Кто попадает в список:</b>
+        По умолчанию в список входят игроки, которые сейчас состоят в кланах семейства с настроенным рейтингом ЛВК и участвовали в последнем сезоне ЛВК своего клана. Список можно менять вручную: на экране «Участники» нажатие на игрока добавляет его в список или убирает из него. Изменения сохраняются на текущий сезон, менять список могут те, кому разрешено редактировать список КВ.
+
+        <b>Как считается оценка игрока:</b>
+        Основа оценки — уровень ратуши. К нему добавляется прокачка героев и снаряжения, посчитанная не в абсолютных уровнях, а относительно максимума, доступного на этой ратуше: за полностью прокачанных героев добавляется до {dm.of.format_and_rstrip(dm.CWL_ROSTER_HERO_LEVELS_WEIGHT, 2)}, за снаряжение — до {dm.of.format_and_rstrip(dm.CWL_ROSTER_HERO_EQUIPMENT_WEIGHT, 2)}. Поэтому полностью прокачанная ратуша примерно равна свежей следующей.
+
+        <b>Как учитываются атаки:</b>
+        Если игрок атаковал в прошлом сезоне ЛВК, оценка корректируется по среднему количеству звёзд за атаку. Среднее в {dm.of.format_and_rstrip(dm.CWL_ROSTER_BASE_PERFORMANCE * dm.CWL_ROSTER_MAX_STARS, 2)} звезды оценку не меняет, выше — повышает, ниже — понижает, но не более чем на {dm.of.format_and_rstrip(dm.CWL_ROSTER_PERFORMANCE_WEIGHT * 100, 0)}%. Если атак не было, оценка считается только по прокачке, без штрафа.
+
+        <b>Сколько получается составов:</b>
+        В каждом составе {dm.CWL_ROSTER_SIZE} основных игроков и замены, сейчас их {substitutes}, то есть на состав нужно {dm.CWL_ROSTER_SIZE + substitutes} игроков. Количество замен меняется кнопками ➖ и ➕. Составов получается столько, на сколько хватает участников, но не больше, чем кланов семейства с настроенным ЛВК.
+
+        <b>Кто в каком клане играет:</b>
+        Игроки сортируются по оценке, и самые сильные попадают в клан с самой высокой лигой ЛВК, следующие — в клан послабее и так далее. Внутри состава сильнейшие идут основой, оставшиеся — заменами. Те, кто не поместился в составы, показываются отдельным списком.
+        ''')
+    back_button = InlineKeyboardButton(
+        text='⬅️ Назад',
+        callback_data=CWLRosterCallbackFactory(
+            output_view=OutputView.cwl_roster_list, substitutes=substitutes
+        ).pack()
+    )
+    update_button = InlineKeyboardButton(
+        text='🔄 Обновить',
+        callback_data=CWLRosterCallbackFactory(
+            output_view=OutputView.cwl_roster_help, substitutes=substitutes, update=True
+        ).pack()
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[back_button, update_button]])
+    return text, ParseMode.HTML, keyboard
+
+
 @router.message(Command('cwl_roster'))
 async def command_cwl_roster(message: Message, dm: DatabaseManager) -> None:
     text, parse_mode, reply_markup = await cwl_roster_list(dm, None)
@@ -318,6 +362,25 @@ async def callback_cwl_roster_details(
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_roster_details(dm, callback_data)
+        try:
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        except TelegramBadRequest as e:
+            logging.info(f'cwl_roster edit_text failed: {e}')
+    if callback_data.update:
+        await callback_query.answer('Сообщение обновлено')
+    else:
+        await callback_query.answer()
+
+
+@router.callback_query(CWLRosterCallbackFactory.filter(F.output_view == OutputView.cwl_roster_help))
+async def callback_cwl_roster_help(
+        callback_query: CallbackQuery, callback_data: CWLRosterCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = callback_data.update or await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    if not user_is_message_owner:
+        await callback_query.answer('Эта кнопка не работает для вас')
+    else:
+        text, parse_mode, reply_markup = await cwl_roster_help(dm, callback_data)
         try:
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         except TelegramBadRequest as e:

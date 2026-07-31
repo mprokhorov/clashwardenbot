@@ -27,6 +27,7 @@ class CWLRosterCallbackFactory(CallbackData, prefix='cwl_roster'):
     update: bool = False
     player_tag: Optional[str] = None
     page: int = 0
+    substitutes: Optional[int] = None
 
 
 CWL_ROSTER_CHOOSE_PAGE_SIZE = 20
@@ -34,6 +35,12 @@ CWL_ROSTER_CHOOSE_PAGE_SIZE = 20
 
 def get_season(dm: DatabaseManager) -> str:
     return dm.of.utc_now().strftime('%Y-%m')
+
+
+def get_substitutes(dm: DatabaseManager, callback_data: Optional[CWLRosterCallbackFactory]) -> int:
+    if callback_data is None or callback_data.substitutes is None:
+        return dm.CWL_ROSTER_SUBSTITUTES
+    return min(max(callback_data.substitutes, dm.CWL_ROSTER_MIN_SUBSTITUTES), dm.CWL_ROSTER_MAX_SUBSTITUTES)
 
 
 def get_candidate_pages(candidates: dict, page: int) -> tuple[list[tuple], int, int]:
@@ -56,15 +63,16 @@ async def cwl_roster_list(
     if len(roster_clan_tags) == 0:
         text += f'Ни один клан семейства не настроен для ЛВК\n'
         return text, ParseMode.HTML, None
+    substitutes = get_substitutes(dm, callback_data)
     candidates = await dm.get_cwl_roster_candidates(season)
-    rosters, extra_player_tags = await dm.get_cwl_rosters(season)
+    rosters, extra_player_tags = await dm.get_cwl_rosters(season, substitutes)
     included_amount = sum(candidate.is_included for candidate in candidates.values())
-    roster_size = dm.CWL_ROSTER_SIZE + dm.CWL_ROSTER_SUBSTITUTES
+    roster_size = dm.CWL_ROSTER_SIZE + substitutes
     text += (
         f'Сезон: {dm.of.season(season, False)}\n'
         f'Участников: {included_amount}\n'
         f'Составов: {len(rosters)} '
-        f'(по {dm.CWL_ROSTER_SIZE} + {dm.CWL_ROSTER_SUBSTITUTES} замены)\n'
+        f'(по {dm.CWL_ROSTER_SIZE} + {substitutes})\n'
         f'\n'
     )
     if len(rosters) == 0:
@@ -97,13 +105,40 @@ async def cwl_roster_list(
         )
     members_button = InlineKeyboardButton(
         text='📋 Участники',
-        callback_data=CWLRosterCallbackFactory(output_view=OutputView.cwl_roster_choose).pack()
+        callback_data=CWLRosterCallbackFactory(
+            output_view=OutputView.cwl_roster_choose, substitutes=substitutes
+        ).pack()
     )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=CWLRosterCallbackFactory(output_view=OutputView.cwl_roster_list, update=True).pack()
+        callback_data=CWLRosterCallbackFactory(
+            output_view=OutputView.cwl_roster_list, substitutes=substitutes, update=True
+        ).pack()
     )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[members_button, update_button]])
+    fewer_substitutes_button = InlineKeyboardButton(
+        text='➖',
+        callback_data=CWLRosterCallbackFactory(
+            output_view=OutputView.cwl_roster_list,
+            substitutes=max(substitutes - 1, dm.CWL_ROSTER_MIN_SUBSTITUTES)
+        ).pack()
+    )
+    substitutes_button = InlineKeyboardButton(
+        text=f'🔁 Замен: {substitutes}',
+        callback_data=CWLRosterCallbackFactory(
+            output_view=OutputView.cwl_roster_list, substitutes=substitutes
+        ).pack()
+    )
+    more_substitutes_button = InlineKeyboardButton(
+        text='➕',
+        callback_data=CWLRosterCallbackFactory(
+            output_view=OutputView.cwl_roster_list,
+            substitutes=min(substitutes + 1, dm.CWL_ROSTER_MAX_SUBSTITUTES)
+        ).pack()
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+        [fewer_substitutes_button, substitutes_button, more_substitutes_button],
+        [members_button, update_button]
+    ])
     return text, ParseMode.HTML, keyboard
 
 
@@ -119,6 +154,7 @@ async def cwl_roster_choose(
     if len(candidates) == 0:
         text += f'Список пуст\n'
         return text, ParseMode.HTML, None
+    substitutes = get_substitutes(dm, callback_data)
     included_amount = sum(candidate.is_included for candidate in candidates.values())
     page = callback_data.page if callback_data is not None else 0
     page_entries, page, page_count = get_candidate_pages(candidates, page)
@@ -135,7 +171,8 @@ async def cwl_roster_choose(
                 f'ТХ{candidate.town_hall_level}, {dm.of.format_and_rstrip(candidate.strength, 2)}'
             ),
             callback_data=CWLRosterCallbackFactory(
-                output_view=OutputView.cwl_roster_toggle, player_tag=player_tag, page=page
+                output_view=OutputView.cwl_roster_toggle, player_tag=player_tag, page=page,
+                substitutes=substitutes
             ).pack()
         )] for player_tag, candidate in page_entries
     ]
@@ -144,14 +181,14 @@ async def cwl_roster_choose(
         navigation_row.append(InlineKeyboardButton(
             text='⬅️ Назад',
             callback_data=CWLRosterCallbackFactory(
-                output_view=OutputView.cwl_roster_choose, page=page - 1
+                output_view=OutputView.cwl_roster_choose, page=page - 1, substitutes=substitutes
             ).pack()
         ))
     if page < page_count - 1:
         navigation_row.append(InlineKeyboardButton(
             text='➡️ Вперёд',
             callback_data=CWLRosterCallbackFactory(
-                output_view=OutputView.cwl_roster_choose, page=page + 1
+                output_view=OutputView.cwl_roster_choose, page=page + 1, substitutes=substitutes
             ).pack()
         ))
     if len(navigation_row) > 0:
@@ -159,12 +196,14 @@ async def cwl_roster_choose(
     button_rows.append([
         InlineKeyboardButton(
             text='⬅️ К составам',
-            callback_data=CWLRosterCallbackFactory(output_view=OutputView.cwl_roster_list).pack()
+            callback_data=CWLRosterCallbackFactory(
+                output_view=OutputView.cwl_roster_list, substitutes=substitutes
+            ).pack()
         ),
         InlineKeyboardButton(
             text='🔄 Обновить',
             callback_data=CWLRosterCallbackFactory(
-                output_view=OutputView.cwl_roster_choose, page=page, update=True
+                output_view=OutputView.cwl_roster_choose, page=page, substitutes=substitutes, update=True
             ).pack()
         )
     ])
@@ -207,17 +246,18 @@ async def cwl_roster_details(
             f'\n'
             f'Атак в прошлом ЛВК нет, оценка только по прокачке\n'
         )
+    substitutes = get_substitutes(dm, callback_data)
     back_button = InlineKeyboardButton(
         text='⬅️ Назад',
         callback_data=CWLRosterCallbackFactory(
-            output_view=OutputView.cwl_roster_choose, page=callback_data.page
+            output_view=OutputView.cwl_roster_choose, page=callback_data.page, substitutes=substitutes
         ).pack()
     )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
         callback_data=CWLRosterCallbackFactory(
             output_view=OutputView.cwl_roster_details, player_tag=callback_data.player_tag,
-            page=callback_data.page, update=True
+            page=callback_data.page, substitutes=substitutes, update=True
         ).pack()
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[back_button, update_button]])

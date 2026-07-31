@@ -63,6 +63,8 @@ class AcquiredConnection:
 class DatabaseManager:
     CWL_ROSTER_SIZE = 15
     CWL_ROSTER_SUBSTITUTES = 3
+    CWL_ROSTER_MIN_SUBSTITUTES = 0
+    CWL_ROSTER_MAX_SUBSTITUTES = 15
     CWL_ROSTER_MAX_STARS = 3
     CWL_ROSTER_HERO_LEVELS_WEIGHT = 0.6
     CWL_ROSTER_HERO_EQUIPMENT_WEIGHT = 0.4
@@ -1349,14 +1351,18 @@ class DatabaseManager:
             DO UPDATE SET is_included = $4
         ''', self.clan_tag, season, player_tag, is_included)
 
-    async def get_cwl_rosters(self, season: str) -> tuple[list[CWLRoster], list[str]]:
+    async def get_cwl_rosters(
+            self, season: str, substitutes: Optional[int] = None
+    ) -> tuple[list[CWLRoster], list[str]]:
+        if substitutes is None:
+            substitutes = self.CWL_ROSTER_SUBSTITUTES
         candidates = await self.get_cwl_roster_candidates(season)
         included_player_tags = sorted(
             (player_tag for player_tag, candidate in candidates.items() if candidate.is_included),
             key=lambda player_tag: candidates[player_tag].strength, reverse=True
         )
         roster_clan_tags = await self.get_cwl_roster_clan_tags()
-        roster_size = self.CWL_ROSTER_SIZE + self.CWL_ROSTER_SUBSTITUTES
+        roster_size = self.CWL_ROSTER_SIZE + substitutes
         roster_amount = min(len(included_player_tags) // roster_size, len(roster_clan_tags))
         rows = await self.acquired_connection.fetch('''
             SELECT clan_tag, war_league_id, war_league_name

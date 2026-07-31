@@ -129,7 +129,10 @@ async def cwl_roster_list(
                 ).pack()
             ),
             InlineKeyboardButton(
-                text=f'🔁 {dm.clan_name[clan_tag]}',
+                text=(
+                    f'🔁 {substitutes_by_clan.get(clan_tag, dm.CWL_ROSTER_SUBSTITUTES)} '
+                    f'{dm.clan_name[clan_tag]}'
+                ),
                 callback_data=CWLRosterCallbackFactory(output_view=OutputView.cwl_roster_list).pack()
             ),
             InlineKeyboardButton(

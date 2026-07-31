@@ -1233,39 +1233,42 @@ class DatabaseManager:
         ''', self.clan_tag)
         return [row['clan_tag'] for row in rows]
 
-    async def get_last_cwl_season(self, clan_tags: list[str]) -> Optional[str]:
-        row = await self.acquired_connection.fetchrow('''
-            SELECT MAX(season) AS season
+    async def get_last_cwl_season_by_clan(self, clan_tags: list[str]) -> dict[str, str]:
+        rows = await self.acquired_connection.fetch('''
+            SELECT clan_tag, MAX(season) AS season
             FROM clan_war_league_war
             WHERE clan_tag = any($1::varchar[])
+            GROUP BY clan_tag
         ''', clan_tags)
-        return row['season'] if row is not None else None
+        return {row['clan_tag']: row['season'] for row in rows}
 
     async def get_cwl_roster_candidates(self, season: str) -> dict[str, CWLRosterCandidate]:
         roster_clan_tags = await self.get_cwl_roster_clan_tags()
         if len(roster_clan_tags) == 0:
             return {}
-        last_cwl_season = await self.get_last_cwl_season(roster_clan_tags)
+        last_cwl_season_by_clan = await self.get_last_cwl_season_by_clan(roster_clan_tags)
 
         cwl_attacks_by_tag = {}
         cwl_new_stars_by_tag = {}
         last_season_player_tags = set()
-        if last_cwl_season is not None:
-            for clan_tag in roster_clan_tags:
-                cwl_own_wars = await self.load_clan_war_league_own_wars(last_cwl_season, clan_tag) or []
-                for cwl_own_war in cwl_own_wars:
-                    if self.of.state(cwl_own_war) not in ['inWar', 'warEnded']:
+        for clan_tag in roster_clan_tags:
+            last_cwl_season = last_cwl_season_by_clan.get(clan_tag)
+            if last_cwl_season is None:
+                continue
+            cwl_own_wars = await self.load_clan_war_league_own_wars(last_cwl_season, clan_tag) or []
+            for cwl_own_war in cwl_own_wars:
+                if self.of.state(cwl_own_war) not in ['inWar', 'warEnded']:
+                    continue
+                cwlw_rating = await self.get_clan_war_league_rating(cwl_own_war)
+                for cwlw_member in cwl_own_war['clan']['members']:
+                    last_season_player_tags.add(cwlw_member['tag'])
+                for player_tag, rating in cwlw_rating.items():
+                    if rating.attack_new_stars is None:
                         continue
-                    cwlw_rating = await self.get_clan_war_league_rating(cwl_own_war)
-                    for cwlw_member in cwl_own_war['clan']['members']:
-                        last_season_player_tags.add(cwlw_member['tag'])
-                    for player_tag, rating in cwlw_rating.items():
-                        if rating.attack_new_stars is None:
-                            continue
-                        cwl_attacks_by_tag[player_tag] = cwl_attacks_by_tag.get(player_tag, 0) + 1
-                        cwl_new_stars_by_tag[player_tag] = (
-                            cwl_new_stars_by_tag.get(player_tag, 0) + rating.attack_new_stars
-                        )
+                    cwl_attacks_by_tag[player_tag] = cwl_attacks_by_tag.get(player_tag, 0) + 1
+                    cwl_new_stars_by_tag[player_tag] = (
+                        cwl_new_stars_by_tag.get(player_tag, 0) + rating.attack_new_stars
+                    )
 
         rows = await self.acquired_connection.fetch('''
             SELECT

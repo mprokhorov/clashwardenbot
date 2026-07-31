@@ -1351,19 +1351,35 @@ class DatabaseManager:
             DO UPDATE SET is_included = $4
         ''', self.clan_tag, season, player_tag, is_included)
 
-    async def get_cwl_rosters(
-            self, season: str, substitutes: Optional[int] = None
-    ) -> tuple[list[CWLRoster], list[str]]:
-        if substitutes is None:
-            substitutes = self.CWL_ROSTER_SUBSTITUTES
+    async def get_cwl_substitutes_by_clan(self) -> dict[str, int]:
+        rows = await self.acquired_connection.fetch('''
+            SELECT clan_tag, cwl_substitutes
+            FROM clan
+            WHERE clan_tag = $1 OR clan_tag IN (
+                SELECT child_clan_tag FROM child_clan WHERE father_clan_tag = $1
+            )
+        ''', self.clan_tag)
+        return {
+            row['clan_tag']:
+                row['cwl_substitutes'] if row['cwl_substitutes'] is not None else self.CWL_ROSTER_SUBSTITUTES
+            for row in rows
+        }
+
+    async def set_cwl_substitutes(self, clan_tag: str, substitutes: int) -> None:
+        await self.acquired_connection.execute('''
+            UPDATE clan
+            SET cwl_substitutes = $1
+            WHERE clan_tag = $2
+        ''', min(max(substitutes, self.CWL_ROSTER_MIN_SUBSTITUTES), self.CWL_ROSTER_MAX_SUBSTITUTES), clan_tag)
+
+    async def get_cwl_rosters(self, season: str) -> tuple[list[CWLRoster], list[str]]:
         candidates = await self.get_cwl_roster_candidates(season)
-        included_player_tags = sorted(
+        remaining_player_tags = sorted(
             (player_tag for player_tag, candidate in candidates.items() if candidate.is_included),
             key=lambda player_tag: candidates[player_tag].strength, reverse=True
         )
         roster_clan_tags = await self.get_cwl_roster_clan_tags()
-        roster_size = self.CWL_ROSTER_SIZE + substitutes
-        roster_amount = min(len(included_player_tags) // roster_size, len(roster_clan_tags))
+        substitutes_by_clan = await self.get_cwl_substitutes_by_clan()
         rows = await self.acquired_connection.fetch('''
             SELECT clan_tag, war_league_id, war_league_name
             FROM clan
@@ -1371,10 +1387,13 @@ class DatabaseManager:
         ''', roster_clan_tags)
         war_league_by_clan = {row['clan_tag']: (row['war_league_id'], row['war_league_name']) for row in rows}
         rosters = []
-        for roster_index in range(roster_amount):
-            clan_tag = roster_clan_tags[roster_index]
+        for clan_tag in roster_clan_tags:
+            roster_size = self.CWL_ROSTER_SIZE + substitutes_by_clan.get(clan_tag, self.CWL_ROSTER_SUBSTITUTES)
+            if len(remaining_player_tags) < roster_size:
+                break
             war_league_id, war_league_name = war_league_by_clan.get(clan_tag, (None, None))
-            roster_player_tags = included_player_tags[roster_index * roster_size:(roster_index + 1) * roster_size]
+            roster_player_tags = remaining_player_tags[:roster_size]
+            remaining_player_tags = remaining_player_tags[roster_size:]
             rosters.append(CWLRoster(
                 clan_tag=clan_tag,
                 war_league_id=war_league_id,
@@ -1382,7 +1401,7 @@ class DatabaseManager:
                 members=roster_player_tags[:self.CWL_ROSTER_SIZE],
                 substitutes=roster_player_tags[self.CWL_ROSTER_SIZE:]
             ))
-        return rosters, included_player_tags[roster_amount * roster_size:]
+        return rosters, remaining_player_tags
 
     def get_attack_town_hall_bonus_points(self, attack_town_hall_level: int, max_town_hall_level: int) -> float:
         if attack_town_hall_level == max_town_hall_level:

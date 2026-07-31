@@ -116,6 +116,7 @@ create table clan
     privacy_mode_enabled boolean     not null,
     war_league_id        integer,
     war_league_name      varchar(32),
+    cwl_substitutes      integer,
     constraint clan_clan_chat_clan_tag_chat_id_fk
         foreign key (clan_tag, main_chat_id) references clan_chat (clan_tag, chat_id)
 );

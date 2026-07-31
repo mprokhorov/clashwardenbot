@@ -22,6 +22,8 @@ from entities.game_entities import (
     CWLWPlayerRating,
     CWLPlayerRating,
     CWLRatingConfig,
+    CWLRoster,
+    CWLRosterCandidate,
     PlayerRating,
     PlayerRatingConfig,
     PlayerRatingGiveaway,
@@ -59,6 +61,14 @@ class AcquiredConnection:
 
 
 class DatabaseManager:
+    CWL_ROSTER_SIZE = 15
+    CWL_ROSTER_SUBSTITUTES = 3
+    CWL_ROSTER_MAX_STARS = 3
+    CWL_ROSTER_HERO_LEVELS_WEIGHT = 0.6
+    CWL_ROSTER_HERO_EQUIPMENT_WEIGHT = 0.4
+    CWL_ROSTER_BASE_PERFORMANCE = 2 / 3
+    CWL_ROSTER_PERFORMANCE_WEIGHT = 0.15
+
     def __init__(self, clan_tag: str, bot: Bot):
         self.api_client = AsyncClient(
             email=config.clash_of_clans_api_login.get_secret_value(),
@@ -349,11 +359,12 @@ class DatabaseManager:
         retrieved_clan = await self.api_client.get_clan(clan_tag=self.clan_tag)
         if retrieved_clan is None:
             return False
+        retrieved_war_league = retrieved_clan.get('warLeague') or {}
         await self.acquired_connection.execute('''
             UPDATE clan
-            SET clan_name = $1
-            WHERE clan_tag = $2
-        ''', retrieved_clan['name'], self.clan_tag)
+            SET (clan_name, war_league_id, war_league_name) = ($1, $2, $3)
+            WHERE clan_tag = $4
+        ''', retrieved_clan['name'], retrieved_war_league.get('id'), retrieved_war_league.get('name'), self.clan_tag)
         return True
 
     async def dump_clan_members(self) -> bool:
@@ -1178,6 +1189,191 @@ class DatabaseManager:
             ) AS town_hall_levels
         ''')
         return row['max_town_hall_level']
+
+    async def get_max_hero_levels_by_town_hall(self) -> dict[int, list[int]]:
+        rows = await self.acquired_connection.fetch('''
+            SELECT
+                town_hall_level,
+                MAX(barbarian_king_level) AS barbarian_king_level,
+                MAX(archer_queen_level) AS archer_queen_level,
+                MAX(minion_prince_level) AS minion_prince_level,
+                MAX(grand_warden_level) AS grand_warden_level,
+                MAX(royal_champion_level) AS royal_champion_level,
+                MAX(dragon_duke_level) AS dragon_duke_level
+            FROM (
+                SELECT
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level,
+                    grand_warden_level, royal_champion_level, dragon_duke_level
+                FROM player
+                UNION ALL
+                SELECT
+                    town_hall_level, barbarian_king_level, archer_queen_level, minion_prince_level,
+                    grand_warden_level, royal_champion_level, dragon_duke_level
+                FROM opponent_player
+            ) AS players
+            GROUP BY town_hall_level
+        ''')
+        return {
+            row['town_hall_level']: [
+                row['barbarian_king_level'], row['archer_queen_level'], row['minion_prince_level'],
+                row['grand_warden_level'], row['royal_champion_level'], row['dragon_duke_level']
+            ]
+            for row in rows
+        }
+
+    async def get_cwl_roster_clan_tags(self) -> list[str]:
+        rows = await self.acquired_connection.fetch('''
+            SELECT clan.clan_tag, clan.war_league_id
+            FROM clan
+            JOIN clan_war_league_rating_config ON clan_war_league_rating_config.clan_tag = clan.clan_tag
+            WHERE clan.clan_tag = $1 OR clan.clan_tag IN (
+                SELECT child_clan_tag FROM child_clan WHERE father_clan_tag = $1
+            )
+            ORDER BY clan.war_league_id DESC NULLS LAST, clan.clan_tag
+        ''', self.clan_tag)
+        return [row['clan_tag'] for row in rows]
+
+    async def get_last_cwl_season(self, clan_tags: list[str]) -> Optional[str]:
+        row = await self.acquired_connection.fetchrow('''
+            SELECT MAX(season) AS season
+            FROM clan_war_league_war
+            WHERE clan_tag = any($1::varchar[])
+        ''', clan_tags)
+        return row['season'] if row is not None else None
+
+    async def get_cwl_roster_candidates(self, season: str) -> dict[str, CWLRosterCandidate]:
+        roster_clan_tags = await self.get_cwl_roster_clan_tags()
+        if len(roster_clan_tags) == 0:
+            return {}
+        last_cwl_season = await self.get_last_cwl_season(roster_clan_tags)
+
+        cwl_attacks_by_tag = {}
+        cwl_new_stars_by_tag = {}
+        last_season_player_tags = set()
+        if last_cwl_season is not None:
+            for clan_tag in roster_clan_tags:
+                cwl_own_wars = await self.load_clan_war_league_own_wars(last_cwl_season, clan_tag) or []
+                for cwl_own_war in cwl_own_wars:
+                    if self.of.state(cwl_own_war) not in ['inWar', 'warEnded']:
+                        continue
+                    cwlw_rating = await self.get_clan_war_league_rating(cwl_own_war)
+                    for cwlw_member in cwl_own_war['clan']['members']:
+                        last_season_player_tags.add(cwlw_member['tag'])
+                    for player_tag, rating in cwlw_rating.items():
+                        if rating.attack_new_stars is None:
+                            continue
+                        cwl_attacks_by_tag[player_tag] = cwl_attacks_by_tag.get(player_tag, 0) + 1
+                        cwl_new_stars_by_tag[player_tag] = (
+                            cwl_new_stars_by_tag.get(player_tag, 0) + rating.attack_new_stars
+                        )
+
+        rows = await self.acquired_connection.fetch('''
+            SELECT
+                player_tag, clan_tag, town_hall_level, hero_equipment,
+                barbarian_king_level, archer_queen_level, minion_prince_level,
+                grand_warden_level, royal_champion_level, dragon_duke_level
+            FROM player
+            WHERE clan_tag = any($1::varchar[]) AND is_player_in_clan
+        ''', roster_clan_tags)
+
+        override_rows = await self.acquired_connection.fetch('''
+            SELECT player_tag, is_included
+            FROM cwl_roster_member
+            WHERE (clan_tag, season) = ($1, $2)
+        ''', self.clan_tag, season)
+        overrides = {row['player_tag']: row['is_included'] for row in override_rows}
+
+        max_hero_levels_by_town_hall = await self.get_max_hero_levels_by_town_hall()
+        candidates = {}
+        for row in rows:
+            player_tag = row['player_tag']
+            hero_levels = [
+                row['barbarian_king_level'], row['archer_queen_level'], row['minion_prince_level'],
+                row['grand_warden_level'], row['royal_champion_level'], row['dragon_duke_level']
+            ]
+            max_hero_levels = max_hero_levels_by_town_hall.get(row['town_hall_level'], [])
+            hero_progress_values = [
+                min(hero_level / max_hero_level, 1)
+                for hero_level, max_hero_level in zip(hero_levels, max_hero_levels)
+                if max_hero_level
+            ]
+            hero_levels_progress = (
+                sum(hero_progress_values) / len(hero_progress_values) if len(hero_progress_values) > 0 else 0
+            )
+            hero_equipments = json.loads(row['hero_equipment']) if row['hero_equipment'] is not None else []
+            hero_equipment_progress = (
+                await self.of.calculate_hero_equipment_progress(hero_equipments, True)
+            )[3]
+            potential = (
+                    row['town_hall_level'] +
+                    self.CWL_ROSTER_HERO_LEVELS_WEIGHT * hero_levels_progress +
+                    self.CWL_ROSTER_HERO_EQUIPMENT_WEIGHT * hero_equipment_progress
+            )
+            cwl_attacks = cwl_attacks_by_tag.get(player_tag, 0)
+            if cwl_attacks > 0:
+                cwl_average_new_stars = cwl_new_stars_by_tag[player_tag] / cwl_attacks
+                performance = cwl_average_new_stars / self.CWL_ROSTER_MAX_STARS
+                strength = potential * (
+                        1 + self.CWL_ROSTER_PERFORMANCE_WEIGHT * (performance - self.CWL_ROSTER_BASE_PERFORMANCE)
+                )
+            else:
+                cwl_average_new_stars = None
+                performance = None
+                strength = potential
+            is_included_by_default = player_tag in last_season_player_tags
+            candidates[player_tag] = CWLRosterCandidate(
+                player_tag=player_tag,
+                clan_tag=row['clan_tag'],
+                town_hall_level=row['town_hall_level'],
+                hero_levels_progress=hero_levels_progress,
+                hero_equipment_progress=hero_equipment_progress,
+                town_hall_potential=row['town_hall_level'],
+                potential=potential,
+                cwl_attacks=cwl_attacks,
+                cwl_average_new_stars=cwl_average_new_stars,
+                performance=performance,
+                strength=strength,
+                is_included_by_default=is_included_by_default,
+                is_included=overrides.get(player_tag, is_included_by_default)
+            )
+        return candidates
+
+    async def set_cwl_roster_member(self, season: str, player_tag: str, is_included: bool) -> None:
+        await self.acquired_connection.execute('''
+            INSERT INTO cwl_roster_member (clan_tag, season, player_tag, is_included)
+            VALUES ($1, $2, $3, $4)
+            ON CONFLICT (clan_tag, season, player_tag)
+            DO UPDATE SET is_included = $4
+        ''', self.clan_tag, season, player_tag, is_included)
+
+    async def get_cwl_rosters(self, season: str) -> tuple[list[CWLRoster], list[str]]:
+        candidates = await self.get_cwl_roster_candidates(season)
+        included_player_tags = sorted(
+            (player_tag for player_tag, candidate in candidates.items() if candidate.is_included),
+            key=lambda player_tag: candidates[player_tag].strength, reverse=True
+        )
+        roster_clan_tags = await self.get_cwl_roster_clan_tags()
+        roster_size = self.CWL_ROSTER_SIZE + self.CWL_ROSTER_SUBSTITUTES
+        roster_amount = min(len(included_player_tags) // roster_size, len(roster_clan_tags))
+        rows = await self.acquired_connection.fetch('''
+            SELECT clan_tag, war_league_id, war_league_name
+            FROM clan
+            WHERE clan_tag = any($1::varchar[])
+        ''', roster_clan_tags)
+        war_league_by_clan = {row['clan_tag']: (row['war_league_id'], row['war_league_name']) for row in rows}
+        rosters = []
+        for roster_index in range(roster_amount):
+            clan_tag = roster_clan_tags[roster_index]
+            war_league_id, war_league_name = war_league_by_clan.get(clan_tag, (None, None))
+            roster_player_tags = included_player_tags[roster_index * roster_size:(roster_index + 1) * roster_size]
+            rosters.append(CWLRoster(
+                clan_tag=clan_tag,
+                war_league_id=war_league_id,
+                war_league_name=war_league_name,
+                members=roster_player_tags[:self.CWL_ROSTER_SIZE],
+                substitutes=roster_player_tags[self.CWL_ROSTER_SIZE:]
+            ))
+        return rosters, included_player_tags[roster_amount * roster_size:]
 
     def get_attack_town_hall_bonus_points(self, attack_town_hall_level: int, max_town_hall_level: int) -> float:
         if attack_town_hall_level == max_town_hall_level:

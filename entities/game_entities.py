@@ -152,6 +152,32 @@ class PlayerRating:
 
 
 @dataclass
+class CWLRosterCandidate:
+    player_tag: str
+    clan_tag: str
+    town_hall_level: int
+    hero_levels_progress: float
+    hero_equipment_progress: float
+    town_hall_potential: float
+    potential: float
+    cwl_attacks: int
+    cwl_average_new_stars: Optional[float]
+    performance: Optional[float]
+    strength: float
+    is_included_by_default: bool
+    is_included: bool
+
+
+@dataclass
+class CWLRoster:
+    clan_tag: str
+    war_league_id: Optional[int]
+    war_league_name: Optional[str]
+    members: list[str]
+    substitutes: list[str]
+
+
+@dataclass
 class PlayerRatingConfig:
     minimum_average_cwl_stars: list[float]
     minimum_cwl_wars: int

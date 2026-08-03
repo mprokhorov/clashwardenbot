@@ -42,6 +42,14 @@ def get_season(dm: DatabaseManager) -> str:
 
 
 
+def get_clan_mark(dm: DatabaseManager, candidate, roster_clan_tag: str, family_clan_tags: list[str]) -> str:
+    if candidate.clan_tag == roster_clan_tag:
+        return '✅'
+    if candidate.clan_tag in family_clan_tags:
+        return dm.of.to_html(dm.clan_name[candidate.clan_tag])
+    return '❌'
+
+
 def get_candidate_pages(candidates: dict, page: int) -> tuple[list[tuple], int, int]:
     sorted_entries = sorted(candidates.items(), key=lambda x: x[1].strength, reverse=True)
     page_count = max(1, (len(sorted_entries) + CWL_ROSTER_CHOOSE_PAGE_SIZE - 1) // CWL_ROSTER_CHOOSE_PAGE_SIZE)
@@ -64,6 +72,7 @@ async def cwl_roster_list(
         return text, ParseMode.HTML, None
     candidates = await dm.get_cwl_roster_candidates(season)
     substitutes_by_clan = await dm.get_cwl_substitutes_by_clan()
+    family_clan_tags = await dm.get_family_clan_tags()
     rosters, extra_player_tags = await dm.get_cwl_rosters(season)
     included_amount = sum(candidate.is_included for candidate in candidates.values())
     text += (
@@ -92,12 +101,12 @@ async def cwl_roster_list(
             text += (
                 f'{i + 1}. {dm.load_name_html(player_tag)} '
                 f'(ТХ{candidates[player_tag].town_hall_level}) '
-                f'{'✅' if candidates[player_tag].clan_tag == roster.clan_tag else '❌'}\n'
+                f'{get_clan_mark(dm, candidates[player_tag], roster.clan_tag, family_clan_tags)}\n'
             )
         if len(roster.substitutes) > 0:
             text += f'Замены: ' + ', '.join(
                 f'{dm.load_name_html(player_tag)} (ТХ{candidates[player_tag].town_hall_level}) '
-                f'{'✅' if candidates[player_tag].clan_tag == roster.clan_tag else '❌'}'
+                f'{get_clan_mark(dm, candidates[player_tag], roster.clan_tag, family_clan_tags)}'
                 for player_tag in roster.substitutes
             ) + '\n'
         text += '\n'
@@ -286,7 +295,7 @@ async def cwl_roster_help(
         В каждом составе {dm.CWL_ROSTER_SIZE} основных игроков и замены. Количество замен настраивается отдельно для каждого клана кнопками ➖ и ➕ рядом с его названием, сохраняется и действует до следующего изменения. Составы заполняются по очереди, начиная с клана в самой высокой лиге: пока оставшихся участников хватает на очередной клан, состав собирается, иначе сборка останавливается.
 
         <b>Кто в каком клане играет:</b>
-        Игроки сортируются по оценке, и самые сильные попадают в клан с самой высокой лигой ЛВК, следующие — в клан послабее и так далее. Внутри состава сильнейшие идут основой, оставшиеся — заменами. Те, кто не поместился в составы, показываются отдельным списком. Отметка ✅ рядом с игроком означает, что он уже состоит в том клане, куда распределён, а ❌ — что перед началом ЛВК ему нужно перейти в этот клан.
+        Игроки сортируются по оценке, и самые сильные попадают в клан с самой высокой лигой ЛВК, следующие — в клан послабее и так далее. Внутри состава сильнейшие идут основой, оставшиеся — заменами. Те, кто не поместился в составы, показываются отдельным списком. Отметка ✅ рядом с игроком означает, что он уже состоит в том клане, куда распределён. Если игрок сейчас в другом клане семейства, вместо отметки показывается название этого клана, то есть откуда ему нужно перейти. Отметка ❌ означает, что игрок не состоит ни в одном клане семейства.
         ''')
     back_button = InlineKeyboardButton(
         text='⬅️ Назад',

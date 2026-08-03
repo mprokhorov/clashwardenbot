@@ -1223,6 +1223,12 @@ class DatabaseManager:
             for row in rows
         }
 
+    async def get_family_clan_tags(self) -> list[str]:
+        rows = await self.acquired_connection.fetch('''
+            SELECT child_clan_tag FROM child_clan WHERE father_clan_tag = $1
+        ''', self.clan_tag)
+        return [self.clan_tag] + [row['child_clan_tag'] for row in rows]
+
     async def get_cwl_roster_clan_tags(self) -> list[str]:
         rows = await self.acquired_connection.fetch('''
             SELECT clan.clan_tag, clan.war_league_id
@@ -1279,7 +1285,7 @@ class DatabaseManager:
                 grand_warden_level, royal_champion_level, dragon_duke_level
             FROM player
             WHERE clan_tag = any($1::varchar[]) AND is_player_in_clan
-        ''', roster_clan_tags)
+        ''', await self.get_family_clan_tags())
 
         override_rows = await self.acquired_connection.fetch('''
             SELECT player_tag, is_included

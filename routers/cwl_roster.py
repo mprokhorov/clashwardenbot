@@ -91,11 +91,13 @@ async def cwl_roster_list(
         for i, player_tag in enumerate(roster.members):
             text += (
                 f'{i + 1}. {dm.load_name_html(player_tag)} '
-                f'(ТХ{candidates[player_tag].town_hall_level})\n'
+                f'(ТХ{candidates[player_tag].town_hall_level}) '
+                f'{'✅' if candidates[player_tag].clan_tag == roster.clan_tag else '❌'}\n'
             )
         if len(roster.substitutes) > 0:
             text += f'Замены: ' + ', '.join(
-                f'{dm.load_name_html(player_tag)} (ТХ{candidates[player_tag].town_hall_level})'
+                f'{dm.load_name_html(player_tag)} (ТХ{candidates[player_tag].town_hall_level}) '
+                f'{'✅' if candidates[player_tag].clan_tag == roster.clan_tag else '❌'}'
                 for player_tag in roster.substitutes
             ) + '\n'
         text += '\n'
@@ -284,7 +286,7 @@ async def cwl_roster_help(
         В каждом составе {dm.CWL_ROSTER_SIZE} основных игроков и замены. Количество замен настраивается отдельно для каждого клана кнопками ➖ и ➕ рядом с его названием, сохраняется и действует до следующего изменения. Составы заполняются по очереди, начиная с клана в самой высокой лиге: пока оставшихся участников хватает на очередной клан, состав собирается, иначе сборка останавливается.
 
         <b>Кто в каком клане играет:</b>
-        Игроки сортируются по оценке, и самые сильные попадают в клан с самой высокой лигой ЛВК, следующие — в клан послабее и так далее. Внутри состава сильнейшие идут основой, оставшиеся — заменами. Те, кто не поместился в составы, показываются отдельным списком.
+        Игроки сортируются по оценке, и самые сильные попадают в клан с самой высокой лигой ЛВК, следующие — в клан послабее и так далее. Внутри состава сильнейшие идут основой, оставшиеся — заменами. Те, кто не поместился в составы, показываются отдельным списком. Отметка ✅ рядом с игроком означает, что он уже состоит в том клане, куда распределён, а ❌ — что перед началом ЛВК ему нужно перейти в этот клан.
         ''')
     back_button = InlineKeyboardButton(
         text='⬅️ Назад',

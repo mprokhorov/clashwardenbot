@@ -946,9 +946,9 @@ class OutputFormatter:
             'Giant Arrow': HeroEquipment('Гигантская стрела', 18, Hero.archer_queen),
             'Healer Puppet': HeroEquipment('Кукла-целительница', 18, Hero.archer_queen),
             'Frozen Arrow': HeroEquipment('Ледяная стрела', 27, Hero.archer_queen),
+            'Monolith Arrow': HeroEquipment('Монолитная стрела', 27, Hero.archer_queen),
             'Magic Mirror': HeroEquipment('Волшебное зеркало', 27, Hero.archer_queen),
             'Action Figure': HeroEquipment('Солдатик', 27, Hero.archer_queen),
-            'Monolith Arrow': HeroEquipment('Монолитная стрела', 27, Hero.archer_queen),
 
             'Henchmen Puppet': HeroEquipment('Кукольные приспешники', 18, Hero.minion_prince),
             'Dark Orb': HeroEquipment('Сфера тьмы', 18, Hero.minion_prince),
@@ -961,9 +961,9 @@ class OutputFormatter:
             'Life Gem': HeroEquipment('Кристалл жизни', 18, Hero.grand_warden),
             'Rage Gem': HeroEquipment('Кристалл ярости', 18, Hero.grand_warden),
             'Healing Tome': HeroEquipment('Книга исцеления', 18, Hero.grand_warden),
+            'Heroic Torch': HeroEquipment('Факел героев', 27, Hero.grand_warden),
             'Fireball': HeroEquipment('Огненный шар', 27, Hero.grand_warden),
             'Lavaloon Puppet': HeroEquipment('Кукла-лавашар', 27, Hero.grand_warden),
-            'Heroic Torch': HeroEquipment('Факел героев', 27, Hero.grand_warden),
 
             'Royal Gem': HeroEquipment('Королевский кристалл', 18, Hero.royal_champion),
             'Seeking Shield': HeroEquipment('Щит-искатель', 18, Hero.royal_champion),
@@ -977,7 +977,8 @@ class OutputFormatter:
             'Flame Blower': HeroEquipment('Огнедув', 18, Hero.dragon_duke),
             'Stun Blaster': HeroEquipment('Шоковый бластер', 18, Hero.dragon_duke),
             'Electro Fangs': HeroEquipment('Электроклыки', 18, Hero.dragon_duke),
-            'Rocket Backpack': HeroEquipment('Ракетный ранец', 27, Hero.dragon_duke)
+            'Rocket Backpack': HeroEquipment('Ракетный ранец', 27, Hero.dragon_duke),
+            'Revenge Deck': HeroEquipment('Колода мести', 27, Hero.dragon_duke)
         }
         return available_hero_equipments
 

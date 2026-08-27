@@ -2,7 +2,9 @@ import asyncio
 import calendar
 import hashlib
 import json
+import logging
 import math
+import random
 import secrets
 from datetime import datetime, UTC
 from typing import Optional, Any
@@ -32,32 +34,42 @@ from entities.game_entities import (
 from output_formatter import OutputFormatter
 
 
+CONNECTION_ERRORS = (OSError, asyncio.TimeoutError, asyncpg.PostgresConnectionError, asyncpg.InterfaceError)
+
+
 class AcquiredConnection:
     def __init__(self, connection_pool: Pool):
         self.connection_pool = connection_pool
 
+    async def _run(self, method_name: str, query: str, *args: Any) -> Any:
+        # The database can briefly disappear (restart, network blip); retry instead of failing the whole job.
+        last_exc = None
+        for attempt in range(4):
+            try:
+                async with self.connection_pool.acquire() as connection:
+                    return await getattr(connection, method_name)(query, *args)
+            except CONNECTION_ERRORS as exc:
+                last_exc = exc
+                if attempt < 3:
+                    wait = 2 ** attempt + random.uniform(0, 1)
+                    logging.warning(f'Database connection error ({exc}), retrying in {wait:.1f} s')
+                    await asyncio.sleep(wait)
+        raise last_exc
+
     async def fetchval(self, query: str, *args: Any) -> Any:
-        async with self.connection_pool.acquire() as connection:
-            value = await connection.fetchval(query, *args)
-            return value
+        return await self._run('fetchval', query, *args)
 
     async def fetchrow(self, query: str, *args: Any) -> Record:
-        async with self.connection_pool.acquire() as connection:
-            row = await connection.fetchrow(query, *args)
-            return row
+        return await self._run('fetchrow', query, *args)
 
     async def fetch(self, query: str, *args: Any) -> list[Record]:
-        async with self.connection_pool.acquire() as connection:
-            rows = await connection.fetch(query, *args)
-            return rows
+        return await self._run('fetch', query, *args)
 
     async def execute(self, query: str, *args: Any) -> None:
-        async with self.connection_pool.acquire() as connection:
-            await connection.execute(query, *args)
+        await self._run('execute', query, *args)
 
     async def executemany(self, query: str, *args: Any) -> None:
-        async with self.connection_pool.acquire() as connection:
-            await connection.executemany(query, *args)
+        await self._run('executemany', query, *args)
 
 
 class DatabaseManager:
@@ -108,14 +120,26 @@ class DatabaseManager:
         self.monospace_player_tags: set[str] = set()
 
     async def connect_to_pool(self) -> None:
-        self.connection_pool = await asyncpg.create_pool(
-            host=config.postgres_host.get_secret_value(),
-            database=config.postgres_database.get_secret_value(),
-            user=config.postgres_user.get_secret_value(),
-            password=config.postgres_password.get_secret_value(),
-            server_settings={'search_path': config.postgres_schema.get_secret_value()}
-        )
-        self.acquired_connection = AcquiredConnection(self.connection_pool)
+        # On boot the database may still be starting up, so wait for it instead of crashing immediately.
+        last_exc = None
+        for attempt in range(8):
+            try:
+                self.connection_pool = await asyncpg.create_pool(
+                    host=config.postgres_host.get_secret_value(),
+                    database=config.postgres_database.get_secret_value(),
+                    user=config.postgres_user.get_secret_value(),
+                    password=config.postgres_password.get_secret_value(),
+                    server_settings={'search_path': config.postgres_schema.get_secret_value()}
+                )
+                self.acquired_connection = AcquiredConnection(self.connection_pool)
+                return
+            except CONNECTION_ERRORS as exc:
+                last_exc = exc
+                if attempt < 7:
+                    wait = min(2 ** attempt, 30) + random.uniform(0, 1)
+                    logging.warning(f'Cannot connect to database ({exc}), retrying in {wait:.1f} s')
+                    await asyncio.sleep(wait)
+        raise last_exc
 
     async def start_scheduler(self, bot_number: int) -> None:
         SECONDS_IN_MINUTE = 60

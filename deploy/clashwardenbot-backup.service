@@ -4,4 +4,4 @@ After=postgresql.service
 
 [Service]
 Type=oneshot
-ExecStart=/opt/clashwardenbot/app/deploy/backup.sh
+ExecStart=/opt/clashwardenbot-control/backup.sh

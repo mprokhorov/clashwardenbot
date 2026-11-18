@@ -1,0 +1,26 @@
+[Unit]
+Description=ClashWardenBot control panel bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=clashwardenbot-control
+Group=clashwardenbot-control
+EnvironmentFile=/etc/clashwardenbot/control.env
+WorkingDirectory=/var/lib/clashwardenbot-control
+ExecStart=/opt/clashwardenbot-control/.venv/bin/python /opt/clashwardenbot-control/control_bot.py
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Restart=always
+RestartSec=10
+LogNamespace=clashwardenbot
+SyslogIdentifier=clashwardenbot-control
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/clashwardenbot-control
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,11 @@
+[Unit]
+Description=Apply the production state chosen in the ClashWardenBot control panel
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/bin/python3 /opt/clashwardenbot-control/deployer.py
+TimeoutStartSec=15min
+LogNamespace=clashwardenbot
+SyslogIdentifier=clashwardenbot-deploy

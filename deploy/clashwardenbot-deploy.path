@@ -1,0 +1,9 @@
+[Unit]
+Description=Apply the control panel state as soon as it changes
+
+[Path]
+PathChanged=/var/lib/clashwardenbot-control/state.json
+Unit=clashwardenbot-deploy.service
+
+[Install]
+WantedBy=paths.target

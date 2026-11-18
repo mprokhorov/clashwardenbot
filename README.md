@@ -86,34 +86,34 @@ $ python bot_polling.py --bot_number=0
 ```
 ```bot_number``` is the index of the corresponding values in ```clan_tags``` and ```telegram_bot_api_tokens``` lists from ```config.py```
 
-## Deployment (systemd)
+## Deployment
 
-Every bot runs as its own systemd service `clashwardenbot@N`, where `N` is `bot_number`. Python 3.12 is installed by [uv](https://docs.astral.sh/uv/) and does not depend on the system Python. Logs go to the separate journald namespace `clashwardenbot`.
+Production is controlled from a separate Telegram control bot: it chooses the deployed branch, the running bot instances (one per clan from `CLAN_TAGS`) and whether the ad script runs.
 
-### First setup (as root)
+- `clashwardenbot@N` — bot with `bot_number=N`, runs as user `clashwardenbot` from `/opt/clashwardenbot/app` on Python 3.12 installed by [uv](https://docs.astral.sh/uv/)
+- `clashwardenbot-deploy` — deployer (root). Every minute and right after any change in the panel it fetches git, deploys the chosen branch (`uv pip sync requirements.lock`), enables or disables instances and checks that the bots are alive
+- `clashwardenbot-control` — control bot, runs as unprivileged user `clashwardenbot-control`, only edits `/var/lib/clashwardenbot-control/state.json` and reads the deployer status
+- `clashwardenbot-restart.timer` — daily restart at 00:00, `clashwardenbot-backup.timer` — daily database dump to `/var/backups/clashwardenbot` (14 days)
 
-```bash
-curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
-useradd --system --create-home --home-dir /opt/clashwardenbot --shell /usr/sbin/nologin clashwardenbot
-sudo -u clashwardenbot -H git clone -b dev https://github.com/mprokhorov/clashwardenbot /opt/clashwardenbot/app
-cd /opt/clashwardenbot/app
-sudo -u clashwardenbot -H uv venv --python 3.12
-sudo -u clashwardenbot -H uv pip sync requirements.lock
-install -o clashwardenbot -g clashwardenbot -m 600 /path/to/.env .env
-cp deploy/*.service deploy/*.timer /etc/systemd/system/
-cp deploy/journald@clashwardenbot.conf /etc/systemd/
-systemctl daemon-reload
-systemctl enable --now clashwardenbot@1 clashwardenbot-backup.timer clashwardenbot-restart.timer
-```
+Code that runs as root (deployer, backup) is copied to root-owned `/opt/clashwardenbot-control` and is never run from the deployed branch, so a broken branch cannot break the panel.
 
-### Everyday commands
+### Setup (as root)
+
+Create the control bot in @BotFather, then:
 
 ```bash
-/opt/clashwardenbot/app/deploy/update.sh       # git pull, sync dependencies, restart bots
-journalctl --namespace=clashwardenbot -u clashwardenbot@1 -f  # follow logs of bot 1
-systemctl status 'clashwardenbot@*'            # state of all bots
+curl -fsSL https://raw.githubusercontent.com/mprokhorov/clashwardenbot/dev/deploy/install.sh -o /root/install.sh
+bash /root/install.sh --env /path/to/.env
 ```
 
-All bots are restarted daily at 00:00 by `clashwardenbot-restart.timer`. The log namespace is capped at 50 MB.
+The script is idempotent: run it again to update the control panel code and systemd units. The previous units are saved to `/etc/systemd/system/clashwardenbot-units-backup-*`.
 
-Database dumps are written daily to `/var/backups/clashwardenbot` and kept for 14 days. Restore: `pg_restore --clean -d <database> <file>.dump` as `postgres`.
+### Useful commands
+
+```bash
+journalctl --namespace=clashwardenbot -u clashwardenbot@1 -f           # logs of bot 1
+journalctl --namespace=clashwardenbot -u clashwardenbot-deploy -n 50    # deployer log
+systemctl status 'clashwardenbot@*'                                     # state of all bots
+```
+
+Restore a database dump: `pg_restore --clean -d <database> <file>.dump` as `postgres`.

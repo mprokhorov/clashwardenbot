@@ -1,0 +1,3 @@
+APScheduler>=3.10.4,<4
+Pyrogram>=2.0.106,<3
+TgCrypto-pyrofork>=1.2.8,<2

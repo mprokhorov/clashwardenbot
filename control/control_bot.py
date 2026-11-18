@@ -149,7 +149,7 @@ async def panel() -> tuple[str, InlineKeyboardMarkup]:
         emoji, description = unit_state_to_text(ad_active_state, ad_sub_state, is_ad_wanted)
         text += f'\nРеклама: {emoji} {description}\n'
         button_rows.append([InlineKeyboardButton(
-            text=f'📣 Реклама: {'выключить' if is_ad_wanted else 'включить'}',
+            text=f'📣 {'Выключить' if is_ad_wanted else 'Включить'} рекламу',
             callback_data=PanelCallbackFactory(action='ad').pack()
         )])
     if status.get('error'):
@@ -161,7 +161,7 @@ async def panel() -> tuple[str, InlineKeyboardMarkup]:
                 callback_data=PanelCallbackFactory(action='branches').pack()
             ),
             InlineKeyboardButton(
-                text=f'🔁 Автообновление: {'выкл' if state.get('auto_update', True) else 'вкл'}',
+                text=f'🔁 {'Выключить' if state.get('auto_update', True) else 'Включить'} автообновление',
                 callback_data=PanelCallbackFactory(action='auto').pack()
             )
         ],

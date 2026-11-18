@@ -1,0 +1,27 @@
+# Ad script (ad.py is not in the repository). Its Telegram session gives full access to the account,
+# so it runs as a separate user that can see neither the bots nor their .env
+[Unit]
+Description=ClashWardenBot ad script
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=clashwardenbot-ad
+Group=clashwardenbot-ad
+WorkingDirectory=/opt/clashwardenbot-ad
+ExecStart=/opt/clashwardenbot-ad/.venv/bin/python ad.py
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Restart=always
+RestartSec=10
+LogNamespace=clashwardenbot
+SyslogIdentifier=clashwardenbot-ad
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/opt/clashwardenbot-ad
+
+[Install]
+WantedBy=multi-user.target

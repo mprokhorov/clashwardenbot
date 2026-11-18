@@ -3,10 +3,11 @@
 # Everything that runs as root is copied to root-owned /opt/clashwardenbot-control, never run from the bot checkout.
 # Safe to run again: it only adds what is missing and refreshes the control panel code and systemd units.
 #
-# Usage: install.sh [--branch dev] [--env /root/clashwardenbot/.env] [--old-dir /root/clashwardenbot]
+# Usage: install.sh [--branch dev] [--env /root/clashwardenbot/.env] [--old-dir /root/clashwardenbot] [--ad-dir /root/clashwardenbot]
 #   --branch   branch for the first clone (later the branch is chosen in the control panel)
 #   --env      existing .env to copy if the new installation has none
 #   --old-dir  previous installation to compare with the repository before the bots are switched over
+#   --ad-dir   directory with ad.py, ad/ and ad.session to move to /opt/clashwardenbot-ad (once)
 set -euo pipefail
 
 REPO_URL=https://github.com/mprokhorov/clashwardenbot
@@ -18,16 +19,20 @@ CONTROL_DIR=/opt/clashwardenbot-control
 CONTROL_STATE_DIR=/var/lib/clashwardenbot-control
 DEPLOY_STATUS_DIR=/var/lib/clashwardenbot-deploy
 CONTROL_ENV=/etc/clashwardenbot/control.env
+AD_USER=clashwardenbot-ad
+AD_DIR=/opt/clashwardenbot-ad
 UNITS_DIR=/etc/systemd/system
 
 BRANCH=dev
 OLD_ENV=
 OLD_DIR=
+OLD_AD_DIR=
 while [ $# -gt 0 ]; do
     case "$1" in
         --branch) BRANCH=$2; shift 2 ;;
         --env) OLD_ENV=$2; shift 2 ;;
         --old-dir) OLD_DIR=$2; shift 2 ;;
+        --ad-dir) OLD_AD_DIR=$2; shift 2 ;;
         *) echo "Unknown argument: $1"; exit 1 ;;
     esac
 done
@@ -68,6 +73,28 @@ install -o root -g root -m 644 "$APP_DIR/control/deployer.py" "$APP_DIR/control/
 install -o root -g root -m 755 "$APP_DIR/deploy/backup.sh" "$CONTROL_DIR/"
 [ -d "$CONTROL_DIR/.venv" ] || UV_PYTHON_INSTALL_DIR="$CONTROL_DIR/python" uv venv --quiet --python 3.12 "$CONTROL_DIR/.venv"
 UV_PYTHON_INSTALL_DIR="$CONTROL_DIR/python" uv pip sync --quiet --python "$CONTROL_DIR/.venv/bin/python" "$CONTROL_DIR/requirements.lock"
+
+IS_AD_MIGRATED=false
+if [ -f "$AD_DIR/ad.py" ] || [ -n "$OLD_AD_DIR" ]; then
+    step "Ad script ($AD_DIR)"
+    id -u "$AD_USER" >/dev/null 2>&1 || useradd --system --create-home --home-dir "$AD_DIR" --shell /usr/sbin/nologin "$AD_USER"
+    chmod 700 "$AD_DIR"
+    if [ ! -f "$AD_DIR/ad.py" ]; then
+        [ -f "$OLD_AD_DIR/ad.py" ] || { echo "No $OLD_AD_DIR/ad.py"; exit 1; }
+        # One Telegram session must never run in two processes, so the old ad script is stopped before copying
+        systemctl stop clashwardenbot-ad.service 2>/dev/null || true
+        cp -a "$OLD_AD_DIR/ad.py" "$OLD_AD_DIR/ad" "$AD_DIR/"
+        cp -a "$OLD_AD_DIR"/ad.session* "$OLD_AD_DIR"/ad.log* "$AD_DIR/" 2>/dev/null || true
+        chown -R "$AD_USER":"$AD_USER" "$AD_DIR"
+        IS_AD_MIGRATED=true
+    fi
+    install -o "$AD_USER" -g "$AD_USER" -m 644 "$APP_DIR/deploy/ad/requirements.lock" "$AD_DIR/requirements.lock"
+    cd "$AD_DIR"
+    [ -d .venv ] || runuser -u "$AD_USER" -- uv venv --quiet --python 3.12 .venv
+    runuser -u "$AD_USER" -- uv pip sync --quiet --python .venv/bin/python requirements.lock
+    cd /
+    ls -la "$AD_DIR"
+fi
 
 step "Control panel settings ($CONTROL_ENV)"
 install -d -o root -g root -m 755 /etc/clashwardenbot
@@ -119,6 +146,7 @@ mkdir -p "$BACKUP_DIR"
 cp -a "$UNITS_DIR"/clashwardenbot*.service "$UNITS_DIR"/clashwardenbot*.timer "$UNITS_DIR"/clashwardenbot*.path "$BACKUP_DIR"/ 2>/dev/null || true
 echo "Previous units saved to $BACKUP_DIR"
 cp "$APP_DIR"/deploy/*.service "$APP_DIR"/deploy/*.timer "$APP_DIR"/deploy/*.path "$UNITS_DIR"/
+[ -f "$AD_DIR/ad.py" ] && cp "$APP_DIR/deploy/ad/clashwardenbot-ad.service" "$UNITS_DIR"/
 cp "$APP_DIR/deploy/journald@clashwardenbot.conf" /etc/systemd/
 systemctl daemon-reload
 systemctl try-restart systemd-journald@clashwardenbot.service
@@ -128,6 +156,12 @@ for number in $(python3 -c 'import json, sys; print(*json.load(open(sys.argv[1])
     systemctl restart "clashwardenbot@$number.service"
     echo "clashwardenbot@$number: $(systemctl is-active "clashwardenbot@$number.service")"
 done
+
+if $IS_AD_MIGRATED && [ "$(systemctl is-enabled clashwardenbot-ad.service 2>/dev/null)" = enabled ]; then
+    systemctl restart clashwardenbot-ad.service
+    sleep 5
+    echo "clashwardenbot-ad: $(systemctl is-active clashwardenbot-ad.service)"
+fi
 
 step "Deployer, control panel, daily restart and backups"
 systemctl enable --now clashwardenbot-deploy.timer clashwardenbot-deploy.path clashwardenbot-control.service \

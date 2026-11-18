@@ -20,12 +20,18 @@ class Event(IntEnum):
 
 
 class OutputFormatter:
+    # Player names that Telegram turns into links (like "ard.man"), cached from the non_clickable_player_name table
+    non_clickable_names: frozenset[str] = frozenset()
+
     def __init__(self, utc_to_local_hours: Optional[timedelta] = timedelta(hours=3)):
         self.utc_to_local_hours = utc_to_local_hours
 
     @staticmethod
     def to_html(text: str) -> str:
-        return text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        html_text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        if text in OutputFormatter.non_clickable_names:
+            return f'<code>{html_text}</code>'
+        return html_text
 
     @staticmethod
     def utc_now() -> datetime:

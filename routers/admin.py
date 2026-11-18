@@ -520,7 +520,7 @@ async def edit_cw_list(
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text=f'{'✅' if row['is_player_set_for_clan_wars'] else '❌'} '
-                 f'{dm.load_name(row['player_tag'])} {dm.of.get_player_info_with_emoji(
+                 f'{dm.of.to_html(dm.load_name(row['player_tag']))} {dm.of.get_player_info_with_emoji(
                      row['town_hall_level'],
                      row['barbarian_king_level'],
                      row['archer_queen_level'],
@@ -584,7 +584,7 @@ async def edit_cwl_list(
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text=f'{'✅' if row['is_player_set_for_clan_war_league'] else '❌'} '
-                 f'{dm.load_name(row['player_tag'])} {dm.of.get_player_info_with_emoji(
+                 f'{dm.of.to_html(dm.load_name(row['player_tag']))} {dm.of.get_player_info_with_emoji(
                      row['town_hall_level'],
                      row['barbarian_king_level'],
                      row['archer_queen_level'],
@@ -764,7 +764,7 @@ async def give_bonus_finish(
     text += (
         f'Сезон ЛВК: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
         f'\n'
-        f'Игроку {dm.load_name(callback_data.player_tag)} выдано {dm.of.format_and_rstrip(callback_data.bonus_points, 3)} 🪙\n'
+        f'Игроку {dm.of.to_html(dm.load_name(callback_data.player_tag))} выдано {dm.of.format_and_rstrip(callback_data.bonus_points, 3)} 🪙\n'
     )
     await dm.acquired_connection.execute('''
         INSERT INTO clan_war_league_rating

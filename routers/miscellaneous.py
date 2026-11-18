@@ -620,7 +620,7 @@ async def hero_equipment_details(
         name in player_hero_equipments.keys() for name, _ in available_hero_equipments.items()
     )
     text = (
-        f'<b>🔧 Снаряжения героев игрока {dm.load_name(callback_data.player_tag)}</b>\n'
+        f'<b>🔧 Снаряжения героев игрока {dm.of.to_html(dm.load_name(callback_data.player_tag))}</b>\n'
         f'\n'
         f'⏳ Прогресс ({available_equipments_for_player} / {len(available_hero_equipments)})\n'
         f'Уровни: {dm.of.separate_thousands(levels_amount)} / {dm.of.separate_thousands(total_levels_amount)} '
@@ -963,7 +963,7 @@ async def callback_player_info(
         callback_query: CallbackQuery, callback_data: MiscellaneousCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         chat_id = await dm.get_group_chat_id(callback_query.message)
@@ -988,7 +988,7 @@ async def callback_members(
         callback_query: CallbackQuery, callback_data: MiscellaneousCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         if callback_data.members_view == MembersView.users:
@@ -1016,7 +1016,7 @@ async def callback_hero_equipment(
         callback_query: CallbackQuery, callback_data: MiscellaneousCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         if callback_data.hero_equipment_view == HeroEquipmentView.details:
@@ -1045,7 +1045,7 @@ async def callback_contributions(
         callback_query: CallbackQuery, callback_data: MiscellaneousCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await contributions(dm, callback_data)
@@ -1070,7 +1070,7 @@ async def callback_donations(
         callback_query: CallbackQuery, callback_data: MiscellaneousCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         chat_id = await dm.get_group_chat_id(callback_query.message)
@@ -1095,7 +1095,7 @@ async def callback_events(
         callback_query: CallbackQuery, callback_data: MiscellaneousCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await events(dm)
@@ -1119,7 +1119,7 @@ async def callback_help(
         callback_query: CallbackQuery, callback_data: MiscellaneousCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await help_(dm)

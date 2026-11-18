@@ -458,7 +458,7 @@ async def cwl_rating_list(
         callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_rules, count_bonus_points=count_bonus_points).pack()
     )
     for i, (player_tag, r) in enumerate(sorted(player_tags.items(), key=lambda x: x[1].total_points, reverse=True)):
-        text += f'{i + 1}. {dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n'
+        text += f'{i + 1}. {dm.of.to_html(dm.load_name(player_tag))}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n'
     if len(player_tags) == 0:
         text += f'Список пуст\n'
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[details_button, count_bonus_points_button, rules_button], [update_button]])
@@ -525,7 +525,7 @@ async def cwl_rating_details(
     else:
         count_bonus_points = True
     text = (
-        f'<b>🪙 Рейтинг игрока {dm.load_name(callback_data.player_tag)} ({'с бонусами' if count_bonus_points else 'без бонусов'})</b>\n'
+        f'<b>🪙 Рейтинг игрока {dm.of.to_html(dm.load_name(callback_data.player_tag))} ({'с бонусами' if count_bonus_points else 'без бонусов'})</b>\n'
         f'\n'
     )
     if not await dm.load_clan_war_league_rating_config():
@@ -957,7 +957,7 @@ async def callback_cwl_info(
         callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_info(dm, callback_data)
@@ -982,7 +982,7 @@ async def callback_cwl_map(
         callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         chat_id = await dm.get_group_chat_id(callback_query.message)
@@ -1007,7 +1007,7 @@ async def callback_cwl_attacks(
         callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_attacks(dm, callback_data)
@@ -1032,7 +1032,7 @@ async def callback_cwl_skips(
         callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         chat_id = await dm.get_group_chat_id(callback_query.message)
@@ -1053,7 +1053,7 @@ async def callback_cwl_all_days_list(
         callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_days_list(dm, callback_data)
@@ -1077,7 +1077,7 @@ async def callback_cwl_rating_list(
         callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_rating_list(dm, callback_data)
@@ -1094,7 +1094,7 @@ async def callback_cwl_rating_choose(
         callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_rating_choose(dm, callback_data)
@@ -1111,7 +1111,7 @@ async def callback_cwl_rating_details(
         callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_rating_details(dm, callback_data)
@@ -1128,7 +1128,7 @@ async def callback_cwl_rating_rules(
         callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_rating_rules(dm, callback_data)
@@ -1165,7 +1165,7 @@ async def callback_cwl_list(
         callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_list(dm, callback_data)
@@ -1189,7 +1189,7 @@ async def callback_cwl_clans(
         callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cwl_clans(dm)

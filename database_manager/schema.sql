@@ -64,6 +64,7 @@ create table bot_user
     can_link_group_members         boolean,
     can_edit_cw_list               boolean,
     can_send_messages_from_bot     boolean,
+    can_run_player_rating_giveaway boolean,
     constraint bot_user_pk
         primary key (clan_tag, chat_id, user_id),
     constraint bot_user_chat_clan_tag_chat_id_fk
@@ -240,6 +241,13 @@ create table message_bot_user
         foreign key (clan_tag, chat_id, user_id) references bot_user
 );
 
+create table non_clickable_player_name
+(
+    player_name varchar(16) not null
+        constraint non_clickable_player_name_pk
+            primary key
+);
+
 create table opponent_player
 (
     clan_tag             varchar(16) not null,
@@ -315,6 +323,30 @@ create table player_league
         foreign key (clan_tag, player_tag) references player
 );
 
+create table player_rating_draw
+(
+    draw_id          serial
+        constraint player_rating_draw_pk
+            primary key,
+    clan_tag         varchar(16) not null,
+    season           varchar(7)  not null,
+    chat_id          bigint      not null,
+    message_id       bigint      not null,
+    user_id          bigint      not null,
+    created_at       timestamp   not null,
+    seed             varchar(64) not null,
+    seed_hash        varchar(64) not null,
+    participants     jsonb       not null,
+    client_seed      text,
+    ticket           bigint,
+    winner_tag       varchar(16),
+    drawn_by_user_id bigint,
+    drawn_at         timestamp,
+    cancelled_at     timestamp,
+    constraint player_rating_draw_chat_id_message_id_key
+        unique (chat_id, message_id)
+);
+
 create table player_rating_config
 (
     clan_tag                  varchar(16) not null
@@ -339,6 +371,14 @@ create table raid_weekend
     data       jsonb       not null,
     constraint raid_weekend_pk
         primary key (clan_tag, start_time)
+);
+
+create table schema_migration
+(
+    name       varchar(128) not null
+        constraint schema_migration_pk
+            primary key,
+    applied_at timestamp    not null
 );
 
 create table war_win_streak

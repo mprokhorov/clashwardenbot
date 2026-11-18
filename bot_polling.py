@@ -26,6 +26,7 @@ async def main():
 
     dm = DatabaseManager(clan_tag=config.clan_tags[bot_number].get_secret_value(), bot=bot)
     await dm.connect_to_pool()
+    await dm.apply_migrations()
     await dm.infrequent_jobs()
 
     dp = Dispatcher(dm=dm)

@@ -1,7 +1,9 @@
 import asyncio
 import calendar
 import json
+import logging
 import math
+import os
 from datetime import datetime, UTC
 from typing import Optional, Any
 
@@ -48,9 +50,11 @@ class AcquiredConnection:
             await connection.executemany(query, *args)
 
 
-class DatabaseManager:
-    PLAYER_RATING_SOFTMAX_TEMPERATURE = 10
+MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), 'migrations')
+MIGRATIONS_LOCK_ID = 2026111801
 
+
+class DatabaseManager:
     def __init__(self, clan_tag: str, bot: Bot):
         self.api_client = AsyncClient(
             email=config.clash_of_clans_api_login.get_secret_value(),
@@ -95,6 +99,42 @@ class DatabaseManager:
             server_settings={'search_path': config.postgres_schema.get_secret_value()}
         )
         self.acquired_connection = AcquiredConnection(self.connection_pool)
+
+    async def apply_migrations(self) -> None:
+        # Bots of all clans start at the same time, the advisory lock makes them apply migrations one by one
+        async with self.connection_pool.acquire() as connection:
+            await connection.execute('SELECT pg_advisory_lock($1)', MIGRATIONS_LOCK_ID)
+            try:
+                await connection.execute('''
+                    CREATE TABLE IF NOT EXISTS schema_migration
+                    (
+                        name       varchar(128) not null
+                            constraint schema_migration_pk
+                                primary key,
+                        applied_at timestamp    not null
+                    )
+                ''')
+                rows = await connection.fetch('''
+                    SELECT name
+                    FROM schema_migration
+                ''')
+                applied_migrations = {row['name'] for row in rows}
+                for migration in sorted(os.listdir(MIGRATIONS_DIR)):
+                    if not migration.endswith('.sql') or migration in applied_migrations:
+                        continue
+                    with open(os.path.join(MIGRATIONS_DIR, migration), encoding='utf-8') as file:
+                        migration_sql = file.read()
+                    async with connection.transaction():
+                        await connection.execute(migration_sql)
+                        await connection.execute('''
+                            INSERT INTO schema_migration (name, applied_at)
+                            VALUES ($1, NOW() AT TIME ZONE 'UTC')
+                        ''', migration)
+                    logging.info(f'Migration {migration} was applied')
+            except Exception:
+                logging.exception('Migrations were not applied')
+            finally:
+                await connection.execute('SELECT pg_advisory_unlock($1)', MIGRATIONS_LOCK_ID)
 
     async def start_scheduler(self, bot_number: int) -> None:
         SECONDS_IN_MINUTE = 60
@@ -445,6 +485,15 @@ class DatabaseManager:
         self.name_and_tag = {
             row['player_tag']: f'{row['player_name']} ({row['player_tag']})' for row in rows
         }
+
+        try:
+            rows = await self.acquired_connection.fetch('''
+                SELECT player_name
+                FROM non_clickable_player_name
+            ''')
+            OutputFormatter.non_clickable_names = frozenset(row['player_name'] for row in rows)
+        except asyncpg.UndefinedTableError:
+            logging.warning('Table non_clickable_player_name does not exist, migrations were not applied')
 
         rows = await self.acquired_connection.fetch('''
             SELECT chat_id, user_id, username, first_name, last_name
@@ -1516,12 +1565,16 @@ class DatabaseManager:
                 r.raids_attacks_points + r.raids_gold_points + r.cw_points
             )
 
-        # Softmax over prize candidates turns points into chances to win
+        # Chances to win: w = e^((x - μ) / σ), P = w / Σw, where μ and σ are the mean and the standard deviation
+        # of the prize candidates' points. With σ = 0 (one candidate or equal points) all chances are equal
         if len(prize_candidate_tags) > 0:
-            max_points = max(player_rating[player_tag].total_points for player_tag in prize_candidate_tags)
+            points = [player_rating[player_tag].total_points for player_tag in prize_candidate_tags]
+            mean_points = sum(points) / len(points)
+            points_deviation = math.sqrt(sum((x - mean_points) ** 2 for x in points) / len(points))
             weights = {
-                player_tag: math.exp(
-                    (player_rating[player_tag].total_points - max_points) / self.PLAYER_RATING_SOFTMAX_TEMPERATURE
+                player_tag: (
+                    math.exp((player_rating[player_tag].total_points - mean_points) / points_deviation)
+                    if points_deviation > 1e-9 else 1
                 )
                 for player_tag in prize_candidate_tags
             }
@@ -1711,6 +1764,58 @@ class DatabaseManager:
                 AND can_send_messages_from_bot
         ''', self.clan_tag, chat_id, user_id)
         return row is not None
+
+    async def can_user_run_player_rating_giveaway(self, chat_id: int, user_id: int) -> bool:
+        row = await self.acquired_connection.fetchrow('''
+            SELECT clan_tag, chat_id, user_id
+            FROM bot_user
+            WHERE
+                ((clan_tag, chat_id, user_id) = ($1, $2, $3) OR (clan_tag, chat_id, user_id) = ($1, $3, $3))
+                AND can_run_player_rating_giveaway
+        ''', self.clan_tag, chat_id, user_id)
+        return row is not None
+
+    async def create_player_rating_draw(
+            self, season: str, chat_id: int, message_id: int, user_id: int,
+            seed: str, seed_hash: str, participants: list[dict]
+    ) -> Optional[int]:
+        return await self.acquired_connection.fetchval('''
+            INSERT INTO player_rating_draw
+                (clan_tag, season, chat_id, message_id, user_id, created_at, seed, seed_hash, participants)
+            SELECT $1, $2, $3, $4, $5, NOW() AT TIME ZONE 'UTC', $6, $7, $8
+            WHERE NOT EXISTS (SELECT FROM player_rating_draw WHERE (chat_id, message_id) = ($3, $4))
+            ON CONFLICT (chat_id, message_id) DO NOTHING
+            RETURNING draw_id
+        ''', self.clan_tag, season, chat_id, message_id, user_id, seed, seed_hash, json.dumps(participants))
+
+    async def load_player_rating_draw(self, draw_id: int, chat_id: int, message_id: int) -> Optional[Record]:
+        return await self.acquired_connection.fetchrow('''
+            SELECT draw_id, season, seed, seed_hash, participants, drawn_at, cancelled_at
+            FROM player_rating_draw
+            WHERE (draw_id, chat_id, message_id) = ($1, $2, $3)
+        ''', draw_id, chat_id, message_id)
+
+    async def finish_player_rating_draw(
+            self, draw_id: int, client_seed: str, ticket: int, winner_tag: str, user_id: int
+    ) -> bool:
+        # The condition on drawn_at makes the draw happen only once even if the button is pressed several times
+        draw_id = await self.acquired_connection.fetchval('''
+            UPDATE player_rating_draw
+            SET (client_seed, ticket, winner_tag, drawn_by_user_id, drawn_at) =
+                ($2, $3, $4, $5, NOW() AT TIME ZONE 'UTC')
+            WHERE draw_id = $1 AND drawn_at IS NULL AND cancelled_at IS NULL
+            RETURNING draw_id
+        ''', draw_id, client_seed, ticket, winner_tag, user_id)
+        return draw_id is not None
+
+    async def cancel_player_rating_draw(self, draw_id: int) -> bool:
+        draw_id = await self.acquired_connection.fetchval('''
+            UPDATE player_rating_draw
+            SET cancelled_at = NOW() AT TIME ZONE 'UTC'
+            WHERE draw_id = $1 AND drawn_at IS NULL AND cancelled_at IS NULL
+            RETURNING draw_id
+        ''', draw_id)
+        return draw_id is not None
 
     async def is_player_linked_to_user(self, player_tag: str, chat_id: int, user_id: int) -> bool:
         rows = await self.acquired_connection.fetch('''

@@ -1,9 +1,13 @@
+import hashlib
+import json
+import secrets
 from contextlib import suppress
+from datetime import date, timedelta
 from enum import auto, IntEnum
 from typing import Optional
 
 from aiogram import Router
-from aiogram.enums import ParseMode
+from aiogram.enums import ChatType, ParseMode
 from aiogram.exceptions import TelegramBadRequest
 from aiogram.filters import Command
 from aiogram.filters.callback_data import CallbackData
@@ -20,6 +24,23 @@ class OutputView(IntEnum):
     rating_choose = auto()
     rating_details = auto()
     rating_all_seasons = auto()
+
+
+class GiveawayAction(IntEnum):
+    preview = auto()
+    commit = auto()
+    draw = auto()
+    cancel = auto()
+
+
+class GiveawayCallbackFactory(CallbackData, prefix='giveaway'):
+    action: GiveawayAction
+    update: bool = False
+    season: Optional[str] = None
+    draw_id: Optional[int] = None
+
+
+GIVEAWAY_TOTAL_TICKETS = 1_000_000
 
 
 class RatingCallbackFactory(CallbackData, prefix='rating'):
@@ -302,6 +323,277 @@ async def rating_all_seasons(
     return text, ParseMode.HTML, keyboard
 
 
+def get_giveaway_participants(player_ratings: dict[str, PlayerRating]) -> list[dict]:
+    candidates = sorted(
+        [r for r in player_ratings.values() if r.win_chance is not None],
+        key=lambda r: (-r.total_points, r.player_tag)
+    )
+    return [
+        {
+            'player_tag': r.player_tag,
+            'player_name': r.player_name,
+            'points': round(r.total_points, 3),
+            'tickets': max(1, round(r.win_chance * GIVEAWAY_TOTAL_TICKETS))
+        }
+        for r in candidates
+    ]
+
+
+def get_ticket_ranges(participants: list[dict]) -> list[tuple[dict, int, int]]:
+    ticket_ranges = []
+    first_ticket = 0
+    for participant in participants:
+        ticket_ranges.append((participant, first_ticket, first_ticket + participant['tickets'] - 1))
+        first_ticket += participant['tickets']
+    return ticket_ranges
+
+
+def draw_ticket(seed: str, client_seed: str, total_tickets: int) -> tuple[str, int]:
+    draw_hash = hashlib.sha256(f'{seed}:{client_seed}'.encode()).hexdigest()
+    return draw_hash, int(draw_hash, 16) % total_tickets
+
+
+def get_default_giveaway_season(seasons: list[str]) -> Optional[str]:
+    previous_season = (date.today().replace(day=1) - timedelta(days=1)).strftime('%Y-%m')
+    past_seasons = [season for season in seasons if season <= previous_season]
+    if len(past_seasons) > 0:
+        return past_seasons[-1]
+    return seasons[-1] if len(seasons) > 0 else None
+
+
+async def giveaway_preview(
+        dm: DatabaseManager, callback_data: Optional[GiveawayCallbackFactory]
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    text = (
+        f'<b>🎲 Розыгрыш призов рейтинга</b>\n'
+        f'\n'
+    )
+    if not await dm.load_player_rating_config():
+        text += f'Рейтинг выключен'
+        return text, ParseMode.HTML, None
+    seasons = await dm.get_player_rating_seasons()
+    if callback_data is not None and callback_data.season in seasons:
+        season = callback_data.season
+    else:
+        season = get_default_giveaway_season(seasons)
+    if season is None:
+        text += f'Информация о рейтинге отсутствует\n'
+        return text, ParseMode.HTML, None
+    participants = get_giveaway_participants(await dm.get_player_ratings(season))
+    total_tickets = sum(participant['tickets'] for participant in participants)
+    text += (
+        f'Сезон: {dm.of.season(season, False)}\n'
+        f'\n'
+    )
+    if len(participants) > 0:
+        text += f'Допущены к розыгрышу:\n'
+        for i, participant in enumerate(participants):
+            text += (
+                f'{i + 1}. {dm.of.to_html(participant['player_name'])}: '
+                f'{dm.of.format_and_rstrip(participant['points'], 3)} 💎 '
+                f'({dm.of.format_and_rstrip(participant['tickets'] / total_tickets * 100, 1)}%)\n'
+            )
+        text += (
+            f'\n'
+            f'После фиксации участников их список и шансы изменить будет нельзя\n'
+        )
+    else:
+        text += f'Допущенных к розыгрышу нет\n'
+    button_upper_row = []
+    if len(participants) > 0:
+        button_upper_row.append(InlineKeyboardButton(
+            text='📌 Зафиксировать участников',
+            callback_data=GiveawayCallbackFactory(action=GiveawayAction.commit, season=season).pack()
+        ))
+    button_upper_row.append(InlineKeyboardButton(
+        text='🔄 Обновить',
+        callback_data=GiveawayCallbackFactory(action=GiveawayAction.preview, update=True, season=season).pack()
+    ))
+    button_lower_row = []
+    season_index = seasons.index(season)
+    if season_index > 0:
+        button_lower_row.append(InlineKeyboardButton(
+            text=f'⬅️ {get_season_title(dm, seasons[season_index - 1])}',
+            callback_data=GiveawayCallbackFactory(action=GiveawayAction.preview, season=seasons[season_index - 1]).pack()
+        ))
+    if season_index < len(seasons) - 1:
+        button_lower_row.append(InlineKeyboardButton(
+            text=f'➡️ {get_season_title(dm, seasons[season_index + 1])}',
+            callback_data=GiveawayCallbackFactory(action=GiveawayAction.preview, season=seasons[season_index + 1]).pack()
+        ))
+    button_rows = [button_upper_row] + ([button_lower_row] if len(button_lower_row) > 0 else [])
+    return text, ParseMode.HTML, InlineKeyboardMarkup(inline_keyboard=button_rows)
+
+
+def giveaway_commitment(dm: DatabaseManager, draw_id: int, season: str, seed_hash: str, participants: list[dict]) -> str:
+    total_tickets = sum(participant['tickets'] for participant in participants)
+    text = (
+        f'<b>🎲 Розыгрыш призов рейтинга №{draw_id}</b>\n'
+        f'\n'
+        f'Сезон: {dm.of.season(season, False)}\n'
+        f'\n'
+        f'Участники зафиксированы:\n'
+    )
+    for i, (participant, first_ticket, last_ticket) in enumerate(get_ticket_ranges(participants)):
+        text += (
+            f'{i + 1}. {dm.of.to_html(participant['player_name'])}: '
+            f'{dm.of.format_and_rstrip(participant['points'], 3)} 💎, '
+            f'{dm.of.format_and_rstrip(participant['tickets'] / total_tickets * 100, 1)}%, '
+            f'билеты {dm.of.separate_thousands(first_ticket)}–{dm.of.separate_thousands(last_ticket)}\n'
+        )
+    text += (
+        f'\n'
+        f'Всего билетов: {dm.of.separate_thousands(total_tickets)}\n'
+        f'SHA-256 секретного зерна:\n'
+        f'<code>{seed_hash}</code>\n'
+        f'\n'
+        f'Зерно раскроется после розыгрыша. Выигрышный билет = '
+        f'int(SHA-256("зерно:id нажатия кнопки"), 16) mod {total_tickets}. '
+        f'id нажатия выдаёт Telegram в момент розыгрыша\n'
+    )
+    return text
+
+
+def giveaway_result(dm: DatabaseManager, draw: dict, client_seed: str, draw_hash: str, ticket: int, winner: dict) -> str:
+    participants = draw['participants']
+    total_tickets = sum(participant['tickets'] for participant in participants)
+    _, first_ticket, last_ticket = next(
+        ticket_range for ticket_range in get_ticket_ranges(participants)
+        if ticket_range[0]['player_tag'] == winner['player_tag']
+    )
+    return (
+        f'<b>🏆 Победитель розыгрыша №{draw['draw_id']}: {dm.of.to_html(winner['player_name'])}</b>\n'
+        f'\n'
+        f'Сезон: {dm.of.season(draw['season'], False)}\n'
+        f'Очки: {dm.of.format_and_rstrip(winner['points'], 3)} 💎\n'
+        f'Шанс победы: {dm.of.format_and_rstrip(winner['tickets'] / total_tickets * 100, 1)}%\n'
+        f'\n'
+        f'<b>Проверка честности</b>\n'
+        f'Зерно: <code>{draw['seed']}</code>\n'
+        f'Его SHA-256 совпадает с опубликованным до розыгрыша: <code>{draw['seed_hash']}</code>\n'
+        f'id нажатия кнопки: <code>{dm.of.to_html(client_seed)}</code>\n'
+        f'SHA-256("зерно:id нажатия") = <code>{draw_hash}</code>\n'
+        f'Билет = int(хэш, 16) mod {total_tickets} = {dm.of.separate_thousands(ticket)}, '
+        f'это билеты {dm.of.separate_thousands(first_ticket)}–{dm.of.separate_thousands(last_ticket)} '
+        f'игрока {dm.of.to_html(winner['player_name'])}\n'
+    )
+
+
+@router.message(Command('player_rating_giveaway'))
+async def command_player_rating_giveaway(message: Message, dm: DatabaseManager) -> None:
+    if message.chat.type not in [ChatType.GROUP, ChatType.SUPERGROUP]:
+        await message.reply(text=f'Эта команда работает только в группах')
+    elif not await dm.can_user_run_player_rating_giveaway(message.chat.id, message.from_user.id):
+        await message.reply(text=f'У вас нет прав на использование этой команды')
+    else:
+        text, parse_mode, reply_markup = await giveaway_preview(dm, None)
+        reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        await dm.dump_message_owner(reply_from_bot, message.from_user)
+
+
+@router.callback_query(GiveawayCallbackFactory.filter())
+async def callback_player_rating_giveaway(
+        callback_query: CallbackQuery, callback_data: GiveawayCallbackFactory, dm: DatabaseManager
+) -> None:
+    message = callback_query.message
+    user_can_run_giveaway = await dm.can_user_run_player_rating_giveaway(message.chat.id, callback_query.from_user.id)
+    user_is_message_owner = await dm.is_user_message_owner(message, callback_query.from_user)
+    if callback_data.action == GiveawayAction.preview:
+        if not (user_is_message_owner and user_can_run_giveaway) and not callback_data.update:
+            await callback_query.answer('Эта кнопка не работает для вас')
+            return
+        text, parse_mode, reply_markup = await giveaway_preview(dm, callback_data)
+        with suppress(TelegramBadRequest):
+            await message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        await callback_query.answer('Сообщение обновлено' if callback_data.update else None)
+
+    elif callback_data.action == GiveawayAction.commit:
+        if not (user_is_message_owner and user_can_run_giveaway):
+            await callback_query.answer('Эта кнопка не работает для вас')
+            return
+        if callback_data.season not in await dm.get_player_rating_seasons():
+            await callback_query.answer('Сезон не найден')
+            return
+        participants = get_giveaway_participants(await dm.get_player_ratings(callback_data.season))
+        if len(participants) == 0:
+            await callback_query.answer('Допущенных к розыгрышу нет')
+            return
+        seed = secrets.token_hex(32)
+        seed_hash = hashlib.sha256(seed.encode()).hexdigest()
+        draw_id = await dm.create_player_rating_draw(
+            callback_data.season, message.chat.id, message.message_id, callback_query.from_user.id,
+            seed, seed_hash, participants
+        )
+        if draw_id is None:
+            await callback_query.answer('Участники уже зафиксированы')
+            return
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[
+            InlineKeyboardButton(
+                text='🎲 Разыграть',
+                callback_data=GiveawayCallbackFactory(action=GiveawayAction.draw, draw_id=draw_id).pack()
+            ),
+            InlineKeyboardButton(
+                text='❌ Отменить',
+                callback_data=GiveawayCallbackFactory(action=GiveawayAction.cancel, draw_id=draw_id).pack()
+            )
+        ]])
+        try:
+            await message.edit_text(
+                text=giveaway_commitment(dm, draw_id, callback_data.season, seed_hash, participants),
+                parse_mode=ParseMode.HTML,
+                reply_markup=keyboard
+            )
+        except TelegramBadRequest:
+            # Without the published commitment the draw could not be verified, so it must not happen
+            await dm.cancel_player_rating_draw(draw_id)
+            await callback_query.answer('Не удалось опубликовать участников, розыгрыш отменён', show_alert=True)
+            return
+        await callback_query.answer('Участники зафиксированы')
+
+    else:
+        if not user_can_run_giveaway:
+            await callback_query.answer('Эта кнопка не работает для вас')
+            return
+        row = await dm.load_player_rating_draw(callback_data.draw_id, message.chat.id, message.message_id)
+        if row is None:
+            await callback_query.answer('Розыгрыш не найден')
+            return
+        if row['drawn_at'] is not None or row['cancelled_at'] is not None:
+            await callback_query.answer('Розыгрыш уже проведён или отменён')
+            with suppress(TelegramBadRequest):
+                await message.edit_reply_markup(reply_markup=None)
+            return
+        draw = dict(row)
+        draw['participants'] = json.loads(draw['participants'])
+        if callback_data.action == GiveawayAction.cancel:
+            if await dm.cancel_player_rating_draw(draw['draw_id']):
+                with suppress(TelegramBadRequest):
+                    await message.edit_reply_markup(reply_markup=None)
+                await message.reply(text=f'❌ Розыгрыш №{draw['draw_id']} отменён')
+                await callback_query.answer()
+            else:
+                await callback_query.answer('Розыгрыш уже проведён или отменён')
+            return
+        client_seed = callback_query.id
+        total_tickets = sum(participant['tickets'] for participant in draw['participants'])
+        draw_hash, ticket = draw_ticket(draw['seed'], client_seed, total_tickets)
+        winner = next(
+            participant for participant, first_ticket, last_ticket in get_ticket_ranges(draw['participants'])
+            if first_ticket <= ticket <= last_ticket
+        )
+        if not await dm.finish_player_rating_draw(
+                draw['draw_id'], client_seed, ticket, winner['player_tag'], callback_query.from_user.id
+        ):
+            await callback_query.answer('Розыгрыш уже проведён или отменён')
+            return
+        with suppress(TelegramBadRequest):
+            await message.edit_reply_markup(reply_markup=None)
+        await message.reply(
+            text=giveaway_result(dm, draw, client_seed, draw_hash, ticket, winner), parse_mode=ParseMode.HTML
+        )
+        await callback_query.answer()
+
+
 @router.message(Command('rating'))
 async def command_rating(message: Message, dm: DatabaseManager) -> None:
     text, parse_mode, reply_markup = await rating_list(dm, None)
@@ -314,7 +606,7 @@ async def callback_rating(
         callback_query: CallbackQuery, callback_data: RatingCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         if callback_data.output_view == OutputView.rating_list:

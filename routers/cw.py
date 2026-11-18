@@ -427,7 +427,7 @@ async def cw_status(
         for row in rows:
             player_button = InlineKeyboardButton(
                 text=f'{'✅' if row['is_player_set_for_clan_wars'] else '❌'} '
-                     f'{dm.load_name(row['player_tag'])} {dm.of.get_player_info_with_emoji(
+                     f'{dm.of.to_html(dm.load_name(row['player_tag']))} {dm.of.get_player_info_with_emoji(
                          row['town_hall_level'],
                          row['barbarian_king_level'],
                          row['archer_queen_level'],
@@ -597,7 +597,7 @@ async def callback_cw_info(
         callback_query: CallbackQuery, callback_data: CWCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cw_info(dm, callback_data)
@@ -622,7 +622,7 @@ async def callback_cw_map(
         callback_query: CallbackQuery, callback_data: CWCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         chat_id = await dm.get_group_chat_id(callback_query.message)
@@ -647,7 +647,7 @@ async def callback_cw_attacks(
         callback_query: CallbackQuery, callback_data: CWCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cw_attacks(dm, callback_data)
@@ -672,7 +672,7 @@ async def callback_cw_skips(
         callback_query: CallbackQuery, callback_data: CWCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         chat_id = await dm.get_group_chat_id(callback_query.message)
@@ -715,7 +715,7 @@ async def callback_cw_status(
     player_is_linked_to_user = await dm.is_player_linked_to_user(
         callback_data.player_tag, chat_id, callback_query.from_user.id
     )
-    if not user_is_message_owner or (callback_data.player_tag and not player_is_linked_to_user):
+    if (not user_is_message_owner and not callback_data.update) or (callback_data.player_tag and not player_is_linked_to_user):
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         bot_user = await dm.get_message_owner(callback_query.message)
@@ -740,7 +740,7 @@ async def callback_cw_list(
         callback_query: CallbackQuery, callback_data: CWCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    if not user_is_message_owner:
+    if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await cw_list(dm, callback_data)

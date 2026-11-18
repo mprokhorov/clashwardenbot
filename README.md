@@ -100,9 +100,10 @@ cd /opt/clashwardenbot/app
 sudo -u clashwardenbot -H uv venv --python 3.12
 sudo -u clashwardenbot -H uv pip sync requirements.lock
 install -o clashwardenbot -g clashwardenbot -m 600 /path/to/.env .env
-cp deploy/clashwardenbot@.service deploy/clashwardenbot-backup.service deploy/clashwardenbot-backup.timer /etc/systemd/system/
+cp deploy/*.service deploy/*.timer /etc/systemd/system/
+cp deploy/journald@clashwardenbot.conf /etc/systemd/
 systemctl daemon-reload
-systemctl enable --now clashwardenbot@1 clashwardenbot-backup.timer
+systemctl enable --now clashwardenbot@1 clashwardenbot-backup.timer clashwardenbot-restart.timer
 ```
 
 ### Everyday commands
@@ -112,5 +113,7 @@ systemctl enable --now clashwardenbot@1 clashwardenbot-backup.timer
 journalctl --namespace=clashwardenbot -u clashwardenbot@1 -f  # follow logs of bot 1
 systemctl status 'clashwardenbot@*'            # state of all bots
 ```
+
+All bots are restarted daily at 00:00 by `clashwardenbot-restart.timer`. The log namespace is capped at 50 MB.
 
 Database dumps are written daily to `/var/backups/clashwardenbot` and kept for 14 days. Restore: `pg_restore --clean -d <database> <file>.dump` as `postgres`.

@@ -1,0 +1,8 @@
+[Unit]
+Description=Daily restart of all ClashWardenBot services
+
+[Service]
+Type=oneshot
+# Restarts every loaded bot instance and the ad script; "-" keeps going if one of them fails
+ExecStart=-/bin/systemctl restart clashwardenbot@*.service
+ExecStart=-/bin/systemctl restart clashwardenbot-ad.service

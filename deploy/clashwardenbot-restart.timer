@@ -1,0 +1,9 @@
+[Unit]
+Description=Daily restart of all ClashWardenBot services
+
+[Timer]
+OnCalendar=*-*-* 00:00:00
+Persistent=true
+
+[Install]
+WantedBy=timers.target

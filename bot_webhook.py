@@ -38,14 +38,14 @@ async def on_shutdown(bot: Bot):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--bot_number")
+    parser.add_argument('--bot_number', type=int, required=True)
     args = parser.parse_args()
-    bot_number = int(args.bot_number)
+    bot_number = args.bot_number
 
     logging.basicConfig(
         level=logging.INFO,
         format='%(filename)s:%(lineno)d #%(levelname)s [%(asctime)s] - %(name)s - %(message)s',
-        handlers=[logging.FileHandler(f'bot_webhook_{bot_number}.log', 'w'), logging.StreamHandler()]
+        handlers=[logging.StreamHandler()]
     )
 
     bot = Bot(token=config.telegram_bot_api_tokens[bot_number].get_secret_value())

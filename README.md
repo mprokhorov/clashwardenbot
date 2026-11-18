@@ -21,9 +21,14 @@ $ cd clashwardenbot
 ### Setup virtual environment and install dependencies
 
 ```bash
-$ python -m venv .venv
-$ source .venv/bin/activate
-$ pip install -r requirements.txt
+$ uv venv --python 3.12
+$ uv pip sync requirements.lock
+```
+
+`requirements.txt` holds the direct dependencies with version bounds, `requirements.lock` pins exact versions of everything. After changing `requirements.txt`, regenerate the lock:
+
+```bash
+$ uv pip compile requirements.txt --python-version 3.12 --python-platform x86_64-manylinux_2_31 -o requirements.lock
 ```
 ### Create PostgreSQL database
 
@@ -80,3 +85,32 @@ $ source .venv/bin/activate
 $ python bot_polling.py --bot_number=0
 ```
 ```bot_number``` is the index of the corresponding values in ```clan_tags``` and ```telegram_bot_api_tokens``` lists from ```config.py```
+
+## Deployment (systemd)
+
+Every bot runs as its own systemd service `clashwardenbot@N`, where `N` is `bot_number`. Python 3.12 is installed by [uv](https://docs.astral.sh/uv/) and does not depend on the system Python. Logs go to journald.
+
+### First setup (as root)
+
+```bash
+curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin sh
+useradd --system --create-home --home-dir /opt/clashwardenbot --shell /usr/sbin/nologin clashwardenbot
+sudo -u clashwardenbot -H git clone -b dev https://github.com/mprokhorov/clashwardenbot /opt/clashwardenbot/app
+cd /opt/clashwardenbot/app
+sudo -u clashwardenbot -H uv venv --python 3.12
+sudo -u clashwardenbot -H uv pip sync requirements.lock
+install -o clashwardenbot -g clashwardenbot -m 600 /path/to/.env .env
+cp deploy/clashwardenbot@.service deploy/clashwardenbot-backup.service deploy/clashwardenbot-backup.timer /etc/systemd/system/
+systemctl daemon-reload
+systemctl enable --now clashwardenbot@0 clashwardenbot-backup.timer
+```
+
+### Everyday commands
+
+```bash
+/opt/clashwardenbot/app/deploy/update.sh       # git pull, sync dependencies, restart bots
+journalctl -u clashwardenbot@0 -f              # follow logs of bot 0
+systemctl status 'clashwardenbot@*'            # state of all bots
+```
+
+Database dumps are written daily to `/var/backups/clashwardenbot` and kept for 14 days. Restore: `pg_restore --clean -d <database> <file>.dump` as `postgres`.

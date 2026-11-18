@@ -1,0 +1,23 @@
+# One instance per bot: clashwardenbot@0 runs `bot_polling.py --bot_number=0`, clashwardenbot@1 — bot 1 and so on
+[Unit]
+Description=Clash Warden bot %i
+After=network-online.target postgresql.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=clashwardenbot
+Group=clashwardenbot
+WorkingDirectory=/opt/clashwardenbot/app
+ExecStart=/opt/clashwardenbot/app/.venv/bin/python bot_polling.py --bot_number=%i
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+Restart=always
+RestartSec=10
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+
+[Install]
+WantedBy=multi-user.target

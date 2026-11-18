@@ -1,0 +1,7 @@
+[Unit]
+Description=Clash Warden bot database backup
+After=postgresql.service
+
+[Service]
+Type=oneshot
+ExecStart=/opt/clashwardenbot/app/deploy/backup.sh

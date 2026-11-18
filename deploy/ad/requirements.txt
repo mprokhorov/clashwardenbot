@@ -1,3 +1,4 @@
-APScheduler>=3.10.4,<4
+# ad.py starts AsyncIOScheduler outside a running event loop, which APScheduler 3.11 no longer allows
+APScheduler>=3.10.4,<3.11
 Pyrogram>=2.0.106,<3
 TgCrypto-pyrofork>=1.2.8,<2

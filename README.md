@@ -88,7 +88,7 @@ $ python bot_polling.py --bot_number=0
 
 ## Deployment (systemd)
 
-Every bot runs as its own systemd service `clashwardenbot@N`, where `N` is `bot_number`. Python 3.12 is installed by [uv](https://docs.astral.sh/uv/) and does not depend on the system Python. Logs go to journald.
+Every bot runs as its own systemd service `clashwardenbot@N`, where `N` is `bot_number`. Python 3.12 is installed by [uv](https://docs.astral.sh/uv/) and does not depend on the system Python. Logs go to the separate journald namespace `clashwardenbot`.
 
 ### First setup (as root)
 
@@ -102,14 +102,14 @@ sudo -u clashwardenbot -H uv pip sync requirements.lock
 install -o clashwardenbot -g clashwardenbot -m 600 /path/to/.env .env
 cp deploy/clashwardenbot@.service deploy/clashwardenbot-backup.service deploy/clashwardenbot-backup.timer /etc/systemd/system/
 systemctl daemon-reload
-systemctl enable --now clashwardenbot@0 clashwardenbot-backup.timer
+systemctl enable --now clashwardenbot@1 clashwardenbot-backup.timer
 ```
 
 ### Everyday commands
 
 ```bash
 /opt/clashwardenbot/app/deploy/update.sh       # git pull, sync dependencies, restart bots
-journalctl -u clashwardenbot@0 -f              # follow logs of bot 0
+journalctl --namespace=clashwardenbot -u clashwardenbot@1 -f  # follow logs of bot 1
 systemctl status 'clashwardenbot@*'            # state of all bots
 ```
 

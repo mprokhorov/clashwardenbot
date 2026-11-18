@@ -70,6 +70,16 @@ class OutputFormatter:
             return f'{month_in_russian[month]} {year}'
 
     @staticmethod
+    def league_tier(league_tier: int) -> str:
+        legend_league_tiers = {34: 'Легенда III', 35: 'Легенда II', 36: 'Легенда I'}
+        if league_tier in legend_league_tiers:
+            return legend_league_tiers[league_tier]
+        elif 31 <= league_tier <= 33:
+            return f'Электродракон {league_tier}'
+        else:
+            return f'Лига {league_tier}'
+
+    @staticmethod
     def role(role_data: str) -> str:
         role_in_russian = {
             'leader': 'глава',

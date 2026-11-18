@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import IntEnum, auto
 from typing import Optional
 
@@ -116,21 +116,37 @@ class HeroEquipment:
 
 
 @dataclass
-class PlayerRating:
-    town_hall_difference: int
-    cwl_clan_tag: Optional[str]
-    cwl_total_stars: int
-    cwl_total_wars: int
-    league_numbers: list[int]
-    leagues_places: list[int]
-    raids_total_attacks: list[int]
-    raids_total_gold: list[int]
-    cw_total_attacks: list[int]
-    is_eligible_for_prize: bool
+class PlayerRatingConfig:
+    minimum_average_cwl_stars: Optional[list[float]]
+    minimum_cwl_wars: Optional[int]
+    cw_bonus_points: Optional[list[float]]
 
 
 @dataclass
-class PlayerRatingConfig:
-    minimum_average_cwl_stars: list[float]
-    minimum_cwl_stars: int
-    cw_bonus_points: list[float]
+class PlayerRating:
+    player_tag: str
+    player_name: str
+    is_player_in_family: bool
+    town_hall_difference: int
+    cwl_clan_tag: Optional[str] = None
+    cwl_stars: list[int] = field(default_factory=list)
+    cwl_wars: int = 0
+    cwl_required_wars: Optional[int] = None
+    cwl_required_average_stars: Optional[float] = None
+    league_days: dict[int, int] = field(default_factory=dict)
+    league_places: list[float] = field(default_factory=list)
+    raids_attacks: list[int] = field(default_factory=list)
+    raids_gold: list[float] = field(default_factory=list)
+    cw_attacks: list[int] = field(default_factory=list)
+    is_eligible_for_prize: bool = False
+    cwl_points: float = 0
+    league_tier_points: float = 0
+    league_place_points: float = 0
+    raids_attacks_points: float = 0
+    raids_gold_points: float = 0
+    cw_points: float = 0
+    total_points: float = 0
+    win_chance: Optional[float] = None
+
+    def cwl_average_stars(self) -> Optional[float]:
+        return sum(self.cwl_stars) / self.cwl_wars if self.cwl_wars > 0 else None

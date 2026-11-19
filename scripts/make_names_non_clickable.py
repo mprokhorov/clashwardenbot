@@ -3,7 +3,8 @@ One-off script: wraps player names from the non_clickable_player_name table in <
 chat, so that Telegram stops treating names like "ard.man" as links.
 
 Bots can not search chat history, so the script reads messages by id via MTProto (Pyrogram logged in with the bot
-token), from the newest to the oldest, and edits only messages sent by the bot itself.
+token), from the newest to the oldest, and edits only messages sent by the bot itself (messages of users can not be
+edited by a bot).
 
 Run from the bot directory as the bot user, for example:
     sudo -u clashwardenbot .venv/bin/python -m scripts.make_names_non_clickable --bot_number=1 --mode=latest --dry_run
@@ -13,6 +14,8 @@ Run from the bot directory as the bot user, for example:
 --mode=all     edit all messages found
 --dry_run      only show what would be edited
 --chat_id      chat to process (the main chat of the clan by default)
+--scan=known   check only bot replies to commands saved in message_bot_user (default, minutes)
+--scan=full    check every message id of the chat, also finds alerts (hours because of Telegram flood limits)
 """
 import argparse
 import asyncio
@@ -66,6 +69,7 @@ async def main() -> None:
     parser.add_argument('--mode', choices=['latest', 'all'], required=True)
     parser.add_argument('--dry_run', action='store_true')
     parser.add_argument('--chat_id', type=int)
+    parser.add_argument('--scan', choices=['known', 'full'], default='known')
     args = parser.parse_args()
     clan_tag = config.clan_tags[args.bot_number].get_secret_value()
 
@@ -78,9 +82,10 @@ async def main() -> None:
     )
     names = {row['player_name'] for row in await connection.fetch('SELECT player_name FROM non_clickable_player_name')}
     chat_id = args.chat_id or await connection.fetchval('SELECT main_chat_id FROM clan WHERE clan_tag = $1', clan_tag)
-    last_known_message_id = await connection.fetchval(
-        'SELECT MAX(message_id) FROM message_bot_user WHERE (clan_tag, chat_id) = ($1, $2)', clan_tag, chat_id
-    ) or 0
+    known_message_ids = [row['message_id'] for row in await connection.fetch(
+        'SELECT DISTINCT message_id FROM message_bot_user WHERE (clan_tag, chat_id) = ($1, $2) ORDER BY message_id DESC',
+        clan_tag, chat_id
+    )]
     await connection.close()
     if not names:
         print('Table non_clickable_player_name is empty')
@@ -97,22 +102,29 @@ async def main() -> None:
     )
     async with app:
         me = await app.get_me()
-        # The newest message id is unknown to a bot, so the scan starts a little above the newest known bot reply
-        # and goes further up while messages are found
-        top_message_id = last_known_message_id
-        while True:
-            message_ids = list(range(top_message_id + 1, top_message_id + 1 + BATCH_SIZE))
-            messages = await call_with_flood_wait(app.get_messages, chat_id, message_ids)
-            await asyncio.sleep(SECONDS_BETWEEN_BATCHES)
-            if all(message.empty for message in messages):
-                break
-            top_message_id += BATCH_SIZE
-        top_message_id += BATCH_SIZE * EMPTY_BATCHES_AFTER_LAST_KNOWN_MESSAGE
-        print(f'Scanning messages {top_message_id}..1')
+        if args.scan == 'known':
+            batches = [known_message_ids[i:i + BATCH_SIZE] for i in range(0, len(known_message_ids), BATCH_SIZE)]
+            print(f'Checking {len(known_message_ids)} bot replies to commands')
+        else:
+            # The newest message id is unknown to a bot, so the scan starts a little above the newest known bot reply
+            # and goes further up while messages are found
+            top_message_id = known_message_ids[0] if known_message_ids else 0
+            while True:
+                message_ids = list(range(top_message_id + 1, top_message_id + 1 + BATCH_SIZE))
+                messages = await call_with_flood_wait(app.get_messages, chat_id, message_ids)
+                await asyncio.sleep(SECONDS_BETWEEN_BATCHES)
+                if all(message.empty for message in messages):
+                    break
+                top_message_id += BATCH_SIZE
+            top_message_id += BATCH_SIZE * EMPTY_BATCHES_AFTER_LAST_KNOWN_MESSAGE
+            batches = [
+                list(range(batch_end, max(batch_end - BATCH_SIZE, 0), -1))
+                for batch_end in range(top_message_id, 0, -BATCH_SIZE)
+            ]
+            print(f'Scanning messages {top_message_id}..1')
 
         edited_count = 0
-        for batch_end in range(top_message_id, 0, -BATCH_SIZE):
-            message_ids = list(range(batch_end, max(batch_end - BATCH_SIZE, 0), -1))
+        for batch_number, message_ids in enumerate(batches):
             messages = await call_with_flood_wait(app.get_messages, chat_id, message_ids)
             await asyncio.sleep(SECONDS_BETWEEN_BATCHES)
             for message in messages:
@@ -142,8 +154,8 @@ async def main() -> None:
                     break
             if args.mode == 'latest' and edited_count > 0:
                 break
-            if batch_end % (BATCH_SIZE * 50) < BATCH_SIZE:
-                print(f'... message {batch_end}, found {edited_count}')
+            if batch_number % 50 == 49:
+                print(f'... message {message_ids[-1]}, found {edited_count}')
         print(f'\n{"Would edit" if args.dry_run else "Edited"}: {edited_count}')
 
 

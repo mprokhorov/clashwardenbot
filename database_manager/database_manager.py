@@ -3,7 +3,8 @@ import calendar
 import json
 import logging
 import os
-from datetime import datetime, UTC
+import time
+from datetime import datetime, timedelta, UTC
 from typing import Optional, Any
 
 import asyncpg
@@ -51,6 +52,9 @@ class AcquiredConnection:
 
 MIGRATIONS_DIR = os.path.join(os.path.dirname(__file__), 'migrations')
 MIGRATIONS_LOCK_ID = 2026111801
+OPPONENT_INFO_REFRESH_SECONDS = 30 * 60
+PLAYER_RATINGS_CACHE_SECONDS = 60
+PLAYER_RATING_SEASONS_CACHE_SECONDS = 10 * 60
 
 
 class DatabaseManager:
@@ -74,20 +78,29 @@ class DatabaseManager:
         self.clan_tag = clan_tag
         self.bot = bot
 
-        self.clan_name = None
-        self.name = None
-        self.name_and_tag = None
-        self.first_name = None
-        self.full_name = None
-        self.username = None
-        self.full_name_and_username = None
+        # Caches start empty instead of None, so a failed first load does not break message handling
+        self.clan_name = {}
+        self.name = {}
+        self.name_and_tag = {}
+        self.first_name = {}
+        self.full_name = {}
+        self.username = {}
+        self.full_name_and_username = {}
 
-        self.is_privacy_mode_enabled = None
-        self.blocked_user_ids = None
-        self.ignore_updates_player_tags = None
+        self.is_privacy_mode_enabled = True
+        self.blocked_user_ids = set()
+        self.ignore_updates_player_tags = set()
 
         self.player_rating_config = None
         self.cwl_rating_config = None
+
+        self.jobs_lock = asyncio.Lock()
+        self.shown_commands_event = None
+        self.are_raid_weekends_backfilled = False
+        # Opponent players, war logs and win streaks change rarely, so they are refreshed at most this often
+        self.opponent_info_dumped_at = {}
+        self.player_ratings_cache = {}
+        self.player_rating_seasons_cache = None
 
     async def connect_to_pool(self) -> None:
         self.connection_pool = await asyncpg.create_pool(
@@ -95,7 +108,10 @@ class DatabaseManager:
             database=config.postgres_database.get_secret_value(),
             user=config.postgres_user.get_secret_value(),
             password=config.postgres_password.get_secret_value(),
-            server_settings={'search_path': config.postgres_schema.get_secret_value()}
+            server_settings={'search_path': config.postgres_schema.get_secret_value()},
+            # asyncpg keeps 10 connections per pool by default, which is 10 idle Postgres processes for every bot
+            min_size=1,
+            max_size=5
         )
         self.acquired_connection = AcquiredConnection(self.connection_pool)
 
@@ -149,50 +165,69 @@ class DatabaseManager:
         ]
         infrequent_jobs_minutes_str = ','.join(map(str, infrequent_jobs_minutes))
         frequent_jobs_minutes_str = ','.join(map(str, frequent_jobs_minutes))
+        job_options = {'misfire_grace_time': 60, 'coalesce': True, 'max_instances': 1}
         self.scheduler.add_job(
             self.frequent_jobs,
             'cron',
             minute=frequent_jobs_minutes_str,
-            second=str(bot_number * self.job_timespan_seconds)
+            second=str(bot_number * self.job_timespan_seconds),
+            **job_options
         )
         self.scheduler.add_job(
             self.infrequent_jobs,
             'cron',
             minute=infrequent_jobs_minutes_str,
-            second=str(bot_number * self.job_timespan_seconds)
+            second=str(bot_number * self.job_timespan_seconds),
+            **job_options
         )
         self.scheduler.start()
 
+    async def run_jobs(self, jobs: list) -> None:
+        # Frequent and infrequent jobs must not overlap: two runs comparing old and new states at the same time
+        # would send the same alert twice
+        if self.jobs_lock.locked():
+            logging.warning(f'Previous jobs are still running, {[job.__name__ for job in jobs]} skipped')
+            return
+        async with self.jobs_lock:
+            for job in jobs:
+                # A failed job is logged and does not stop the next ones
+                try:
+                    await job()
+                except Exception:
+                    logging.exception(f'Job {job.__name__} failed')
+
     async def frequent_jobs(self) -> None:
-        were_clan_members_dumped = await self.check_clan_members()
-        if not were_clan_members_dumped:
-            await self.load_and_cache_names()
-        await self.dump_clan_games()
-        await self.load_clan_war_league_rating_config()
-        await self.dump_clan_war()
-        await self.dump_raid_weekends()
-        await self.dump_clan_war_league()
-        await self.dump_clan_war_league_wars()
+        await self.run_jobs([
+            self.check_clan_members,
+            self.dump_clan_games,
+            self.load_clan_war_league_rating_config,
+            self.dump_clan_war,
+            self.dump_raid_weekends,
+            self.dump_clan_war_league,
+            self.dump_clan_war_league_wars
+        ])
 
     async def infrequent_jobs(self) -> None:
-        await self.load_privacy_mode()
-        await self.set_actual_commands()
-        await self.load_blocked_users()
-        await self.load_ignore_updates_players()
-        await self.dump_clan()
-        were_clan_members_dumped = await self.check_clan_members()
-        old_contributions = await self.load_capital_contributions()
-        if not were_clan_members_dumped:
+        await self.run_jobs([
+            self.load_privacy_mode,
+            self.set_actual_commands,
+            self.load_blocked_users,
+            self.load_ignore_updates_players,
+            self.dump_clan,
+            self.dump_clan_members_if_not_changed,
+            self.load_and_cache_names,
+            self.dump_clan_games,
+            self.dump_clan_war,
+            self.dump_raid_weekends,
+            self.dump_clan_war_league,
+            self.dump_clan_war_league_wars,
+            self.load_clan_war_league_rating_config
+        ])
+
+    async def dump_clan_members_if_not_changed(self) -> None:
+        # When the members changed, check_clan_members has already dumped them
+        if not await self.check_clan_members():
             await self.dump_clan_members()
-            await self.load_and_cache_names()
-        new_contributions = await self.load_capital_contributions()
-        await self.dump_capital_contributions(old_contributions, new_contributions)
-        await self.dump_clan_games()
-        await self.dump_clan_war()
-        await self.dump_raid_weekends()
-        await self.dump_clan_war_league()
-        await self.dump_clan_war_league_wars()
-        await self.load_clan_war_league_rating_config()
 
     async def maintenance_alert(self, old_war: dict, war: dict) -> bool:
         are_wars_same = old_war.get('preparationStartTime') == war.get('preparationStartTime')
@@ -222,40 +257,30 @@ class DatabaseManager:
         return True
 
     async def set_actual_commands(self) -> bool:
-        cw = await self.load_clan_war()
+        cw = await self.load_clan_war_timing()
         cw_start_time = self.of.to_datetime(cw['startTime']) if cw else datetime.min
 
         _, cwlw = await self.load_clan_war_league_own_war()
         cwlw_start_time = self.of.to_datetime(cwlw['startTime']) if cwlw else datetime.min
 
         if cw_start_time > cwlw_start_time:
-            await self.bot.set_my_commands(
-                commands=get_shown_bot_commands(bot_cmd_list, ['group'], ['CW']),
-                scope=BotCommandScopeAllGroupChats()
-            )
-            await self.bot.set_my_commands(
-                commands=get_shown_bot_commands(bot_cmd_list, ['private'], ['CW']),
-                scope=BotCommandScopeAllPrivateChats()
-            )
+            event = 'CW'
         elif cw_start_time < cwlw_start_time:
-            await self.bot.set_my_commands(
-                commands=get_shown_bot_commands(bot_cmd_list, ['group'], ['CWL']),
-                scope=BotCommandScopeAllGroupChats()
-            )
-            await self.bot.set_my_commands(
-                commands=get_shown_bot_commands(bot_cmd_list, ['private'], ['CWL']),
-                scope=BotCommandScopeAllPrivateChats()
-            )
+            event = 'CWL'
         else:
-            await self.bot.set_my_commands(
-                commands=get_shown_bot_commands(bot_cmd_list, ['group'], ['ANY']),
-                scope=BotCommandScopeAllGroupChats()
-            )
-            await self.bot.set_my_commands(
-                commands=get_shown_bot_commands(bot_cmd_list, ['private'], ['ANY']),
-                scope=BotCommandScopeAllPrivateChats()
-            )
-
+            event = 'ANY'
+        # The command menu is changed only when the current event changes
+        if event == self.shown_commands_event:
+            return True
+        await self.bot.set_my_commands(
+            commands=get_shown_bot_commands(bot_cmd_list, ['group'], [event]),
+            scope=BotCommandScopeAllGroupChats()
+        )
+        await self.bot.set_my_commands(
+            commands=get_shown_bot_commands(bot_cmd_list, ['private'], [event]),
+            scope=BotCommandScopeAllPrivateChats()
+        )
+        self.shown_commands_event = event
         return True
 
     async def load_blocked_users(self) -> None:
@@ -264,7 +289,7 @@ class DatabaseManager:
             FROM blocked_bot_user
             WHERE clan_tag = $1 OR clan_tag IS NULL
         ''', self.clan_tag)
-        self.blocked_user_ids = [row['user_id'] for row in rows]
+        self.blocked_user_ids = {row['user_id'] for row in rows}
 
     async def load_ignore_updates_players(self) -> None:
         rows = await self.acquired_connection.fetch('''
@@ -272,7 +297,7 @@ class DatabaseManager:
             FROM ignore_updates_player
             WHERE clan_tag = $1
         ''', self.clan_tag)
-        self.ignore_updates_player_tags = [row['player_tag'] for row in rows]
+        self.ignore_updates_player_tags = {row['player_tag'] for row in rows}
 
     async def check_clan_members(self) -> bool:
         were_clan_members_dumped = False
@@ -419,12 +444,34 @@ class DatabaseManager:
             league_tier_rows.append(
                 (self.clan_tag, player['tag'], player['leagueTier']['id'] - 105000000, player['trophies'])
             )
-        await self.acquired_connection.execute('''
+        async with self.connection_pool.acquire() as connection:
+            async with connection.transaction():
+                await self.save_clan_members(connection, rows, league_tier_rows)
+        return True
+
+    async def save_clan_members(self, connection: asyncpg.Connection, rows: list[tuple], league_tier_rows: list[tuple]) -> None:
+        # Capital contributions are the growth of capital_gold_contributed since the previous dump
+        contribution_rows = await connection.fetch('''
+            SELECT player_tag, capital_gold_contributed
+            FROM player
+            WHERE clan_tag = $1 AND is_player_in_clan
+        ''', self.clan_tag)
+        old_contributions = {row['player_tag']: row['capital_gold_contributed'] for row in contribution_rows}
+        new_contributions = {row[1]: row[19] for row in rows}
+        await connection.executemany('''
+            INSERT INTO capital_contribution (clan_tag, player_tag, gold_amount, contribution_timestamp)
+            VALUES ($1, $2, $3, NOW() AT TIME ZONE 'UTC')
+        ''', [
+            (self.clan_tag, player_tag, new_contributions[player_tag] - old_contribution)
+            for player_tag, old_contribution in old_contributions.items()
+            if new_contributions.get(player_tag, 0) > old_contribution
+        ])
+        await connection.execute('''
             UPDATE player
             SET is_player_in_clan = FALSE
-            WHERE clan_tag = $1
-        ''', self.clan_tag)
-        await self.acquired_connection.executemany('''
+            WHERE clan_tag = $1 AND is_player_in_clan AND player_tag <> ALL($2::varchar[])
+        ''', self.clan_tag, list(new_contributions))
+        await connection.executemany('''
             INSERT INTO player
                 (clan_tag, player_tag,
                 player_name, is_player_in_clan,
@@ -455,14 +502,13 @@ class DatabaseManager:
                 ($3, $4, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22,
                 NOW() AT TIME ZONE 'UTC')
         ''', rows)
-        await self.acquired_connection.executemany('''
+        await connection.executemany('''
             INSERT INTO player_league (clan_tag, player_tag, league_date, league_tier, trophies)
             VALUES ($1, $2, NOW() AT TIME ZONE 'UTC', $3, $4)
             ON CONFLICT (clan_tag, player_tag, league_date)
             DO UPDATE SET (league_tier, trophies) = ($3, $4)
             WHERE (player_league.league_tier, player_league.trophies) < ($3, $4)
         ''', league_tier_rows)
-        return True
 
     async def load_and_cache_names(self) -> None:
         rows = await self.acquired_connection.fetch('''
@@ -517,23 +563,6 @@ class DatabaseManager:
                  f'{(' (@' + row['username'] + ')') if row['username'] else ''}')
             for row in rows
         }
-
-    async def load_capital_contributions(self) -> dict:
-        rows = await self.acquired_connection.fetch('''
-            SELECT player_tag, capital_gold_contributed
-            FROM player
-            WHERE is_player_in_clan AND clan_tag = $1
-        ''', self.clan_tag)
-        return {row['player_tag']: row['capital_gold_contributed'] for row in rows}
-
-    async def dump_capital_contributions(self, old_contributions, new_contributions) -> None:
-        for player_tag in old_contributions:
-            has_player_contributed = new_contributions[player_tag] > old_contributions[player_tag]
-            if new_contributions.get(player_tag) is not None and has_player_contributed:
-                await self.acquired_connection.execute('''
-                    INSERT INTO capital_contribution (clan_tag, player_tag, gold_amount, contribution_timestamp)
-                    VALUES ($1, $2, $3, NOW() AT TIME ZONE 'UTC')
-                ''', self.clan_tag, player_tag, new_contributions[player_tag] - old_contributions[player_tag])
 
     async def get_clan_games(self) -> Optional[dict]:
         clan_games_begin = (22, 8, 0, 0)
@@ -634,29 +663,46 @@ class DatabaseManager:
                 )
 
     async def dump_clan_war(self) -> bool:
-        old_clan_war = await self.load_clan_war() or {'preparationStartTime': None, 'state': None}
+        old_clan_war = await self.load_clan_war_timing() or {'preparationStartTime': None, 'state': None}
 
         retrieved_clan_war = await self.api_client.get_clan_current_war(clan_tag=self.clan_tag)
         if retrieved_clan_war is None or retrieved_clan_war.get('preparationStartTime') is None:
             return False
+        # The time format is fixed-width, so comparing strings compares times
+        if (old_clan_war['preparationStartTime'] is not None
+                and retrieved_clan_war['preparationStartTime'] < old_clan_war['preparationStartTime']):
+            return False
+        # Unchanged data is not rewritten: every rewrite of a big JSON leaves a dead row and bloats the table
         await self.acquired_connection.execute('''
             INSERT INTO clan_war (clan_tag, preparation_start_time, data)
             VALUES ($1, $2, $3)
             ON CONFLICT (clan_tag, preparation_start_time)
             DO UPDATE SET data = $3
+            WHERE clan_war.data IS DISTINCT FROM EXCLUDED.data
         ''', self.clan_tag, self.of.to_datetime(retrieved_clan_war['preparationStartTime']), json.dumps(retrieved_clan_war))
 
-        new_clan_war = await self.load_clan_war()
-        await asyncio.gather(
-            self.dump_war_win_streak(clan_tag=new_clan_war['opponent']['tag']),
-            self.dump_clan_war_log(clan_tag=new_clan_war['opponent']['tag']),
-            self.dump_opponent_players(war=new_clan_war)
-        )
-        war_win_streak = await self.load_war_win_streak(clan_tag=new_clan_war['opponent']['tag'])
-        clan_war_log = await self.load_clan_war_log(clan_tag=new_clan_war['opponent']['tag'])
+        new_clan_war = retrieved_clan_war
+        await self.dump_opponent_info(new_clan_war)
+        war_win_streak, clan_war_log = None, None
+        if self.of.state(new_clan_war) == 'preparation':
+            war_win_streak = await self.load_war_win_streak(clan_tag=new_clan_war['opponent']['tag'])
+            clan_war_log = await self.load_clan_war_log(clan_tag=new_clan_war['opponent']['tag'])
         await self.clan_war_alert(old_clan_war, new_clan_war, war_win_streak, clan_war_log)
         await self.maintenance_alert(old_clan_war, new_clan_war)
         return True
+
+    async def load_clan_war_timing(self) -> Optional[dict]:
+        # Alerts compare only these fields, so the whole war JSON is not parsed every minute
+        row = await self.acquired_connection.fetchrow('''
+            SELECT
+                data->>'preparationStartTime' AS "preparationStartTime", data->>'startTime' AS "startTime",
+                data->>'endTime' AS "endTime", data->>'state' AS state
+            FROM clan_war
+            WHERE clan_tag = $1
+            ORDER BY preparation_start_time DESC
+            LIMIT 1
+        ''', self.clan_tag)
+        return dict(row) if row is not None else None
 
     async def load_clan_war(self) -> Optional[dict]:
         row = await self.acquired_connection.fetchrow('''
@@ -669,15 +715,39 @@ class DatabaseManager:
             return None
         return json.loads(row['data'])
 
+    async def dump_opponent_info(self, war: dict) -> bool:
+        # Opponent players, war log and win streak are shown only for wars in preparation or in progress and
+        # change rarely, so they are dumped when such a war appears and then at most every half an hour
+        if self.of.state(war) not in ['preparation', 'inWar']:
+            return False
+        key = (war['opponent']['tag'], war['preparationStartTime'])
+        now = time.monotonic()
+        if now - self.opponent_info_dumped_at.get(key, -OPPONENT_INFO_REFRESH_SECONDS) < OPPONENT_INFO_REFRESH_SECONDS:
+            return False
+        results = await asyncio.gather(
+            self.dump_war_win_streak(clan_tag=war['opponent']['tag']),
+            self.dump_clan_war_log(clan_tag=war['opponent']['tag']),
+            self.dump_opponent_players(war=war)
+        )
+        if all(results):
+            self.opponent_info_dumped_at = {
+                dumped_key: dumped_at for dumped_key, dumped_at in self.opponent_info_dumped_at.items()
+                if now - dumped_at < OPPONENT_INFO_REFRESH_SECONDS
+            }
+            self.opponent_info_dumped_at[key] = now
+        return all(results)
+
     async def dump_clan_war_log(self, clan_tag: str) -> bool:
         retrieved_clan_war_log = await self.api_client.get_war_log(clan_tag=clan_tag)
         if retrieved_clan_war_log is None:
-            return False
+            # A private war log is a normal answer for many clans, there is nothing to retry
+            return True
         await self.acquired_connection.execute('''
             INSERT INTO clan_war_log (clan_tag, data)
             VALUES ($1, $2)
             ON CONFLICT (clan_tag)
             DO UPDATE SET data = $2
+            WHERE clan_war_log.data IS DISTINCT FROM EXCLUDED.data
         ''', clan_tag, json.dumps(retrieved_clan_war_log))
         return True
 
@@ -700,7 +770,9 @@ class DatabaseManager:
             VALUES ($1, $2)
             ON CONFLICT (clan_tag)
             DO UPDATE SET war_win_streak = $2
+            WHERE war_win_streak.war_win_streak IS DISTINCT FROM EXCLUDED.war_win_streak
         ''', clan_tag, retrieved_clan['warWinStreak'])
+        return True
 
     async def load_war_win_streak(self, clan_tag: str) -> Optional[int]:
         val = await self.acquired_connection.fetchval('''
@@ -759,6 +831,16 @@ class DatabaseManager:
                 barbarian_king_level, archer_queen_level, minion_prince_level,
                 grand_warden_level, royal_champion_level, dragon_duke_level) =
                 ($3, $4, $5, $6, $7, $8, $9, $10)
+            WHERE
+                (opponent_player.player_name, opponent_player.town_hall_level,
+                opponent_player.barbarian_king_level, opponent_player.archer_queen_level,
+                opponent_player.minion_prince_level, opponent_player.grand_warden_level,
+                opponent_player.royal_champion_level, opponent_player.dragon_duke_level)
+                IS DISTINCT FROM
+                (EXCLUDED.player_name, EXCLUDED.town_hall_level,
+                EXCLUDED.barbarian_king_level, EXCLUDED.archer_queen_level,
+                EXCLUDED.minion_prince_level, EXCLUDED.grand_warden_level,
+                EXCLUDED.royal_champion_level, EXCLUDED.dragon_duke_level)
         ''', rows)
         return True
 
@@ -839,9 +921,12 @@ class DatabaseManager:
                 )
 
     async def dump_raid_weekends(self) -> bool:
-        old_raids = await self.load_raid_weekend() or {'startTime': None, 'state': None}
+        old_raids = await self.load_raid_weekend_timing() or {'startTime': None, 'state': None}
 
-        retrieved_raid_weekends = await self.api_client.get_clan_capital_raid_seasons(clan_tag=self.clan_tag)
+        # After the start the history is loaded once to fill gaps, later only the last two weekends can change
+        retrieved_raid_weekends = await self.api_client.get_clan_capital_raid_seasons(
+            clan_tag=self.clan_tag, limit=2 if self.are_raid_weekends_backfilled else None
+        )
         if not retrieved_raid_weekends or not retrieved_raid_weekends['items']:
             return False
         await self.acquired_connection.executemany('''
@@ -849,17 +934,32 @@ class DatabaseManager:
             VALUES ($1, $2, $3)
             ON CONFLICT (clan_tag, start_time)
             DO UPDATE SET data = $3
+            WHERE raid_weekend.data IS DISTINCT FROM EXCLUDED.data
         ''', [
             (self.clan_tag, self.of.to_datetime(item['startTime']), json.dumps(item))
             for item in retrieved_raid_weekends['items']
             if item.get('members') is not None
         ])
 
+        self.are_raid_weekends_backfilled = True
+
         new_raids = await self.load_raid_weekend()
+        if new_raids is None:
+            return False
 
         await self.raid_weekend_alert(old_raids, new_raids)
 
         return True
+
+    async def load_raid_weekend_timing(self) -> Optional[dict]:
+        row = await self.acquired_connection.fetchrow('''
+            SELECT data->>'startTime' AS "startTime", data->>'state' AS state
+            FROM raid_weekend
+            WHERE clan_tag = $1
+            ORDER BY start_time DESC
+            LIMIT 1
+        ''', self.clan_tag)
+        return dict(row) if row is not None else None
 
     async def load_raid_weekend(self) -> Optional[dict]:
         row = await self.acquired_connection.fetchrow('''
@@ -935,6 +1035,7 @@ class DatabaseManager:
             VALUES ($1, $2, $3)
             ON CONFLICT (clan_tag, season)
             DO UPDATE SET data = $3
+            WHERE clan_war_league.data IS DISTINCT FROM EXCLUDED.data
         ''', self.clan_tag, retrieved_clan_war_league['season'], json.dumps(retrieved_clan_war_league))
         return True
 
@@ -957,71 +1058,61 @@ class DatabaseManager:
         ''', self.clan_tag, f'{season[0:7]}%')
 
     async def dump_clan_war_league_wars(self) -> bool:
-        old_cwl_season, _ = await self.load_clan_war_league()
-        old_cwlws = await self.load_clan_war_league_own_wars() or []
-
-        loaded_clan_war_league_season, loaded_clan_war_league = await self.load_clan_war_league()
-        if loaded_clan_war_league is None:
+        cwl_season, clan_war_league = await self.load_clan_war_league()
+        if clan_war_league is None:
             return False
+        old_cwlws = await self.load_clan_war_league_own_wars_timing(cwl_season)
         clan_war_league_wars = [
-            ClanWarLeagueWar(clan_tag=self.clan_tag, war_tag=war_tag, season=loaded_clan_war_league_season, day=day)
-            for day, war_tags in enumerate(loaded_clan_war_league['rounds'])
+            ClanWarLeagueWar(clan_tag=self.clan_tag, war_tag=war_tag, season=cwl_season, day=day)
+            for day, war_tags in enumerate(clan_war_league['rounds'])
             for war_tag in war_tags['warTags']
             if war_tag != '#0'
         ]
-        clan_war_league_wars_to_retrieve = []
-        for clan_war_league_war in clan_war_league_wars:
-            row = await self.acquired_connection.fetchrow('''
-                SELECT clan_tag, war_tag, data->>'state' AS state
-                FROM clan_war_league_war
-                WHERE (clan_tag, war_tag) = ($1, $2) AND data->>'state' = 'warEnded'
-            ''', clan_war_league_war.clan_tag, clan_war_league_war.war_tag)
-            if row is None:
-                clan_war_league_wars_to_retrieve.append(clan_war_league_war)
-        clan_war_league_war_tasks = [
-            self.api_client.get_clan_war_league_war(war_tag=clan_war_league_war_to_retrieve.war_tag)
-            for clan_war_league_war_to_retrieve in clan_war_league_wars_to_retrieve
+        rows = await self.acquired_connection.fetch('''
+            SELECT war_tag
+            FROM clan_war_league_war
+            WHERE clan_tag = $1 AND war_tag = any($2::varchar[]) AND data->>'state' = 'warEnded'
+        ''', self.clan_tag, [clan_war_league_war.war_tag for clan_war_league_war in clan_war_league_wars])
+        ended_war_tags = {row['war_tag'] for row in rows}
+        clan_war_league_wars_to_retrieve = [
+            clan_war_league_war for clan_war_league_war in clan_war_league_wars
+            if clan_war_league_war.war_tag not in ended_war_tags
         ]
-        retrieved_clan_war_league_wars = list(await asyncio.gather(*clan_war_league_war_tasks))
+        retrieved_clan_war_league_wars = list(await asyncio.gather(*[
+            self.api_client.get_clan_war_league_war(war_tag=clan_war_league_war.war_tag)
+            for clan_war_league_war in clan_war_league_wars_to_retrieve
+        ]))
         if None in retrieved_clan_war_league_wars:
             return False
-        rows = zip(
-            [clan_war_league_war.clan_tag for clan_war_league_war in clan_war_league_wars_to_retrieve],
-            [clan_war_league_war.war_tag for clan_war_league_war in clan_war_league_wars_to_retrieve],
-            [clan_war_league_war.season for clan_war_league_war in clan_war_league_wars_to_retrieve],
-            [clan_war_league_war.day for clan_war_league_war in clan_war_league_wars_to_retrieve],
-            map(json.dumps, retrieved_clan_war_league_wars)
-        )
         await self.acquired_connection.executemany('''
             INSERT INTO clan_war_league_war (clan_tag, war_tag, season, day, data)
             VALUES ($1, $2, $3, $4, $5)
             ON CONFLICT (clan_tag, war_tag)
             DO UPDATE SET (season, day, data) = ($3, $4, $5)
-        ''', rows)
-        new_cwl_season, _ = await self.load_clan_war_league()
-        new_cwlws = await self.load_clan_war_league_own_wars()
-        opponent_players_tasks = [
-            self.dump_opponent_players(war=new_cwlw)
-            for new_cwlw in new_cwlws
-        ]
-        clan_war_log_tasks = [
-            self.dump_clan_war_log(clan_tag=new_cwlw['opponent']['tag'])
-            for new_cwlw in new_cwlws
-        ]
-        war_win_streak_tasks = [
-            self.dump_war_win_streak(clan_tag=new_cwlw['opponent']['tag'])
-            for new_cwlw in new_cwlws
-        ]
-        await asyncio.gather(*opponent_players_tasks, *clan_war_log_tasks, *war_win_streak_tasks)
-        if old_cwl_season != new_cwl_season:
-            old_cwlws = []
+            WHERE (clan_war_league_war.season, clan_war_league_war.day, clan_war_league_war.data)
+                IS DISTINCT FROM (EXCLUDED.season, EXCLUDED.day, EXCLUDED.data)
+        ''', [
+            (clan_war_league_war.clan_tag, clan_war_league_war.war_tag, clan_war_league_war.season,
+             clan_war_league_war.day, json.dumps(retrieved_clan_war_league_war))
+            for clan_war_league_war, retrieved_clan_war_league_war
+            in zip(clan_war_league_wars_to_retrieve, retrieved_clan_war_league_wars)
+        ])
+        new_cwlws = await self.load_clan_war_league_own_wars(cwl_season) or []
+        await asyncio.gather(*[self.dump_opponent_info(new_cwlw) for new_cwlw in new_cwlws])
         if len(old_cwlws) < len(new_cwlws):
             old_cwlws += [{'preparationStartTime': None, 'state': None}] * (len(new_cwlws) - len(old_cwlws))
         was_maintenance_alert_sent = False
         for cwl_day, (old_cwlw, new_cwlw) in enumerate(zip(old_cwlws, new_cwlws)):
-            war_win_streak = await self.load_war_win_streak(clan_tag=new_cwlw['opponent']['tag'])
-            cw_log = await self.load_clan_war_log(clan_tag=new_cwlw['opponent']['tag'])
-            await self.clan_war_league_war_alert(old_cwlw, new_cwlw, new_cwl_season, cwl_day, war_win_streak, cw_log)
+            war_timing = ['preparationStartTime', 'startTime', 'endTime', 'state']
+            is_cwlw_unchanged = all(old_cwlw.get(key) == new_cwlw.get(key) for key in war_timing)
+            # An unchanged war can produce only the half time alert, which needs the war to be in progress
+            if is_cwlw_unchanged and self.of.state(new_cwlw) != 'inWar':
+                continue
+            war_win_streak, cw_log = None, None
+            if self.of.state(new_cwlw) == 'preparation':
+                war_win_streak = await self.load_war_win_streak(clan_tag=new_cwlw['opponent']['tag'])
+                cw_log = await self.load_clan_war_log(clan_tag=new_cwlw['opponent']['tag'])
+            await self.clan_war_league_war_alert(old_cwlw, new_cwlw, cwl_season, cwl_day, war_win_streak, cw_log)
             if not was_maintenance_alert_sent:
                 was_maintenance_alert_sent = await self.maintenance_alert(old_cwlw, new_cwlw)
         return True
@@ -1066,6 +1157,17 @@ class DatabaseManager:
                 )
             clan_war_league_wars.append(clan_war_league_war)
         return clan_war_league_wars
+
+    async def load_clan_war_league_own_wars_timing(self, season: str) -> list[dict]:
+        rows = await self.acquired_connection.fetch('''
+            SELECT
+                data->>'preparationStartTime' AS "preparationStartTime", data->>'startTime' AS "startTime",
+                data->>'endTime' AS "endTime", data->>'state' AS state
+            FROM clan_war_league_war
+            WHERE (clan_tag, season) = ($1, $2) AND $1 IN (data->'clan'->>'tag', data->'opponent'->>'tag')
+            ORDER BY day
+        ''', self.clan_tag, season)
+        return [dict(row) for row in rows]
 
     async def load_clan_war_league_last_day_wars(self) -> Optional[list[dict]]:
         season, _ = await self.load_clan_war_league()
@@ -1333,15 +1435,34 @@ class DatabaseManager:
         return True
 
     async def get_player_rating_seasons(self) -> list[str]:
+        # The list of seasons changes once a month, while it is needed on every rating button press
+        if self.player_rating_seasons_cache is not None:
+            cached_at, seasons = self.player_rating_seasons_cache
+            if time.monotonic() - cached_at < PLAYER_RATING_SEASONS_CACHE_SECONDS:
+                return seasons
         rows = await self.acquired_connection.fetch('''
             SELECT DISTINCT TO_CHAR(league_date, 'YYYY-MM') AS season
             FROM player_league
             WHERE clan_tag = any($1::varchar[])
             ORDER BY season
         ''', await self.get_family_clan_tags())
-        return [row['season'] for row in rows]
+        seasons = [row['season'] for row in rows]
+        self.player_rating_seasons_cache = (time.monotonic(), seasons)
+        return seasons
 
     async def get_player_ratings(self, season: str) -> dict[str, PlayerRating]:
+        # Every rating button press needs the whole season, so the result is reused for a minute.
+        # The returned ratings are shared between callers and must not be modified
+        now = time.monotonic()
+        self.player_ratings_cache = {
+            cached_season: (cached_at, ratings) for cached_season, (cached_at, ratings) in self.player_ratings_cache.items()
+            if now - cached_at < PLAYER_RATINGS_CACHE_SECONDS
+        }
+        if season not in self.player_ratings_cache:
+            self.player_ratings_cache[season] = (now, await self.compute_player_ratings(season))
+        return self.player_ratings_cache[season][1]
+
+    async def compute_player_ratings(self, season: str) -> dict[str, PlayerRating]:
         LEAGUE_TIER_POINTS = {36: 20, 35: 15, 34: 10, 33: 5, 32: 3, 31: 1}
         LEAGUE_PLACE_POINTS = 10
         CWL_STARS_POINTS = 55
@@ -1356,6 +1477,9 @@ class DatabaseManager:
         player_rating_config = self.player_rating_config or {}
         year, month = map(int, season.split('-'))
         days_in_month = calendar.monthrange(year, month)[1]
+        # Month bounds as ranges, so the filters can use the primary key indexes instead of scanning whole tables
+        month_start = datetime(year, month, 1)
+        month_end = month_start + timedelta(days=days_in_month)
         max_town_hall_level = await self.get_max_town_hall_level()
 
         rows = await self.acquired_connection.fetch('''
@@ -1438,9 +1562,9 @@ class DatabaseManager:
         rows = await self.acquired_connection.fetch('''
             SELECT start_time, data
             FROM raid_weekend
-            WHERE clan_tag = any($1::varchar[]) AND TO_CHAR(start_time + INTERVAL '3 days', 'YYYY-MM') = $2
+            WHERE clan_tag = any($1::varchar[]) AND start_time >= $2 AND start_time < $3
             ORDER BY start_time
-        ''', family_clan_tags, season)
+        ''', family_clan_tags, month_start - timedelta(days=3), month_end - timedelta(days=3))
         raids_gold_by_week = {}
         raids_attacks_by_week = {}
         for row in rows:
@@ -1505,9 +1629,10 @@ class DatabaseManager:
                 clan_tag = any($1::varchar[])
                 AND data->>'state' = 'warEnded'
                 AND COALESCE((data->>'attacksPerMember')::integer, 2) = 2
+                AND preparation_start_time >= $3 AND preparation_start_time < $4
                 AND LEFT(data->>'endTime', 6) = $2
-            ORDER BY preparation_start_time
-        ''', family_clan_tags, season.replace('-', ''))
+            ORDER BY preparation_start_time, clan_tag
+        ''', family_clan_tags, season.replace('-', ''), month_start - timedelta(days=3), month_end)
         for row in rows:
             config = player_rating_config.get(row['clan_tag'])
             if config is None or not config.cw_bonus_points:
@@ -1523,9 +1648,9 @@ class DatabaseManager:
         rows = await self.acquired_connection.fetch('''
             SELECT DISTINCT ON (player_tag, league_date) player_tag, league_date, league_tier, trophies
             FROM player_league
-            WHERE clan_tag = any($1::varchar[]) AND TO_CHAR(league_date, 'YYYY-MM') = $2
+            WHERE clan_tag = any($1::varchar[]) AND league_date >= $2 AND league_date < $3
             ORDER BY player_tag, league_date, league_tier DESC, trophies DESC
-        ''', family_clan_tags, season)
+        ''', family_clan_tags, month_start.date(), month_end.date())
         league_results_by_day = {}
         for row in rows:
             r = get_player_rating(row['player_tag'])

@@ -347,6 +347,9 @@ create table player_rating_draw
         unique (chat_id, message_id)
 );
 
+create index player_league_clan_tag_league_date_index
+    on player_league (clan_tag, league_date);
+
 create table player_rating_config
 (
     clan_tag                  varchar(16) not null

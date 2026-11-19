@@ -594,7 +594,7 @@ async def callback_player_rating_giveaway(
         await callback_query.answer()
 
 
-@router.message(Command('rating'))
+@router.message(Command('player_rating'))
 async def command_rating(message: Message, dm: DatabaseManager) -> None:
     text, parse_mode, reply_markup = await rating_list(dm, None)
     reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)

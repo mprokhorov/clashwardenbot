@@ -77,11 +77,18 @@ class OutputFormatter:
 
     @staticmethod
     def league_tier(league_tier: int) -> str:
+        # Ranked leagues 1-33 go in groups of three named after troops, Legend III, II and I are above them
         legend_league_tiers = {34: 'Легенда III', 35: 'Легенда II', 36: 'Легенда I'}
+        league_groups = [
+            'Скелет', 'Варвар', 'Лучница', 'Колдун', 'Валькирия', 'Ведьма',
+            'Голем', 'П.Е.К.К.А', 'Электротитан', 'Дракон', 'Электродракон'
+        ]
         if league_tier in legend_league_tiers:
             return legend_league_tiers[league_tier]
-        elif 31 <= league_tier <= 33:
-            return f'Электродракон {league_tier}'
+        elif 1 <= league_tier <= 3 * len(league_groups):
+            return f'{league_groups[(league_tier - 1) // 3]} {league_tier}'
+        elif league_tier == 0:
+            return 'Без лиги'
         else:
             return f'Лига {league_tier}'
 

@@ -2,7 +2,6 @@ import asyncio
 import calendar
 import json
 import logging
-import math
 import os
 from datetime import datetime, UTC
 from typing import Optional, Any
@@ -1565,22 +1564,18 @@ class DatabaseManager:
                 r.raids_attacks_points + r.raids_gold_points + r.cw_points
             )
 
-        # Chances to win: w = e^((x - μ) / σ), P = w / Σw, where μ and σ are the mean and the standard deviation
-        # of the prize candidates' points. With σ = 0 (one candidate or equal points) all chances are equal
+        # Chances to win are proportional to squared points: P = max(x, 0)² / Σ max(x, 0)².
+        # Negative points give no chance; if no candidate has positive points, all chances are equal
         if len(prize_candidate_tags) > 0:
-            points = [player_rating[player_tag].total_points for player_tag in prize_candidate_tags]
-            mean_points = sum(points) / len(points)
-            points_deviation = math.sqrt(sum((x - mean_points) ** 2 for x in points) / len(points))
             weights = {
-                player_tag: (
-                    math.exp((player_rating[player_tag].total_points - mean_points) / points_deviation)
-                    if points_deviation > 1e-9 else 1
-                )
+                player_tag: max(player_rating[player_tag].total_points, 0) ** 2
                 for player_tag in prize_candidate_tags
             }
             weights_sum = sum(weights.values())
             for player_tag, weight in weights.items():
-                player_rating[player_tag].win_chance = weight / weights_sum
+                player_rating[player_tag].win_chance = (
+                    weight / weights_sum if weights_sum > 0 else 1 / len(prize_candidate_tags)
+                )
 
         return player_rating
 

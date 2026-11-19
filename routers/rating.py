@@ -325,7 +325,7 @@ async def rating_all_seasons(
 
 def get_giveaway_participants(player_ratings: dict[str, PlayerRating]) -> list[dict]:
     candidates = sorted(
-        [r for r in player_ratings.values() if r.win_chance is not None],
+        [r for r in player_ratings.values() if r.win_chance is not None and r.win_chance > 0],
         key=lambda r: (-r.total_points, r.player_tag)
     )
     return [

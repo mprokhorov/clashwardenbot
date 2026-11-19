@@ -7,5 +7,4 @@ httpx>=0.26.0,<1
 Pyrogram>=2.0.106,<3
 pydantic>=2.5.3,<3
 pydantic-settings>=2.1.0,<3
-requests>=2.31.0,<3
 TgCrypto-pyrofork>=1.2.8,<2

@@ -992,7 +992,10 @@ class DatabaseManager:
         pings = []
         are_raids_updated = old_raids['startTime'] != raids['startTime']
         is_raids_state_updated = self.of.state(old_raids) != self.of.state(raids)
-        if not row['end_message_sent'] and self.of.state(raids) == 'ended' and is_raids_state_updated:
+        # Like the start alert, the end alert is sent only if the clan actually raided
+        were_raids_played = raids.get('totalAttacks', 0) > 0
+        if (not row['end_message_sent'] and self.of.state(raids) == 'ended' and is_raids_state_updated
+                and were_raids_played):
             texts.append(
                 f'<b>💬 Рейды закончились</b>\n'
                 f'\n'

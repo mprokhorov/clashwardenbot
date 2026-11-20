@@ -5,15 +5,24 @@ Alerts are not saved with message ids, but every sent alert is logged in the act
 Message ids grow with time, so the script finds each alert by a binary search over message dates (via MTProto,
 Pyrogram logged in with the bot token) and checks the found message in Telegram before deleting it.
 
-Run from the bot directory as the bot user:
-    sudo -u clashwardenbot .venv/bin/python -m scripts.delete_empty_raid_alerts            # dry run, nothing is deleted
-    sudo -u clashwardenbot .venv/bin/python -m scripts.delete_empty_raid_alerts --delete   # delete the found messages
+Reading a big chat this way is slow (Telegram lets a bot read history about once in 30 seconds), so found ids are saved
+to a file, and ids of a big chat can be taken from a JSON export of the chat made in Telegram Desktop instead.
+Deleting is cheap: 100 messages per request, every message is checked in Telegram right before deletion.
 
---bot_number   process only one bot
+Run from the bot directory as the bot user:
+    sudo -u clashwardenbot .venv/bin/python -m scripts.delete_empty_raid_alerts                   # dry run, saves found ids
+    sudo -u clashwardenbot .venv/bin/python -m scripts.delete_empty_raid_alerts --bot_number=4    # dry run for one bot
+    sudo -u clashwardenbot .venv/bin/python -m scripts.delete_empty_raid_alerts --export=/tmp/result.json --bot_number=2
+    sudo -u clashwardenbot .venv/bin/python -m scripts.delete_empty_raid_alerts --delete_saved    # delete the saved ids
+    sudo -u clashwardenbot .venv/bin/python -m scripts.delete_empty_raid_alerts --delete          # search and delete at once
+
+--ids_file     where found ids are saved (/tmp/empty_raid_alerts.json by default)
 """
 import argparse
 import asyncio
+import json
 import math
+import os
 import re
 from datetime import datetime, timedelta, UTC
 
@@ -34,6 +43,114 @@ BATCH_SIZE = 200
 SECONDS_BETWEEN_REQUESTS = 1
 EMPTY_BATCHES_AT_THE_END = 5
 SEARCH_MARGIN = timedelta(minutes=2)
+DELETE_BATCH_SIZE = 100
+DEFAULT_IDS_FILE = '/tmp/empty_raid_alerts.json'
+
+
+def bot_client(bot_number: int) -> Client:
+    return Client(
+        name=f'delete_empty_raid_alerts_{bot_number}',
+        api_id=int(config.telegram_api_id.get_secret_value()),
+        api_hash=config.telegram_api_hash.get_secret_value(),
+        bot_token=config.telegram_bot_api_tokens[bot_number].get_secret_value(),
+        in_memory=True,
+        no_updates=True
+    )
+
+
+def load_saved_ids(path: str) -> dict:
+    # {"<bot number>|<chat id>": [message ids]}
+    if not os.path.exists(path):
+        return {}
+    with open(path, encoding='utf-8') as file:
+        return json.load(file)
+
+
+def save_ids(path: str, bot_number: int, chat_id: int, message_ids) -> None:
+    saved = load_saved_ids(path)
+    key = f'{bot_number}|{chat_id}'
+    saved[key] = sorted(set(saved.get(key, [])) | set(message_ids))
+    with open(path, 'w', encoding='utf-8') as file:
+        json.dump(saved, file)
+
+
+def end_line(text: str) -> str:
+    return next((line for line in text.split('\n') if line.startswith('Конец рейдов')), '')
+
+
+async def delete_alerts(app: Client, chat_id: int, message_ids: list, bot_id: int) -> tuple[list, list, list]:
+    # Every message is checked in Telegram right before deletion: author, title and zero attacks
+    alerts, skipped, failed = [], [], []
+    for i in range(0, len(message_ids), BATCH_SIZE):
+        messages = await call_with_flood_wait(app.get_messages, chat_id, message_ids[i:i + BATCH_SIZE])
+        for message in messages:
+            (alerts if is_empty_raid_alert(message, bot_id, chat_id) else skipped).append(message.id)
+    deleted = []
+    for i in range(0, len(alerts), DELETE_BATCH_SIZE):
+        batch = alerts[i:i + DELETE_BATCH_SIZE]
+        try:
+            await call_with_flood_wait(app.delete_messages, chat_id, batch)
+            deleted += batch
+        except RPCError:
+            for message_id in batch:
+                try:
+                    await call_with_flood_wait(app.delete_messages, chat_id, message_id)
+                    deleted.append(message_id)
+                except RPCError as e:
+                    failed.append((message_id, getattr(e, 'ID', str(e))))
+    return deleted, skipped, failed
+
+
+def read_export(path: str, bot_id: int) -> tuple[int, str, list]:
+    # Telegram Desktop export: Chat → ⋮ → Export chat history, format JSON
+    with open(path, encoding='utf-8') as file:
+        export = json.load(file)
+    chat_type = export.get('type', '')
+    chat_id = int(f'-100{export["id"]}') if 'supergroup' in chat_type or 'channel' in chat_type else -int(export['id'])
+    found = []
+    for message in export.get('messages', []):
+        if message.get('type') != 'message' or message.get('from_id') != f'user{bot_id}':
+            continue
+        if 'text_entities' in message:
+            text = ''.join(entity.get('text', '') for entity in message['text_entities'])
+        elif isinstance(message.get('text'), list):
+            text = ''.join(part if isinstance(part, str) else part.get('text', '') for part in message['text'])
+        else:
+            text = message.get('text') or ''
+        if text.startswith(ALERT_TITLE) and NO_ATTACKS_MARK in text:
+            found.append((message['id'], message.get('date', '').replace('T', ' ')[:16], end_line(text)))
+    return chat_id, export.get('name', ''), found
+
+
+async def delete_saved(path: str, bot_number_filter) -> None:
+    saved = load_saved_ids(path)
+    if not saved:
+        print(f'No saved ids in {path}, run the dry run or --export first')
+        return
+    remaining = dict(saved)
+    total_deleted, total_skipped, total_failed = 0, 0, 0
+    for key, message_ids in sorted(saved.items()):
+        bot_number, chat_id = map(int, key.split('|'))
+        if bot_number_filter is not None and bot_number != bot_number_filter:
+            continue
+        async with bot_client(bot_number) as app:
+            me = await app.get_me()
+            print(f'━━ Bot {bot_number} @{me.username} · chat {chat_id}: {len(message_ids)} saved messages')
+            deleted, skipped, failed = await delete_alerts(app, chat_id, message_ids, me.id)
+        print(f'   🗑 deleted {len(deleted)}, skipped {len(skipped)} (not an empty raid alert or already deleted), failed {len(failed)}')
+        for message_id, error in failed[:10]:
+            print(f'      #{message_id}: {error}')
+        remaining[key] = [message_id for message_id, _ in failed]
+        if not remaining[key]:
+            del remaining[key]
+        total_deleted, total_skipped, total_failed = total_deleted + len(deleted), total_skipped + len(skipped), total_failed + len(failed)
+        print()
+    with open(path, 'w', encoding='utf-8') as file:
+        json.dump(remaining, file)
+    print(f'━━ Summary: deleted {total_deleted}, skipped {total_skipped}, failed {total_failed}')
+    if total_failed:
+        print('   Bots can delete their own messages older than 48 hours only as admins with "delete messages" right.')
+        print('   Failed ids stay in the file, run --delete_saved again after giving the right')
 
 
 async def call_with_flood_wait(function, *args, **kwargs):
@@ -120,9 +237,30 @@ class ChatScanner:
 async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--delete', action='store_true')
+    parser.add_argument('--delete_saved', action='store_true')
+    parser.add_argument('--export')
+    parser.add_argument('--chat_id', type=int)
     parser.add_argument('--bot_number', type=int)
+    parser.add_argument('--ids_file', default=DEFAULT_IDS_FILE)
     args = parser.parse_args()
     clan_tags = [clan_tag.get_secret_value() for clan_tag in config.clan_tags]
+
+    if args.delete_saved:
+        await delete_saved(args.ids_file, args.bot_number)
+        return
+    if args.export:
+        if args.bot_number is None:
+            print('--export needs --bot_number of the bot whose messages are in the chat')
+            return
+        bot_id = int(config.telegram_bot_api_tokens[args.bot_number].get_secret_value().split(':')[0])
+        chat_id, chat_name, found = read_export(args.export, bot_id)
+        chat_id = args.chat_id or chat_id
+        print(f'Chat «{chat_name}» ({chat_id}), bot {args.bot_number}: {len(found)} empty raid alerts in the export')
+        for message_id, date, line in found:
+            print(f'      ✓  #{message_id:<8} {date}  {line}')
+        save_ids(args.ids_file, args.bot_number, chat_id, [message_id for message_id, _, _ in found])
+        print(f'\nSaved to {args.ids_file}. Delete everything saved with --delete_saved')
+        return
 
     connection = await asyncpg.connect(
         host=config.postgres_host.get_secret_value(),
@@ -155,15 +293,7 @@ async def main() -> None:
         bot_number = clan_tags.index(clan_tag)
         if args.bot_number is not None and bot_number != args.bot_number:
             continue
-        app = Client(
-            name=f'delete_empty_raid_alerts_{bot_number}',
-            api_id=int(config.telegram_api_id.get_secret_value()),
-            api_hash=config.telegram_api_hash.get_secret_value(),
-            bot_token=config.telegram_bot_api_tokens[bot_number].get_secret_value(),
-            in_memory=True,
-            no_updates=True
-        )
-        async with app:
+        async with bot_client(bot_number) as app:
             me = await app.get_me()
             print(f'━━ Bot {bot_number} @{me.username} · clan {clan_names.get(clan_tag, "?")} ({clan_tag})')
             for (alert_clan_tag, chat_id), moments in sorted(alerts.items()):
@@ -199,21 +329,19 @@ async def main() -> None:
                     continue
                 lines = [(moment, f'      ·  {"—":<9} {moment:%d.%m.%Y %H:%M}  not found in the chat (already deleted?)') for moment in missing]
                 for message in found.values():
-                    end_line = next((line for line in message.text.split('\n') if line.startswith('Конец рейдов')), '')
                     mark = '🗑' if args.delete else '✓'
-                    lines.append((message.date, f'      {mark}  #{message.id:<8} {message.date:%d.%m.%Y %H:%M}  {end_line}'))
+                    lines.append((message.date, f'      {mark}  #{message.id:<8} {message.date:%d.%m.%Y %H:%M}  {end_line(message.text)}'))
                 for _, line in sorted(lines):
                     print(line)
                 print(f'   → {len(found)} to delete, {len(missing)} not found ({scanner.requests} requests to Telegram)')
                 total_found += len(found)
                 total_missing += len(missing)
                 if args.delete and found:
-                    for message_id in sorted(found):
-                        try:
-                            await call_with_flood_wait(app.delete_messages, chat_id, message_id)
-                            total_deleted += 1
-                        except RPCError as e:
-                            failed.append((chat_id, message_id, getattr(e, 'ID', str(e))))
+                    deleted, _, chat_failed = await delete_alerts(app, chat_id, sorted(found), me.id)
+                    total_deleted += len(deleted)
+                    failed += [(chat_id, message_id, error) for message_id, error in chat_failed]
+                elif found:
+                    save_ids(args.ids_file, bot_number, chat_id, list(found))
                 print()
 
     print('━━ Summary')
@@ -225,7 +353,7 @@ async def main() -> None:
         if failed:
             print('   Bots can delete their own messages older than 48 hours only as admins with "delete messages" right')
     elif total_found:
-        print('   Run again with --delete to delete them')
+        print(f'   Found ids are saved to {args.ids_file}, delete them with --delete_saved (no second search needed)')
 
 
 if __name__ == '__main__':

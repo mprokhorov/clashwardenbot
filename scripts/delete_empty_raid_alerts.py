@@ -14,9 +14,13 @@ Run from the bot directory as the bot user:
     sudo -u clashwardenbot .venv/bin/python -m scripts.delete_empty_raid_alerts --bot_number=4    # dry run for one bot
     sudo -u clashwardenbot .venv/bin/python -m scripts.delete_empty_raid_alerts --export=/tmp/result.json --bot_number=2
     sudo -u clashwardenbot .venv/bin/python -m scripts.delete_empty_raid_alerts --delete_saved    # delete the saved ids
+    sudo -u clashwardenbot .venv/bin/python -m scripts.delete_empty_raid_alerts --delete_saved --as_user
     sudo -u clashwardenbot .venv/bin/python -m scripts.delete_empty_raid_alerts --delete          # search and delete at once
 
 --ids_file     where found ids are saved (/tmp/empty_raid_alerts.json by default)
+--as_user      delete as your own account (an admin of the chats) instead of the bots: Telegram does not let bots delete
+               messages older than 48 hours even as admins. You log in right in the terminal, the session is kept
+               only in memory and is not saved on the server
 """
 import argparse
 import asyncio
@@ -56,6 +60,22 @@ def bot_client(bot_number: int) -> Client:
         in_memory=True,
         no_updates=True
     )
+
+
+def user_client() -> Client:
+    # No session file: Pyrogram asks for the phone number, the login code and the cloud password in the terminal
+    return Client(
+        name='delete_empty_raid_alerts_user',
+        api_id=int(config.telegram_api_id.get_secret_value()),
+        api_hash=config.telegram_api_hash.get_secret_value(),
+        in_memory=True,
+        no_updates=True
+    )
+
+
+def bot_id(bot_number: int) -> int:
+    # A bot token starts with the bot's user id
+    return int(config.telegram_bot_api_tokens[bot_number].get_secret_value().split(':')[0])
 
 
 def load_saved_ids(path: str) -> dict:
@@ -122,21 +142,38 @@ def read_export(path: str, bot_id: int) -> tuple[int, str, list]:
     return chat_id, export.get('name', ''), found
 
 
-async def delete_saved(path: str, bot_number_filter) -> None:
+async def delete_saved(path: str, bot_number_filter, as_user: bool) -> None:
     saved = load_saved_ids(path)
     if not saved:
         print(f'No saved ids in {path}, run the dry run or --export first')
         return
     remaining = dict(saved)
     total_deleted, total_skipped, total_failed = 0, 0, 0
+    user_app = None
+    if as_user:
+        user_app = user_client()
+        await user_app.start()
+        user = await user_app.get_me()
+        print(f'Logged in as {user.first_name} (@{user.username}), loading chats...\n')
+        # A user account knows a chat only after it was loaded, unlike bots
+        async for _ in user_app.get_dialogs():
+            pass
     for key, message_ids in sorted(saved.items()):
         bot_number, chat_id = map(int, key.split('|'))
         if bot_number_filter is not None and bot_number != bot_number_filter:
             continue
-        async with bot_client(bot_number) as app:
-            me = await app.get_me()
-            print(f'━━ Bot {bot_number} @{me.username} · chat {chat_id}: {len(message_ids)} saved messages')
-            deleted, skipped, failed = await delete_alerts(app, chat_id, message_ids, me.id)
+        if user_app is not None:
+            print(f'━━ Bot {bot_number} (deleting as you) · chat {chat_id}: {len(message_ids)} saved messages')
+            try:
+                deleted, skipped, failed = await delete_alerts(user_app, chat_id, message_ids, bot_id(bot_number))
+            except RPCError as e:
+                print(f'   ⚠️  chat skipped: {getattr(e, "ID", None) or repr(e)}\n')
+                continue
+        else:
+            async with bot_client(bot_number) as app:
+                me = await app.get_me()
+                print(f'━━ Bot {bot_number} @{me.username} · chat {chat_id}: {len(message_ids)} saved messages')
+                deleted, skipped, failed = await delete_alerts(app, chat_id, message_ids, me.id)
         print(f'   🗑 deleted {len(deleted)}, skipped {len(skipped)} (not an empty raid alert or already deleted), failed {len(failed)}')
         for message_id, error in failed[:10]:
             print(f'      #{message_id}: {error}')
@@ -145,12 +182,16 @@ async def delete_saved(path: str, bot_number_filter) -> None:
             del remaining[key]
         total_deleted, total_skipped, total_failed = total_deleted + len(deleted), total_skipped + len(skipped), total_failed + len(failed)
         print()
+    if user_app is not None:
+        await user_app.stop()
     with open(path, 'w', encoding='utf-8') as file:
         json.dump(remaining, file)
     print(f'━━ Summary: deleted {total_deleted}, skipped {total_skipped}, failed {total_failed}')
-    if total_failed:
-        print('   Bots can delete their own messages older than 48 hours only as admins with "delete messages" right.')
-        print('   Failed ids stay in the file, run --delete_saved again after giving the right')
+    if total_failed and not as_user:
+        print('   Telegram does not let bots delete messages older than 48 hours, even as admins.')
+        print('   Failed ids stay in the file, delete them as your own account: --delete_saved --as_user')
+    elif total_failed:
+        print('   Your account needs the "delete messages" admin right in these chats. Failed ids stay in the file')
 
 
 async def call_with_flood_wait(function, *args, **kwargs):
@@ -238,6 +279,7 @@ async def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument('--delete', action='store_true')
     parser.add_argument('--delete_saved', action='store_true')
+    parser.add_argument('--as_user', action='store_true')
     parser.add_argument('--export')
     parser.add_argument('--chat_id', type=int)
     parser.add_argument('--bot_number', type=int)
@@ -246,14 +288,13 @@ async def main() -> None:
     clan_tags = [clan_tag.get_secret_value() for clan_tag in config.clan_tags]
 
     if args.delete_saved:
-        await delete_saved(args.ids_file, args.bot_number)
+        await delete_saved(args.ids_file, args.bot_number, args.as_user)
         return
     if args.export:
         if args.bot_number is None:
             print('--export needs --bot_number of the bot whose messages are in the chat')
             return
-        bot_id = int(config.telegram_bot_api_tokens[args.bot_number].get_secret_value().split(':')[0])
-        chat_id, chat_name, found = read_export(args.export, bot_id)
+        chat_id, chat_name, found = read_export(args.export, bot_id(args.bot_number))
         chat_id = args.chat_id or chat_id
         print(f'Chat «{chat_name}» ({chat_id}), bot {args.bot_number}: {len(found)} empty raid alerts in the export')
         for message_id, date, line in found:

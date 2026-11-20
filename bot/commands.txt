@@ -13,11 +13,11 @@ cwl_list                | 📋 Список участников ЛВК         
 cwl_clans               | 📶 Уровни ТХ кланов в ЛВК               | group, private | CWL
 cwl_skips               | 🕒 Не проатаковавшие в ЛВК              | group, private | CWL
 cwl_ping                | 🔔 Напомнить об атаках в ЛВК            | group          | CWL
-raids_info              | ⚔️ Информация о рейдах                  | group, private |
-raids_attacks           | 🗡️ Атаки в рейдах                       | group, private |
-raids_skips             | 🕒 Не проатаковавшие в рейдах           | group, private |
-raids_ping              | 🔔 Напомнить об атаках в рейдах         | group          |
-raids_analysis          | 📊 Анализ атак в рейдах                 | group, private |
+raids_info              | ⚔️ Информация о рейдах                  | group, private | RW
+raids_attacks           | 🗡️ Атаки в рейдах                       | group, private | RW
+raids_skips             | 🕒 Не проатаковавшие в рейдах           | group, private | RW
+raids_ping              | 🔔 Напомнить об атаках в рейдах         | group          | RW
+raids_analysis          | 📊 Анализ атак в рейдах                 | group, private | RW
 player_rating           | 💎 Рейтинг участников клана             | group, private |
 player_rating_giveaway  | 🎲 Розыгрыш призов рейтинга             |                |
 player_info             | 👤 Аккаунты пользователя                | group, private |

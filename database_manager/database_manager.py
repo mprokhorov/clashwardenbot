@@ -96,7 +96,7 @@ class DatabaseManager:
         self.cwl_rating_config = None
 
         self.jobs_lock = asyncio.Lock()
-        self.shown_commands_event = None
+        self.shown_commands_events = None
         self.are_raid_weekends_backfilled = False
         # Opponent players, war logs and win streaks change rarely, so they are refreshed at most this often
         self.opponent_info_dumped_at = {}
@@ -206,13 +206,13 @@ class DatabaseManager:
             self.dump_raid_weekends,
             self.raid_weekend_start_reminder,
             self.dump_clan_war_league,
-            self.dump_clan_war_league_wars
+            self.dump_clan_war_league_wars,
+            self.set_actual_commands
         ])
 
     async def infrequent_jobs(self) -> None:
         await self.run_jobs([
             self.load_privacy_mode,
-            self.set_actual_commands,
             self.load_blocked_users,
             self.load_ignore_updates_players,
             self.dump_clan,
@@ -224,7 +224,8 @@ class DatabaseManager:
             self.raid_weekend_start_reminder,
             self.dump_clan_war_league,
             self.dump_clan_war_league_wars,
-            self.load_clan_war_league_rating_config
+            self.load_clan_war_league_rating_config,
+            self.set_actual_commands
         ])
 
     async def dump_clan_members_if_not_changed(self) -> None:
@@ -267,23 +268,36 @@ class DatabaseManager:
         cwlw_start_time = self.of.to_datetime(cwlw['startTime']) if cwlw else datetime.min
 
         if cw_start_time > cwlw_start_time:
-            event = 'CW'
+            events = ['CW']
         elif cw_start_time < cwlw_start_time:
-            event = 'CWL'
+            events = ['CWL']
         else:
-            event = 'ANY'
-        # The command menu is changed only when the current event changes
-        if event == self.shown_commands_event:
+            events = ['CW', 'CWL']
+
+        # Raid commands are shown from the "raids started" alert till the "raids ended" alert:
+        # the raid is launched by the clan (the attack log has an entry) and the raid weekend is not over
+        are_raids_ongoing = await self.acquired_connection.fetchval('''
+            SELECT data->>'state' = 'ongoing' AND COALESCE(jsonb_array_length(data->'attackLog'), 0) > 0
+            FROM raid_weekend
+            WHERE clan_tag = $1
+            ORDER BY start_time DESC
+            LIMIT 1
+        ''', self.clan_tag)
+        if are_raids_ongoing:
+            events.append('RW')
+
+        # The command menu is changed only when the current events change
+        if events == self.shown_commands_events:
             return True
         await self.bot.set_my_commands(
-            commands=get_shown_bot_commands(bot_cmd_list, ['group'], [event]),
+            commands=get_shown_bot_commands(bot_cmd_list, ['group'], events),
             scope=BotCommandScopeAllGroupChats()
         )
         await self.bot.set_my_commands(
-            commands=get_shown_bot_commands(bot_cmd_list, ['private'], [event]),
+            commands=get_shown_bot_commands(bot_cmd_list, ['private'], events),
             scope=BotCommandScopeAllPrivateChats()
         )
-        self.shown_commands_event = event
+        self.shown_commands_events = events
         return True
 
     async def load_blocked_users(self) -> None:

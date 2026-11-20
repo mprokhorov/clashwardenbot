@@ -20,6 +20,7 @@ create table activity
     start_message_sent               boolean,
     half_time_remaining_message_sent boolean,
     end_message_sent                 boolean,
+    day_remaining_message_sent       boolean,
     constraint activity_pk
         primary key (clan_tag, name, start_time)
 );

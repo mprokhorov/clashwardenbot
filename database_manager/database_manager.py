@@ -1040,13 +1040,18 @@ class DatabaseManager:
         row = await self.acquired_connection.fetchrow('''
             SELECT
                 clan_tag, name, start_time,
-                preparation_message_sent, start_message_sent, half_time_remaining_message_sent, end_message_sent
+                preparation_message_sent, start_message_sent, half_time_remaining_message_sent, end_message_sent,
+                day_remaining_message_sent
             FROM activity
             WHERE (clan_tag, name, start_time) = ($1, $2, $3)
         ''', self.clan_tag, 'raid_weekend', self.of.to_datetime(raids['startTime']))
         texts = []
+        # Who is pinged: None, 'clan' (all clan members) or 'raids' (members who have not spent all raid attacks)
         pings = []
         are_raids_updated = old_raids['startTime'] != raids['startTime']
+        # The attack log gets an entry when the clan launches the raid; reminders make sense only after that
+        is_raid_launched = len(raids.get('attackLog', [])) > 0
+        remaining_time = self.of.to_datetime(raids['endTime']) - self.of.utc_now()
         is_raids_state_updated = self.of.state(old_raids) != self.of.state(raids)
         # Like the start alert, the end alert is sent only if the clan actually raided
         were_raids_played = raids.get('totalAttacks', 0) > 0
@@ -1057,7 +1062,7 @@ class DatabaseManager:
                 f'\n'
                 f'{self.of.raids_ongoing_or_ended(raids)}'
             )
-            pings.append(False)
+            pings.append(None)
             await self.set_activity_end_message_sent(
                 self.clan_tag, 'raid_weekend', self.of.to_datetime(raids['startTime'])
             )
@@ -1067,10 +1072,34 @@ class DatabaseManager:
                 f'\n'
                 f'{self.of.raids_ongoing_or_ended(raids)}'
             )
-            pings.append(True)
+            pings.append('clan')
             await self.set_activity_start_message_sent(
                 self.clan_tag, 'raid_weekend', self.of.to_datetime(raids['startTime'])
             )
+        elif (not row['half_time_remaining_message_sent'] and self.of.state(raids) == 'ongoing' and is_raid_launched
+              and timedelta(0) < remaining_time <= timedelta(hours=12)):
+            texts.append(
+                f'<b>📣 До конца рейдов осталось менее 12 часов</b>\n'
+                f'\n'
+                f'{self.of.raids_ongoing_or_ended(raids)}'
+            )
+            pings.append('raids')
+            await self.set_activity_half_time_remaining_message_sent(
+                self.clan_tag, 'raid_weekend', self.of.to_datetime(raids['startTime'])
+            )
+        elif (not row['day_remaining_message_sent'] and self.of.state(raids) == 'ongoing' and is_raid_launched
+              and timedelta(hours=12) < remaining_time <= timedelta(days=1)):
+            texts.append(
+                f'<b>📣 До конца рейдов осталось менее суток</b>\n'
+                f'\n'
+                f'{self.of.raids_ongoing_or_ended(raids)}'
+            )
+            pings.append('raids')
+            await self.acquired_connection.execute('''
+                UPDATE activity
+                SET day_remaining_message_sent = TRUE
+                WHERE (clan_tag, name, start_time) = ($1, $2, $3)
+            ''', self.clan_tag, 'raid_weekend', self.of.to_datetime(raids['startTime']))
         for text, ping in zip(texts, pings):
             rows = await self.acquired_connection.fetch('''
                 SELECT chat_id
@@ -1082,8 +1111,41 @@ class DatabaseManager:
                     user_id=None,
                     chat_id=row['chat_id'],
                     message_text=text,
-                    user_ids_to_ping=await self.get_clan_member_user_ids(row['chat_id']) if ping else None
+                    user_ids_to_ping=(
+                        await self.get_clan_member_user_ids(row['chat_id']) if ping == 'clan'
+                        else await self.get_raids_member_user_ids(row['chat_id'], raids) if ping == 'raids'
+                        else None
+                    )
                 )
+
+    async def get_raids_member_user_ids(self, chat_id: int, raids: dict) -> list[int]:
+        # Like /raids_ping: members who have not spent all raid attacks, including those who did not attack at all
+        raids_members = {raids_member['tag']: raids_member for raids_member in raids.get('members', [])}
+        rows = await self.acquired_connection.fetch('''
+            SELECT player_tag
+            FROM player
+            WHERE clan_tag = $1 AND is_player_in_clan
+        ''', self.clan_tag)
+        player_tags = [
+            row['player_tag'] for row in rows
+            if row['player_tag'] not in raids_members
+            or raids_members[row['player_tag']]['attacks'] < (
+                raids_members[row['player_tag']]['attackLimit'] + raids_members[row['player_tag']]['bonusAttackLimit']
+            )
+        ]
+        rows = await self.acquired_connection.fetch('''
+            SELECT DISTINCT user_id, first_name
+            FROM
+                player
+                JOIN player_bot_user USING (clan_tag, player_tag)
+                JOIN bot_user USING (clan_tag, chat_id, user_id)
+            WHERE
+                clan_tag = $1 AND is_player_in_clan
+                AND chat_id = $2 AND is_user_in_chat
+                AND player_tag = any($3::varchar[])
+            ORDER BY first_name
+        ''', self.clan_tag, chat_id, player_tags)
+        return [row['user_id'] for row in rows]
 
     async def dump_clan_war_league(self) -> bool:
         retrieved_clan_war_league = await self.api_client.get_clan_war_league_group(clan_tag=self.clan_tag)

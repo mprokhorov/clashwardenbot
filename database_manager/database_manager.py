@@ -1924,13 +1924,13 @@ class DatabaseManager:
         ''', self.clan_tag, chat_id, user_id)
         return row is not None
 
-    async def can_user_edit_cw_list(self, chat_id: int, user_id: int) -> bool:
+    async def can_user_edit_war_lists(self, chat_id: int, user_id: int) -> bool:
         row = await self.acquired_connection.fetchrow('''
             SELECT clan_tag, chat_id, user_id
             FROM bot_user
             WHERE
                 ((clan_tag, chat_id, user_id) = ($1, $2, $3) OR (clan_tag, chat_id, user_id) = ($1, $3, $3))
-                AND can_edit_cw_list
+                AND can_edit_war_lists
         ''', self.clan_tag, chat_id, user_id)
         return row is not None
 

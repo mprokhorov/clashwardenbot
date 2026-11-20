@@ -78,7 +78,7 @@ def opposite_folding_text(folding: Link) -> str:
 
 
 async def admin(
-        can_edit_cw_list: bool, can_link_members: bool
+        can_edit_war_lists: bool, can_link_members: bool
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
     text = (
         f'<b>⚙️ Панель управления</b>\n'
@@ -109,10 +109,10 @@ async def admin(
         text='🔄 Обновить',
         callback_data=AdminCallbackFactory(output_view=OutputView.menu).pack()
     )
-    if not can_edit_cw_list and not can_link_members:
+    if not can_edit_war_lists and not can_link_members:
         text += f'У вас нет прав на использование этой команды'
     else:
-        if can_edit_cw_list:
+        if can_edit_war_lists:
             button_rows.append([edit_cw_list_button])
             button_rows.append([edit_cwl_list_button])
             button_rows.append([give_bonus_button])
@@ -840,12 +840,12 @@ async def ping(
 
 @router.message(Command('admin'))
 async def command_admin(message: Message, dm: DatabaseManager) -> None:
-    can_user_edit_cw_list = await dm.can_user_edit_cw_list(message.chat.id, message.from_user.id)
+    can_user_edit_war_lists = await dm.can_user_edit_war_lists(message.chat.id, message.from_user.id)
     can_user_link_members = await dm.can_user_link_group_members(message.chat.id, message.from_user.id)
     if message.chat.type != ChatType.PRIVATE:
         await message.reply(text=f'Эта команда работает только в диалоге с ботом')
     else:
-        text, parse_mode, reply_markup = await admin(can_user_edit_cw_list, can_user_link_members)
+        text, parse_mode, reply_markup = await admin(can_user_edit_war_lists, can_user_link_members)
         reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         await dm.dump_message_owner(reply_from_bot, message.from_user)
 
@@ -857,7 +857,7 @@ async def callback_admin(
     user_is_message_owner = await dm.is_user_message_owner(
         callback_query.message, callback_query.from_user
     )
-    can_user_edit_cw_list = await dm.can_user_edit_cw_list(
+    can_user_edit_war_lists = await dm.can_user_edit_war_lists(
         callback_query.message.chat.id, callback_query.from_user.id
     )
     can_user_link_members = await dm.can_user_link_group_members(
@@ -866,7 +866,7 @@ async def callback_admin(
     if not user_is_message_owner:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
-        text, parse_mode, reply_markup = await admin(can_user_edit_cw_list, can_user_link_members)
+        text, parse_mode, reply_markup = await admin(can_user_edit_war_lists, can_user_link_members)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         await callback_query.answer()
@@ -1033,8 +1033,8 @@ async def callback_edit_cw_list(
         callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    can_user_edit_cw_list = await dm.can_user_edit_cw_list(callback_query.message.chat.id, callback_query.from_user.id)
-    if not user_is_message_owner or not can_user_edit_cw_list:
+    can_user_edit_war_lists = await dm.can_user_edit_war_lists(callback_query.message.chat.id, callback_query.from_user.id)
+    if not user_is_message_owner or not can_user_edit_war_lists:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await edit_cw_list(dm, callback_query, callback_data)
@@ -1048,8 +1048,8 @@ async def callback_edit_cwl_list(
         callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    can_user_edit_cwl_list = await dm.can_user_edit_cw_list(callback_query.message.chat.id, callback_query.from_user.id)
-    if not user_is_message_owner or not can_user_edit_cwl_list:
+    can_user_edit_war_lists = await dm.can_user_edit_war_lists(callback_query.message.chat.id, callback_query.from_user.id)
+    if not user_is_message_owner or not can_user_edit_war_lists:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await edit_cwl_list(dm, callback_query, callback_data)
@@ -1065,8 +1065,8 @@ async def callback_give_bonus_select_player(
         callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    can_user_edit_cw_list = await dm.can_user_edit_cw_list(callback_query.message.chat.id, callback_query.from_user.id)
-    if not user_is_message_owner or not can_user_edit_cw_list:
+    can_user_edit_war_lists = await dm.can_user_edit_war_lists(callback_query.message.chat.id, callback_query.from_user.id)
+    if not user_is_message_owner or not can_user_edit_war_lists:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await give_bonus_select_player(dm)
@@ -1082,8 +1082,8 @@ async def callback_give_bonus_set_points(
         callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    can_user_edit_cw_list = await dm.can_user_edit_cw_list(callback_query.message.chat.id, callback_query.from_user.id)
-    if not user_is_message_owner or not can_user_edit_cw_list:
+    can_user_edit_war_lists = await dm.can_user_edit_war_lists(callback_query.message.chat.id, callback_query.from_user.id)
+    if not user_is_message_owner or not can_user_edit_war_lists:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await give_bonus_set_points(dm, callback_data)
@@ -1099,8 +1099,8 @@ async def callback_give_bonus_finish(
         callback_query: CallbackQuery, callback_data: AdminCallbackFactory, dm: DatabaseManager
 ) -> None:
     user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
-    can_user_edit_cw_list = await dm.can_user_edit_cw_list(callback_query.message.chat.id, callback_query.from_user.id)
-    if not user_is_message_owner or not can_user_edit_cw_list:
+    can_user_edit_war_lists = await dm.can_user_edit_war_lists(callback_query.message.chat.id, callback_query.from_user.id)
+    if not user_is_message_owner or not can_user_edit_war_lists:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         text, parse_mode, reply_markup = await give_bonus_finish(dm, callback_query, callback_data)

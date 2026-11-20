@@ -62,7 +62,7 @@ create table bot_user
     can_use_bot_without_clan_group boolean,
     can_ping_group_members         boolean,
     can_link_group_members         boolean,
-    can_edit_cw_list               boolean,
+    can_edit_war_lists             boolean,
     can_send_messages_from_bot     boolean,
     can_run_player_rating_giveaway boolean,
     constraint bot_user_pk

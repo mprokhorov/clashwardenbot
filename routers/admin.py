@@ -57,6 +57,7 @@ class AdminCallbackFactory(CallbackData, prefix='admin'):
     is_player_set_for_clan_wars: Optional[bool] = None
     is_player_set_for_clan_war_league: Optional[bool] = None
     bonus_points: Optional[float] = None
+    update: bool = False
 
 
 def opposite_folding(folding: Link) -> Link:
@@ -107,7 +108,7 @@ async def admin(
     )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=AdminCallbackFactory(output_view=OutputView.menu).pack()
+        callback_data=AdminCallbackFactory(output_view=OutputView.menu, update=True).pack()
     )
     if not can_edit_war_lists and not can_link_members:
         text += f'У вас нет прав на использование этой команды'
@@ -148,7 +149,7 @@ async def link_select_chat(
             ),
             InlineKeyboardButton(
                 text='🔄 Обновить',
-                callback_data=AdminCallbackFactory(output_view=OutputView.link, link=callback_data.link).pack()
+                callback_data=AdminCallbackFactory(output_view=OutputView.link, link=callback_data.link, update=True).pack()
             )
         ]])
     return text, ParseMode.HTML, keyboard
@@ -189,7 +190,8 @@ async def link_select_player(
             ),
             InlineKeyboardButton(
                 text='🔄 Обновить', callback_data=AdminCallbackFactory(
-                    output_view=OutputView.link, link=callback_data.link, chat_id=callback_data.chat_id
+                    output_view=OutputView.link, link=callback_data.link, chat_id=callback_data.chat_id,
+                    update=True
                 ).pack()
             ),
             InlineKeyboardButton(
@@ -248,7 +250,8 @@ async def link_select_user(
                 output_view=OutputView.link,
                 link=callback_data.link,
                 chat_id=callback_data.chat_id,
-                player_tag=callback_data.player_tag
+                player_tag=callback_data.player_tag,
+                update=True
             ).pack()
         ),
         InlineKeyboardButton(
@@ -331,7 +334,7 @@ async def unlink_select_chat(
         ),
         InlineKeyboardButton(
             text='🔄 Обновить',
-            callback_data=AdminCallbackFactory(output_view=OutputView.unlink, unlink=callback_data.unlink).pack()
+            callback_data=AdminCallbackFactory(output_view=OutputView.unlink, unlink=callback_data.unlink, update=True).pack()
         )]
     ])
     return text, ParseMode.HTML, keyboard
@@ -381,7 +384,8 @@ async def unlink_select_player(
             callback_data=AdminCallbackFactory(
                 output_view=OutputView.unlink,
                 unlink=callback_data.unlink,
-                chat_id=callback_data.chat_id
+                chat_id=callback_data.chat_id,
+                update=True
             ).pack()
         )]
     ])
@@ -431,7 +435,8 @@ async def unlink_select_user(
                 output_view=OutputView.unlink,
                 unlink=callback_data.unlink,
                 chat_id=callback_data.chat_id,
-                player_tag=callback_data.player_tag
+                player_tag=callback_data.player_tag,
+                update=True
             ).pack()
         )]
     ])
@@ -541,7 +546,7 @@ async def edit_cw_list(
         ),
         InlineKeyboardButton(
             text='🔄 Обновить',
-            callback_data=AdminCallbackFactory(output_view=OutputView.edit_cw_list).pack()
+            callback_data=AdminCallbackFactory(output_view=OutputView.edit_cw_list, update=True).pack()
         )]
     ])
     return text, ParseMode.HTML, keyboard
@@ -605,7 +610,7 @@ async def edit_cwl_list(
         ),
         InlineKeyboardButton(
             text='🔄 Обновить',
-            callback_data=AdminCallbackFactory(output_view=OutputView.edit_cwl_list).pack()
+            callback_data=AdminCallbackFactory(output_view=OutputView.edit_cwl_list, update=True).pack()
         )]
     ])
     return text, ParseMode.HTML, keyboard
@@ -646,7 +651,7 @@ async def give_bonus_select_player(
     )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=AdminCallbackFactory(output_view=OutputView.give_bonus, give_bonus=GiveBonus.select_player).pack()
+        callback_data=AdminCallbackFactory(output_view=OutputView.give_bonus, give_bonus=GiveBonus.select_player, update=True).pack()
     )
     button_rows.append([back_button, update_button])
     keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
@@ -869,7 +874,7 @@ async def callback_admin(
         text, parse_mode, reply_markup = await admin(can_user_edit_war_lists, can_user_link_members)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-        await callback_query.answer()
+        await callback_query.answer('Сообщение обновлено' if callback_data.update else None)
 
 
 @router.callback_query(AdminCallbackFactory.filter((F.output_view == OutputView.link) & (F.link == Link.select_chat)))
@@ -888,7 +893,7 @@ async def callback_link_select_chat(
         )
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-        await callback_query.answer()
+        await callback_query.answer('Сообщение обновлено' if callback_data.update else None)
 
 
 @router.callback_query(
@@ -910,7 +915,7 @@ async def callback_link_select_player(
         text, parse_mode, reply_markup = await link_select_player(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-        await callback_query.answer()
+        await callback_query.answer('Сообщение обновлено' if callback_data.update else None)
 
 
 @router.callback_query(
@@ -932,7 +937,7 @@ async def callback_link_select_user(
         text, parse_mode, reply_markup = await link_select_user(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-        await callback_query.answer()
+        await callback_query.answer('Сообщение обновлено' if callback_data.update else None)
 
 
 @router.callback_query(AdminCallbackFactory.filter((F.output_view == OutputView.link) & (F.link == Link.finish)))
@@ -970,7 +975,7 @@ async def callback_unlink_select_chat(
         )
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-        await callback_query.answer()
+        await callback_query.answer('Сообщение обновлено' if callback_data.update else None)
 
 
 @router.callback_query(
@@ -989,7 +994,7 @@ async def callback_unlink_select_player(
         text, parse_mode, reply_markup = await unlink_select_player(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-        await callback_query.answer()
+        await callback_query.answer('Сообщение обновлено' if callback_data.update else None)
 
 
 @router.callback_query(
@@ -1008,7 +1013,7 @@ async def callback_unlink_select_user(
         text, parse_mode, reply_markup = await unlink_select_user(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-        await callback_query.answer()
+        await callback_query.answer('Сообщение обновлено' if callback_data.update else None)
 
 
 @router.callback_query(AdminCallbackFactory.filter((F.output_view == OutputView.unlink) & (F.unlink == Unlink.finish)))
@@ -1040,7 +1045,7 @@ async def callback_edit_cw_list(
         text, parse_mode, reply_markup = await edit_cw_list(dm, callback_query, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-        await callback_query.answer()
+        await callback_query.answer('Сообщение обновлено' if callback_data.update else None)
 
 
 @router.callback_query(AdminCallbackFactory.filter(F.output_view == OutputView.edit_cwl_list))
@@ -1055,7 +1060,7 @@ async def callback_edit_cwl_list(
         text, parse_mode, reply_markup = await edit_cwl_list(dm, callback_query, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-        await callback_query.answer()
+        await callback_query.answer('Сообщение обновлено' if callback_data.update else None)
 
 
 @router.callback_query(
@@ -1072,7 +1077,7 @@ async def callback_give_bonus_select_player(
         text, parse_mode, reply_markup = await give_bonus_select_player(dm)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-        await callback_query.answer()
+        await callback_query.answer('Сообщение обновлено' if callback_data.update else None)
 
 
 @router.callback_query(

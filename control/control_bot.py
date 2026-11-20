@@ -36,6 +36,10 @@ router.message.filter(F.from_user.id == OWNER_ID)
 router.callback_query.filter(F.from_user.id == OWNER_ID)
 
 
+# arg of the refresh buttons: the same views are also opened by the back buttons, which must not say it was refreshed
+REFRESH = 'refresh'
+
+
 class PanelCallbackFactory(CallbackData, prefix='panel'):
     action: str
     arg: Optional[str] = None
@@ -171,7 +175,7 @@ async def panel() -> tuple[str, InlineKeyboardMarkup]:
         ],
         [
             InlineKeyboardButton(text='📜 Журнал', callback_data=PanelCallbackFactory(action='log').pack()),
-            InlineKeyboardButton(text='🔄 Обновить', callback_data=PanelCallbackFactory(action='main').pack())
+            InlineKeyboardButton(text='🔄 Обновить', callback_data=PanelCallbackFactory(action='main', arg=REFRESH).pack())
         ]
     ]
     return text, InlineKeyboardMarkup(inline_keyboard=button_rows)
@@ -193,7 +197,7 @@ def branches_view() -> tuple[str, InlineKeyboardMarkup]:
     )] for branch in status.get('branches', [])]
     button_rows.append([
         InlineKeyboardButton(text='⬅️ Назад', callback_data=PanelCallbackFactory(action='main').pack()),
-        InlineKeyboardButton(text='🔄 Обновить', callback_data=PanelCallbackFactory(action='branches').pack())
+        InlineKeyboardButton(text='🔄 Обновить', callback_data=PanelCallbackFactory(action='branches', arg=REFRESH).pack())
     ])
     return text, InlineKeyboardMarkup(inline_keyboard=button_rows)
 
@@ -231,7 +235,7 @@ def log_view() -> tuple[str, InlineKeyboardMarkup]:
         text += 'Журнал пуст'
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[
         InlineKeyboardButton(text='⬅️ Назад', callback_data=PanelCallbackFactory(action='main').pack()),
-        InlineKeyboardButton(text='🔄 Обновить', callback_data=PanelCallbackFactory(action='log').pack())
+        InlineKeyboardButton(text='🔄 Обновить', callback_data=PanelCallbackFactory(action='log', arg=REFRESH).pack())
     ]])
     return text, keyboard
 
@@ -288,7 +292,8 @@ async def callback_panel(callback_query: CallbackQuery, callback_data: PanelCall
         text, keyboard = await panel()
     with suppress(TelegramBadRequest):
         await callback_query.message.edit_text(text=text, reply_markup=keyboard)
-    await callback_query.answer(answer_text or ('Сообщение обновлено' if callback_data.action == 'main' else None))
+    refreshed = callback_data.action in ('main', 'branches', 'log') and callback_data.arg == REFRESH
+    await callback_query.answer(answer_text or ('Сообщение обновлено' if refreshed else None))
 
 
 async def notify_owner(bot: Bot) -> None:

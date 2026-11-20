@@ -938,6 +938,7 @@ class DatabaseManager:
         ''', [
             (self.clan_tag, self.of.to_datetime(item['startTime']), json.dumps(item))
             for item in retrieved_raid_weekends['items']
+            if item.get('members') is not None
         ])
 
         self.are_raid_weekends_backfilled = True
@@ -1004,7 +1005,7 @@ class DatabaseManager:
             await self.set_activity_end_message_sent(
                 self.clan_tag, 'raid_weekend', self.of.to_datetime(raids['startTime'])
             )
-        elif not row['start_message_sent'] and are_raids_updated and self.of.state(raids) == 'ongoing':
+        elif not row['start_message_sent'] and are_raids_updated and self.of.state(raids) == 'ongoing' and len(raids['attackLog']) > 0:
             texts.append(
                 f'<b>📣 Рейды начались</b>\n'
                 f'\n'
@@ -1571,9 +1572,6 @@ class DatabaseManager:
         raids_attacks_by_week = {}
         for row in rows:
             raid_weekend = json.loads(row['data'])
-            # Weekends are saved from their start, before anyone raided; such weekends do not count as weeks
-            if raid_weekend.get('members') is None:
-                continue
             raids_gold = raids_gold_by_week.setdefault(row['start_time'], {})
             raids_attacks = raids_attacks_by_week.setdefault(row['start_time'], {})
             for raids_member in raid_weekend.get('members', []):

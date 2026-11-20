@@ -300,8 +300,9 @@ async def notify_owner(bot: Bot) -> None:
             state, status = read_json(STATE_PATH), read_json(STATUS_PATH)
             messages = []
             for event in status.get('events', []):
-                if event['id'] > last_event_id:
-                    emoji = {'deployed': '⬇️', 'error': '⚠️', 'recovered': '✅'}.get(event['kind'], '💬')
+                # Deploys are not announced, they are visible in the panel and in the deploy log
+                if event['id'] > last_event_id and event['kind'] != 'deployed':
+                    emoji = {'error': '⚠️', 'recovered': '✅'}.get(event['kind'], '💬')
                     messages.append(f'{emoji} {html.escape(event['text'])}')
             last_event_id = max([last_event_id] + [event['id'] for event in status.get('events', [])])
             clans = status.get('clans', [])

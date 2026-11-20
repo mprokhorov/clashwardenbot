@@ -20,6 +20,7 @@ from config import config
 from entities import ClanWarLeagueWar, BotUser, RaidsMember, WarMember
 from entities.game_entities import CWLWPlayerRating, CWLPlayerRating, CWLRatingConfig, PlayerRating, PlayerRatingConfig
 from output_formatter import OutputFormatter
+from output_formatter.output_formatter import Event
 
 
 class AcquiredConnection:
@@ -203,6 +204,7 @@ class DatabaseManager:
             self.load_clan_war_league_rating_config,
             self.dump_clan_war,
             self.dump_raid_weekends,
+            self.raid_weekend_start_reminder,
             self.dump_clan_war_league,
             self.dump_clan_war_league_wars
         ])
@@ -219,6 +221,7 @@ class DatabaseManager:
             self.dump_clan_games,
             self.dump_clan_war,
             self.dump_raid_weekends,
+            self.raid_weekend_start_reminder,
             self.dump_clan_war_league,
             self.dump_clan_war_league_wars,
             self.load_clan_war_league_rating_config
@@ -949,6 +952,59 @@ class DatabaseManager:
 
         await self.raid_weekend_alert(old_raids, new_raids)
 
+        return True
+
+    async def raid_weekend_start_reminder(self) -> bool:
+        # When a raid weekend begins and the clan has not launched the raid yet, elders and above are pinged,
+        # because only they can launch it. The reminder is sent once per raid weekend
+        raid_weekend_start, raid_weekend_end = self.of.calculate_next_raid_weekend()
+        if not raid_weekend_start <= self.of.utc_now() < raid_weekend_end:
+            return False
+        await self.acquired_connection.execute('''
+            INSERT INTO activity
+                (clan_tag, name, start_time,
+                preparation_message_sent, start_message_sent, half_time_remaining_message_sent, end_message_sent)
+            VALUES
+                ($1, $2, $3, NULL, FALSE, NULL, NULL)
+            ON CONFLICT (clan_tag, name, start_time) DO NOTHING
+        ''', self.clan_tag, 'raid_weekend_start_reminder', raid_weekend_start)
+        is_reminder_sent = await self.acquired_connection.fetchval('''
+            SELECT start_message_sent
+            FROM activity
+            WHERE (clan_tag, name, start_time) = ($1, $2, $3)
+        ''', self.clan_tag, 'raid_weekend_start_reminder', raid_weekend_start)
+        if is_reminder_sent:
+            return False
+        # The attack log gets an entry when the clan launches the raid
+        is_raid_launched = await self.acquired_connection.fetchval('''
+            SELECT COALESCE(jsonb_array_length(data->'attackLog'), 0) > 0
+            FROM raid_weekend
+            WHERE clan_tag = $1 AND start_time BETWEEN $2 AND $3
+            ORDER BY start_time DESC
+            LIMIT 1
+        ''', self.clan_tag, raid_weekend_start - timedelta(hours=1), raid_weekend_start + timedelta(hours=1))
+        await self.set_activity_start_message_sent(self.clan_tag, 'raid_weekend_start_reminder', raid_weekend_start)
+        if is_raid_launched:
+            return False
+        text = (
+            f'<b>📣 Рейды можно запускать</b>\n'
+            f'\n'
+            f'{self.of.event_datetime(
+                Event.RW, self.of.from_datetime(raid_weekend_start), self.of.from_datetime(raid_weekend_end), True
+            )}\n'
+        )
+        rows = await self.acquired_connection.fetch('''
+            SELECT chat_id
+            FROM clan_chat
+            WHERE clan_tag = $1 AND send_activity_updates
+        ''', self.clan_tag)
+        for row in rows:
+            await self.send_message_to_chat(
+                user_id=None,
+                chat_id=row['chat_id'],
+                message_text=text,
+                user_ids_to_ping=await self.get_clan_member_user_ids(row['chat_id'], ['admin', 'coLeader', 'leader'])
+            )
         return True
 
     async def load_raid_weekend_timing(self) -> Optional[dict]:
@@ -1992,16 +2048,18 @@ class DatabaseManager:
         ''', self.clan_tag)
         return [row['chat_id'] for row in row]
 
-    async def get_clan_member_user_ids(self, chat_id: int) -> list[int]:
+    async def get_clan_member_user_ids(self, chat_id: int, player_roles: Optional[list[str]] = None) -> list[int]:
         rows = await self.acquired_connection.fetch('''
             SELECT DISTINCT user_id, first_name
             FROM
                 player
                 JOIN player_bot_user USING (clan_tag, player_tag)
                 JOIN bot_user USING (clan_tag, chat_id, user_id)
-            WHERE clan_tag = $1 AND is_player_in_clan AND chat_id = $2 AND is_user_in_chat
+            WHERE
+                clan_tag = $1 AND is_player_in_clan AND chat_id = $2 AND is_user_in_chat
+                AND ($3::varchar[] IS NULL OR player_role = any($3::varchar[]))
             ORDER BY first_name
-        ''', self.clan_tag, chat_id)
+        ''', self.clan_tag, chat_id, player_roles)
         return [row['user_id'] for row in rows]
 
     async def get_war_member_user_ids(self, chat_id: int, war: dict, attacks_required: int) -> list[int]:

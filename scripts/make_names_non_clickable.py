@@ -24,10 +24,15 @@ import re
 
 import asyncpg
 from pyrogram import Client
+from pyrogram import utils as pyrogram_utils
 from pyrogram.enums import ParseMode
 from pyrogram.errors import FloodWait, MessageNotModified
 
 from config import config
+
+# Pyrogram 2.0.106 knows only the old 32-bit chat ids, newer groups and supergroups (like -1003406349643) have bigger ones
+pyrogram_utils.MIN_CHAT_ID = -999999999999
+pyrogram_utils.MIN_CHANNEL_ID = -1009999999999
 
 BATCH_SIZE = 200
 SECONDS_BETWEEN_BATCHES = 1

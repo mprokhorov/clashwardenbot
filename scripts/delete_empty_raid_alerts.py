@@ -18,9 +18,14 @@ from datetime import datetime, timedelta, UTC
 
 import asyncpg
 from pyrogram import Client
+from pyrogram import utils as pyrogram_utils
 from pyrogram.errors import FloodWait, RPCError
 
 from config import config
+
+# Pyrogram 2.0.106 knows only the old 32-bit chat ids, newer groups and supergroups (like -1003406349643) have bigger ones
+pyrogram_utils.MIN_CHAT_ID = -999999999999
+pyrogram_utils.MIN_CHANNEL_ID = -1009999999999
 
 ALERT_TITLE = '💬 Рейды закончились'
 NO_ATTACKS_MARK = 'Сделано атак: 0 /'
@@ -166,8 +171,9 @@ async def main() -> None:
                         for message in messages:
                             found[message.id] = message
                         low = max(low, start_id - BATCH_SIZE)
-                except RPCError as e:
-                    print(f'   ⚠️  chat is not accessible: {getattr(e, "ID", e)}\n')
+                except Exception as e:
+                    # One broken chat must not stop the others
+                    print(f'   ⚠️  chat skipped: {getattr(e, "ID", None) or repr(e)}\n')
                     continue
                 lines = [(moment, f'      ·  {"—":<9} {moment:%d.%m.%Y %H:%M}  not found in the chat (already deleted?)') for moment in missing]
                 for message in found.values():

@@ -34,9 +34,11 @@ class OutputFormatter:
     def bidi_isolate(text: str) -> str:
         # Right-to-left letters (Arabic, Hebrew) in a name reorder the neighbouring numbers and signs of the whole line.
         # Unicode isolates (FSI ... PDI) keep such a name as one block: inside it is read right to left as usual,
-        # outside the line is laid out as if the name were not there; PDI also ends direction overrides from the name
+        # outside the line is laid out as if the name were not there; PDI also ends direction overrides from the name.
+        # Telegram Desktop ignores isolates when it picks the direction of a line, so a line such as "1. <name>: 2 / 2"
+        # would still be right aligned and reversed; the left-to-right mark (LRM) before the name keeps it left to right
         if any(unicodedata.bidirectional(char) in BIDI_ISOLATED_CLASSES for char in text):
-            return f'\u2068{text}\u2069'
+            return f'\u200e\u2068{text}\u2069'
         return text
 
     @staticmethod

@@ -492,7 +492,7 @@ async def cwl_rating_choose(
     player_tags = await dm.get_cwl_ratings(cwl_season, cwlws, count_bonus_points)
     button_rows = [[
         InlineKeyboardButton(
-            text=f'{dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n',
+            text=f'{dm.of.bidi_isolate(dm.load_name(player_tag))}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n',
             callback_data=CWLCallbackFactory(
                 output_view=OutputView.cwl_rating_details,
                 count_bonus_points=count_bonus_points,
@@ -917,7 +917,9 @@ async def cwl_days_list(
             cwl_day_emoji_and_number = f'⚙️ {cwl_day + 1}. '
         else:
             cwl_day_emoji_and_number = f'❓ {cwl_day + 1}. '
-        cwl_day_titles.append(f'{cwl_day_emoji_and_number}{cwl_clan['name']} vs {cwl_opponent['name']}')
+        cwl_day_titles.append(
+            f'{cwl_day_emoji_and_number}{dm.of.bidi_isolate(cwl_clan['name'])} vs {dm.of.bidi_isolate(cwl_opponent['name'])}'
+        )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
         callback_data=CWLCallbackFactory(

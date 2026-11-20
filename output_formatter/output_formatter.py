@@ -1,3 +1,4 @@
+import unicodedata
 from datetime import datetime, timedelta, UTC
 from enum import auto, IntEnum
 from typing import Optional
@@ -19,6 +20,9 @@ class Event(IntEnum):
     SE = auto()
 
 
+BIDI_ISOLATED_CLASSES = {'R', 'AL', 'RLE', 'RLO', 'LRE', 'LRO', 'RLI', 'LRI', 'FSI'}
+
+
 class OutputFormatter:
     # Player names that Telegram turns into links (like "ard.man"), cached from the non_clickable_player_name table
     non_clickable_names: frozenset[str] = frozenset()
@@ -27,8 +31,17 @@ class OutputFormatter:
         self.utc_to_local_hours = utc_to_local_hours
 
     @staticmethod
+    def bidi_isolate(text: str) -> str:
+        # Right-to-left letters (Arabic, Hebrew) in a name reorder the neighbouring numbers and signs of the whole line.
+        # Unicode isolates (FSI ... PDI) keep such a name as one block: inside it is read right to left as usual,
+        # outside the line is laid out as if the name were not there; PDI also ends direction overrides from the name
+        if any(unicodedata.bidirectional(char) in BIDI_ISOLATED_CLASSES for char in text):
+            return f'\u2068{text}\u2069'
+        return text
+
+    @staticmethod
     def to_html(text: str) -> str:
-        html_text = text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;')
+        html_text = OutputFormatter.bidi_isolate(text.replace('&', '&amp;').replace('<', '&lt;').replace('>', '&gt;'))
         if text in OutputFormatter.non_clickable_names:
             return f'<code>{html_text}</code>'
         return html_text

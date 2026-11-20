@@ -549,7 +549,7 @@ async def hero_equipment_choose(
     ]
     button_rows = [[
         InlineKeyboardButton(
-            text=f'{dm.load_name(player_tag)}: {format(level_progress * 100, '.2f')}%',
+            text=f'{dm.of.bidi_isolate(dm.load_name(player_tag))}: {format(level_progress * 100, '.2f')}%',
             callback_data=MiscellaneousCallbackFactory(
                 output_view=OutputView.hero_equipment,
                 hero_equipment_view=HeroEquipmentView.details,

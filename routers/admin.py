@@ -136,7 +136,7 @@ async def link_select_chat(
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(
-                text=f'{row['title']}',
+                text=dm.of.bidi_isolate(f'{row['title']}'),
                 callback_data=AdminCallbackFactory(
                     output_view=OutputView.link, link=Link.select_player_from_unknown, chat_id=row['chat_id']
                 ).pack()
@@ -175,7 +175,7 @@ async def link_select_player(
     keyboard = InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(
-                text=dm.load_name_and_tag(row['player_tag']), callback_data=AdminCallbackFactory(
+                text=dm.of.bidi_isolate(dm.load_name_and_tag(row['player_tag'])), callback_data=AdminCallbackFactory(
                     output_view=OutputView.link,
                     link=Link.select_user_from_unknown,
                     chat_id=callback_data.chat_id,
@@ -224,7 +224,7 @@ async def link_select_user(
     ''', dm.clan_tag, callback_data.chat_id, callback_data.link == Link.select_user_from_all)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text=dm.load_full_name_and_username(callback_data.chat_id, row['user_id']),
+            text=dm.of.bidi_isolate(dm.load_full_name_and_username(callback_data.chat_id, row['user_id'])),
             callback_data=AdminCallbackFactory(
                 output_view=OutputView.link,
                 link=Link.finish,
@@ -320,7 +320,7 @@ async def unlink_select_chat(
     rows = await dm.load_groups_where_user_can_link_members(chat_id, user_id)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text=f'{row['title']}',
+            text=dm.of.bidi_isolate(f'{row['title']}'),
             callback_data=AdminCallbackFactory(
                 output_view=OutputView.unlink, unlink=Unlink.select_player, chat_id=row['chat_id']
             ).pack()
@@ -360,7 +360,7 @@ async def unlink_select_player(
     ''', dm.clan_tag, callback_data.chat_id)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text=dm.load_name_and_tag(row['player_tag']),
+            text=dm.of.bidi_isolate(dm.load_name_and_tag(row['player_tag'])),
             callback_data=AdminCallbackFactory(
                 output_view=OutputView.unlink,
                 unlink=Unlink.select_user,
@@ -408,7 +408,7 @@ async def unlink_select_user(
     ''', dm.clan_tag, callback_data.player_tag)
     keyboard = InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text=dm.load_full_name_and_username(callback_data.chat_id, row['user_id']),
+            text=dm.of.bidi_isolate(dm.load_full_name_and_username(callback_data.chat_id, row['user_id'])),
             callback_data=AdminCallbackFactory(
                 output_view=OutputView.unlink,
                 unlink=Unlink.finish,
@@ -631,7 +631,7 @@ async def give_bonus_select_player(
     player_tags = await dm.get_cwl_ratings(cwl_season, cwlws)
     button_rows = [
         [InlineKeyboardButton(
-            text=f'{dm.load_name(player_tag)}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n',
+            text=f'{dm.of.bidi_isolate(dm.load_name(player_tag))}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n',
             callback_data=AdminCallbackFactory(
                 output_view=OutputView.give_bonus,
                 player_tag=player_tag,

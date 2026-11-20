@@ -173,7 +173,7 @@ async def rating_choose(
     )
     button_rows = [[
         InlineKeyboardButton(
-            text=f'{r.player_name}: {dm.of.format_and_rstrip(r.total_points, 3)} 💎',
+            text=f'{dm.of.bidi_isolate(r.player_name)}: {dm.of.format_and_rstrip(r.total_points, 3)} 💎',
             callback_data=RatingCallbackFactory(
                 output_view=OutputView.rating_details, season=season, show_all=show_all, player_tag=r.player_tag
             ).pack()

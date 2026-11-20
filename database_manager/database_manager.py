@@ -1907,24 +1907,6 @@ class DatabaseManager:
             f'{self.of.to_html(self.load_full_name(chat_id, user_id))}</a>'
         )
 
-    def load_mentioned_first_name_and_username_to_html(self, chat_id: int, user_id: int) -> str:
-        text = (
-            f'<a href="tg://user?id={user_id}">'
-            f'{self.of.to_html(self.load_first_name(chat_id, user_id))}</a>'
-        )
-        if self.load_username(chat_id, user_id) is not None:
-            text += f' {self.of.to_html(self.load_username(chat_id, user_id))}'
-        return text
-
-    def load_mentioned_full_name_and_username_to_html(self, chat_id: int, user_id: int) -> str:
-        text = (
-            f'<a href="tg://user?id={user_id}">'
-            f'{self.of.to_html(self.load_full_name(chat_id, user_id))}</a>'
-        )
-        if self.load_username(chat_id, user_id) is not None:
-            text += f' {self.of.to_html(self.load_username(chat_id, user_id))}'
-        return text
-
     async def dump_message_owner(self, message: Message, user: User) -> None:
         await self.acquired_connection.execute('''
             INSERT INTO message_bot_user (clan_tag, chat_id, message_id, user_id)
@@ -2159,7 +2141,7 @@ class DatabaseManager:
             message_text += (
                 f'\n'
                 f'{', '.join(
-                    self.load_mentioned_first_name_and_username_to_html(chat_id, user_id_to_ping)
+                    self.load_mentioned_first_name_to_html(chat_id, user_id_to_ping)
                     for user_id_to_ping in user_ids_to_ping
                 )}\n')
         log_text = f'Message "{message_text}" was sent to group {chat_title} ({chat_id})'
@@ -2252,7 +2234,7 @@ class DatabaseManager:
             )
         ):
             if ping:
-                text += f'👤 {self.load_mentioned_full_name_and_username_to_html(chat_id, user_id)} — '
+                text += f'👤 {self.load_mentioned_full_name_to_html(chat_id, user_id)} — '
             else:
                 text += f'👤 {self.of.to_html(self.load_full_name(chat_id, user_id))} — '
             text += f'{', '.join(

@@ -642,28 +642,30 @@ class OutputFormatter:
         return text
 
     def raids_ongoing_or_ended(self, raids: dict) -> str:
+        # Right after the start, before the first attack, the weekend has no attack log yet
+        attack_log = raids.get('attackLog', [])
         text = (
             f'{self.event_datetime(Event.RW, raids['startTime'], raids['endTime'], True)}\n'
             f'\n'
             f'Завершено рейдов: {len([
-                raid for raid in raids['attackLog']
+                raid for raid in attack_log
                 if all(district['destructionPercent'] == 100 for district in raid['districts'])
             ])} ⚔️\n'
         )
-        if len(raids['attackLog']) > 0:
-            current_raid_districts = raids['attackLog'][-1]['districts']
+        if len(attack_log) > 0:
+            current_raid_districts = attack_log[-1]['districts']
             text += (
                 f'Уничтожено районов в текущем рейде: '
                 f'{len([district for district in current_raid_districts if district['destructionPercent'] == 100])} '
                 f'/ {len(current_raid_districts)}\n'
             )
         text += (
-            f'Сделано атак: {raids['totalAttacks']} / {6 * 50} 🗡️\n'
-            f'Получено столичного золота: {raids['capitalTotalLoot']} {self.get_capital_gold_emoji()}\n'
+            f'Сделано атак: {raids.get('totalAttacks', 0)} / {6 * 50} 🗡️\n'
+            f'Получено столичного золота: {raids.get('capitalTotalLoot', 0)} {self.get_capital_gold_emoji()}\n'
         )
         if self.state(raids) in ['ended']:
             text += (
-                f'Награда за 6 атак: {int(raids['offensiveReward']) * 6 + int(raids['defensiveReward'])} '
+                f'Награда за 6 атак: {int(raids.get('offensiveReward', 0)) * 6 + int(raids.get('defensiveReward', 0))} '
                 f'{self.get_raid_medal_emoji()}\n'
             )
         return text

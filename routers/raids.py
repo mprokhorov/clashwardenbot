@@ -62,7 +62,7 @@ async def raids_attacks(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[I
     raids = await dm.load_raid_weekend()
     if dm.of.state(raids) in ['ongoing', 'ended']:
         raids_members = []
-        for raids_member in raids['members']:
+        for raids_member in raids.get('members', []):
             raids_members.append(
                 RaidsMember(
                     player_tag=raids_member['tag'],
@@ -124,7 +124,7 @@ async def raids_skips(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode
     raids = await dm.load_raid_weekend()
     if dm.of.state(raids) in ['ongoing', 'ended']:
         raids_members = []
-        for raids_member in raids['members']:
+        for raids_member in raids.get('members', []):
             raids_members.append(
                 RaidsMember(
                     player_tag=raids_member['tag'],
@@ -168,7 +168,7 @@ async def raids_ping(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode,
     raids = await dm.load_raid_weekend()
     if dm.of.state(raids) in ['ongoing', 'ended']:
         raids_members = []
-        for raids_member in raids['members']:
+        for raids_member in raids.get('members', []):
             raids_members.append(
                 RaidsMember(
                     player_tag=raids_member['tag'],
@@ -218,7 +218,7 @@ async def raids_analysis(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[
             f'\n'
         )
         clan_attacks_by_district = {}
-        for attack_log in raids['attackLog']:
+        for attack_log in raids.get('attackLog', []):
             for district in attack_log['districts']:
                 if district['destructionPercent'] != 100:
                     continue

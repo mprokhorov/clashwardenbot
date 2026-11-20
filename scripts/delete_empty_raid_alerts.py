@@ -13,6 +13,7 @@ Run from the bot directory as the bot user:
 """
 import argparse
 import asyncio
+import math
 import re
 from datetime import datetime, timedelta, UTC
 
@@ -32,7 +33,6 @@ NO_ATTACKS_MARK = 'Сделано атак: 0 /'
 BATCH_SIZE = 200
 SECONDS_BETWEEN_REQUESTS = 1
 EMPTY_BATCHES_AT_THE_END = 5
-MAX_MESSAGE_ID = 2 ** 26
 SEARCH_MARGIN = timedelta(minutes=2)
 
 
@@ -64,38 +64,51 @@ class ChatScanner:
     def __init__(self, app: Client, chat_id: int):
         self.app = app
         self.chat_id = chat_id
-        self.first_messages = {}
+        self.batches = {}
+        self.requests = 0
 
-    async def get_batch(self, first_id: int) -> list:
-        return await call_with_flood_wait(self.app.get_messages, self.chat_id, list(range(first_id, first_id + BATCH_SIZE)))
+    async def batch(self, batch_start: int) -> list:
+        # Existing messages with ids batch_start..batch_start + 199 (deleted messages leave gaps), cached
+        if batch_start not in self.batches:
+            self.requests += 1
+            messages = await call_with_flood_wait(
+                self.app.get_messages, self.chat_id, list(range(batch_start, batch_start + BATCH_SIZE))
+            )
+            self.batches[batch_start] = [message for message in messages if not message.empty]
+        return self.batches[batch_start]
 
-    async def first_message_from(self, message_id: int):
-        # The first existing message with id >= message_id (deleted messages leave gaps)
-        batch_start = (message_id // BATCH_SIZE) * BATCH_SIZE + 1
-        if batch_start not in self.first_messages:
-            messages = [message for message in await self.get_batch(batch_start) if not message.empty]
-            self.first_messages[batch_start] = messages[0] if messages else None
-        return self.first_messages[batch_start]
+    async def find_upper_bound(self) -> int:
+        # Galloping: batches at 1, 201, 401, 801, 1601, ... until several probes in a row are empty,
+        # so the size of the chat is known after a few requests instead of guessing a huge bound
+        batch_start, step, empty_probes, upper_bound = 1, BATCH_SIZE, 0, BATCH_SIZE
+        while empty_probes < 3:
+            if await self.batch(batch_start):
+                empty_probes = 0
+                upper_bound = batch_start + 2 * step
+            else:
+                empty_probes += 1
+            batch_start += step
+            step *= 2
+        return upper_bound
 
     async def first_id_after(self, moment: float, low: int, high: int) -> int:
         # Binary search over batches: the first batch that contains a message sent at or after the moment
         while high - low > BATCH_SIZE:
             middle = (low + high) // 2
-            message = await self.first_message_from(middle)
-            if message is not None and to_timestamp(message.date) < moment:
+            messages = await self.batch((middle // BATCH_SIZE) * BATCH_SIZE + 1)
+            if messages and to_timestamp(messages[0].date) < moment:
                 low = middle
             else:
                 high = middle
         return low
 
-    async def find_alerts(self, start_id: int, moment_to: float, bot_id: int) -> list:
+    async def read_forward(self, start_id: int, bot_id: int, moment_to: float = math.inf) -> list:
         # Reads forward until a message newer than the moment, or until the end of the chat
         found = []
-        batch_start = max(start_id - BATCH_SIZE, 1)
+        batch_start = max(((start_id - BATCH_SIZE) // BATCH_SIZE) * BATCH_SIZE + 1, 1)
         empty_batches = 0
         while empty_batches < EMPTY_BATCHES_AT_THE_END:
-            messages = await self.get_batch(batch_start)
-            existing = [message for message in messages if not message.empty]
+            existing = await self.batch(batch_start)
             found += [message for message in existing if is_empty_raid_alert(message, bot_id, self.chat_id)]
             if existing and to_timestamp(existing[-1].date) > moment_to:
                 break
@@ -158,19 +171,28 @@ async def main() -> None:
                     continue
                 print(f'   Chat «{chat_titles.get((clan_tag, chat_id), chat_id)}» ({chat_id}): {len(moments)} alerts in the log')
                 scanner = ChatScanner(app, chat_id)
-                found = {}
-                missing = []
-                low = 1
+                margin = SEARCH_MARGIN.total_seconds()
+                moments_utc = [moment.replace(tzinfo=UTC).timestamp() for moment in moments]
                 try:
-                    for moment in moments:
-                        moment_utc = moment.replace(tzinfo=UTC).timestamp()
-                        start_id = await scanner.first_id_after(moment_utc - SEARCH_MARGIN.total_seconds(), low, MAX_MESSAGE_ID)
-                        messages = await scanner.find_alerts(start_id, moment_utc + SEARCH_MARGIN.total_seconds(), me.id)
-                        if not messages:
-                            missing.append(moment.replace(tzinfo=UTC).astimezone().replace(tzinfo=None))
-                        for message in messages:
-                            found[message.id] = message
-                        low = max(low, start_id - BATCH_SIZE)
+                    upper_bound = await scanner.find_upper_bound()
+                    batch_count = upper_bound // BATCH_SIZE + 1
+                    # A small chat is cheaper to read whole than to search every alert in it
+                    if batch_count <= len(moments) * math.ceil(math.log2(batch_count + 1)):
+                        print(f'   reading the whole chat (about {batch_count * BATCH_SIZE} message ids)...')
+                        found_messages = await scanner.read_forward(1, me.id)
+                    else:
+                        print(f'   searching {len(moments)} alerts among about {batch_count * BATCH_SIZE} message ids...')
+                        found_messages, low = [], 1
+                        for moment_utc in moments_utc:
+                            start_id = await scanner.first_id_after(moment_utc - margin, low, upper_bound)
+                            found_messages += await scanner.read_forward(start_id, me.id, moment_utc + margin)
+                            low = max(low, start_id - BATCH_SIZE)
+                    found = {message.id: message for message in found_messages}
+                    missing = [
+                        moment.replace(tzinfo=UTC).astimezone().replace(tzinfo=None)
+                        for moment, moment_utc in zip(moments, moments_utc)
+                        if not any(abs(to_timestamp(message.date) - moment_utc) <= margin for message in found.values())
+                    ]
                 except Exception as e:
                     # One broken chat must not stop the others
                     print(f'   ⚠️  chat skipped: {getattr(e, "ID", None) or repr(e)}\n')
@@ -182,7 +204,7 @@ async def main() -> None:
                     lines.append((message.date, f'      {mark}  #{message.id:<8} {message.date:%d.%m.%Y %H:%M}  {end_line}'))
                 for _, line in sorted(lines):
                     print(line)
-                print(f'   → {len(found)} to delete, {len(missing)} not found')
+                print(f'   → {len(found)} to delete, {len(missing)} not found ({scanner.requests} requests to Telegram)')
                 total_found += len(found)
                 total_missing += len(missing)
                 if args.delete and found:

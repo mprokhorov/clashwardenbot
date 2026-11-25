@@ -85,8 +85,7 @@ async def build_raids_nav_row(
         text='🧾 Все рейды',
         callback_data=RaidsCallbackFactory(
             output_view=all_output_view,
-            raid_time=selected_raid_time,
-            page=0
+            raid_time=selected_raid_time
         ).pack()
     ))
     return nav_row
@@ -401,10 +400,10 @@ async def raids_all_list(
         OutputView.raids_analysis_all: ('📊 Анализ атак в рейдах', OutputView.raids_analysis)
     }
     title, target_view = view_config[callback_data.output_view]
-    page = callback_data.page or 0
-    raid_weekends, total = await dm.load_raid_weekends_page(page, RAIDS_PAGE_SIZE)
+    raid_weekends, total, page = await dm.load_raid_weekends_page(
+        callback_data.page, RAIDS_PAGE_SIZE, target_time=raid_ts_to_datetime(callback_data.raid_time)
+    )
     total_pages = max(1, (total + RAIDS_PAGE_SIZE - 1) // RAIDS_PAGE_SIZE)
-    page = max(0, min(page, total_pages - 1))
     if total == 0:
         text = (
             f'<b>{title}</b>\n'

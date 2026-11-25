@@ -121,7 +121,6 @@ async def build_cw_nav_row(
         callback_data=CWCallbackFactory(
             output_view=all_output_view,
             cw_time=selected_cw_time,
-            page=0,
             **cb_kwargs
         ).pack()
     ))
@@ -477,10 +476,10 @@ async def cw_all_list(
         OutputView.cw_skips_all: ('🕒 Не проатаковавшие в КВ', OutputView.cw_skips)
     }
     title, target_view = view_config[callback_data.output_view]
-    page = callback_data.page or 0
-    wars, total = await dm.load_clan_wars_page(page, CW_PAGE_SIZE)
+    wars, total, page = await dm.load_clan_wars_page(
+        callback_data.page, CW_PAGE_SIZE, target_time=cw_ts_to_datetime(callback_data.cw_time)
+    )
     total_pages = max(1, (total + CW_PAGE_SIZE - 1) // CW_PAGE_SIZE)
-    page = max(0, min(page, total_pages - 1))
     preserved_kwargs = {
         'show_opponent_info': callback_data.show_opponent_info,
         'cw_map_side': callback_data.cw_map_side,

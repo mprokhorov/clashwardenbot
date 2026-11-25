@@ -779,14 +779,26 @@ class DatabaseManager:
             dict(newer_row) if newer_row is not None else None
         )
 
-    async def load_clan_wars_page(self, page: int, page_size: int) -> tuple[list[dict], int]:
+    async def load_clan_wars_page(
+            self, page: Optional[int], page_size: int, target_time: Optional[datetime] = None
+    ) -> tuple[list[dict], int, int]:
         total = await self.acquired_connection.fetchval('''
             SELECT COUNT(*)
             FROM clan_war
             WHERE clan_tag = $1
         ''', self.clan_tag)
         if total == 0:
-            return [], 0
+            return [], 0, 0
+        if page is None:
+            if target_time is not None:
+                newer_count = await self.acquired_connection.fetchval('''
+                    SELECT COUNT(*)
+                    FROM clan_war
+                    WHERE clan_tag = $1 AND preparation_start_time >= $2
+                ''', self.clan_tag, target_time + timedelta(seconds=1))
+                page = newer_count // page_size
+            else:
+                page = 0
         total_pages = (total + page_size - 1) // page_size
         page = max(0, min(page, total_pages - 1))
         rows = await self.acquired_connection.fetch('''
@@ -805,7 +817,7 @@ class DatabaseManager:
             ORDER BY preparation_start_time DESC
             LIMIT $2 OFFSET $3
         ''', self.clan_tag, page_size, page * page_size)
-        return [dict(row) for row in rows], total
+        return [dict(row) for row in rows], total, page
 
     async def dump_opponent_info(self, war: dict) -> bool:
         # Opponent players, war log and win streak are shown only for wars in preparation or in progress and
@@ -1159,14 +1171,26 @@ class DatabaseManager:
             dict(newer_row) if newer_row is not None else None
         )
 
-    async def load_raid_weekends_page(self, page: int, page_size: int) -> tuple[list[dict], int]:
+    async def load_raid_weekends_page(
+            self, page: Optional[int], page_size: int, target_time: Optional[datetime] = None
+    ) -> tuple[list[dict], int, int]:
         total = await self.acquired_connection.fetchval('''
             SELECT COUNT(*)
             FROM raid_weekend
             WHERE clan_tag = $1
         ''', self.clan_tag)
         if total == 0:
-            return [], 0
+            return [], 0, 0
+        if page is None:
+            if target_time is not None:
+                newer_count = await self.acquired_connection.fetchval('''
+                    SELECT COUNT(*)
+                    FROM raid_weekend
+                    WHERE clan_tag = $1 AND start_time >= $2
+                ''', self.clan_tag, target_time + timedelta(seconds=1))
+                page = newer_count // page_size
+            else:
+                page = 0
         total_pages = (total + page_size - 1) // page_size
         page = max(0, min(page, total_pages - 1))
         rows = await self.acquired_connection.fetch('''
@@ -1183,7 +1207,7 @@ class DatabaseManager:
             ORDER BY start_time DESC
             LIMIT $2 OFFSET $3
         ''', self.clan_tag, page_size, page * page_size)
-        return [dict(row) for row in rows], total
+        return [dict(row) for row in rows], total, page
 
     async def raid_weekend_alert(self, old_raids: dict, raids: dict) -> None:
         await self.acquired_connection.execute('''

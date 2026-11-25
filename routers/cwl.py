@@ -142,7 +142,6 @@ def build_cwl_season_nav_row(
             output_view=all_seasons_view,
             cwl_season=selected_season,
             cwl_day=back_cwl_day,
-            page=0,
             **cb_kwargs
         ).pack()
     ))
@@ -1145,7 +1144,13 @@ async def cwl_seasons_list(
     seasons_desc = list(reversed(seasons))
     total = len(seasons_desc)
     total_pages = max(1, (total + CWL_PAGE_SIZE - 1) // CWL_PAGE_SIZE)
-    page = max(0, min(callback_data.page or 0, total_pages - 1))
+    if callback_data.page is not None:
+        page = callback_data.page
+    elif callback_data.cwl_season is not None and callback_data.cwl_season in seasons_desc:
+        page = seasons_desc.index(callback_data.cwl_season) // CWL_PAGE_SIZE
+    else:
+        page = 0
+    page = max(0, min(page, total_pages - 1))
     page_seasons = seasons_desc[page * CWL_PAGE_SIZE:(page + 1) * CWL_PAGE_SIZE]
     preserved_kwargs = {
         'show_opponent_info': callback_data.show_opponent_info,

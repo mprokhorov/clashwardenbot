@@ -799,7 +799,7 @@ class OutputFormatter:
             text += (
                 f'Уничтожено районов в текущем рейде: '
                 f'{len([district for district in current_raid_districts if district['destructionPercent'] == 100])} '
-                f'/ {len(current_raid_districts)}\n'
+                f'/ {len(current_raid_districts)} 🏰\n'
             )
         text += (
             f'Сделано атак: {raids.get('totalAttacks', 0)} / {6 * 50} 🗡️\n'

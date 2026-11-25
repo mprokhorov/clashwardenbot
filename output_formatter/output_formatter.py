@@ -1,3 +1,4 @@
+import calendar
 import unicodedata
 from datetime import datetime, timedelta, UTC
 from enum import auto, IntEnum
@@ -333,6 +334,54 @@ class OutputFormatter:
         return f'{dt_start.strftime("%d.%m.%y")}–{dt_end.strftime("%d.%m.%y")}'
 
     @staticmethod
+    def get_years_in_russian(years: int) -> str:
+        if years == 0:
+            return ''
+        if 11 <= years % 100 <= 19:
+            return f'{years} лет'
+        if years % 10 == 1:
+            return f'{years} год'
+        if 2 <= years % 10 <= 4:
+            return f'{years} года'
+        return f'{years} лет'
+
+    @staticmethod
+    def get_months_in_russian(months: int) -> str:
+        if months == 0:
+            return ''
+        if 11 <= months % 100 <= 19:
+            return f'{months} месяцев'
+        if months % 10 == 1:
+            return f'{months} месяц'
+        if 2 <= months % 10 <= 4:
+            return f'{months} месяца'
+        return f'{months} месяцев'
+
+    @staticmethod
+    def add_months(dt: datetime, months: int) -> datetime:
+        month_index = (dt.month - 1) + months
+        year = dt.year + month_index // 12
+        month = month_index % 12 + 1
+        day = min(dt.day, calendar.monthrange(year, month)[1])
+        return dt.replace(year=year, month=month, day=day)
+
+    @staticmethod
+    def calendar_diff(dt1: datetime, dt2: datetime) -> tuple[int, int, int, int, int, int]:
+        earlier, later = (dt1, dt2) if dt1 <= dt2 else (dt2, dt1)
+        total_months = (later.year - earlier.year) * 12 + (later.month - earlier.month)
+        anchor = OutputFormatter.add_months(earlier, total_months)
+        if anchor > later:
+            total_months -= 1
+            anchor = OutputFormatter.add_months(earlier, total_months)
+        years, months = divmod(total_months, 12)
+        remainder = later - anchor
+        days = remainder.days
+        hours = remainder.seconds // 3600
+        minutes = (remainder.seconds % 3600) // 60
+        seconds = remainder.seconds % 60
+        return years, months, days, hours, minutes, seconds
+
+    @staticmethod
     def get_days_in_russian(days: int) -> str:
         if 0 <= days < 20:
             days_in_russian = [
@@ -420,11 +469,7 @@ class OutputFormatter:
         else:
             dt_event_start = None
             dt_event += self.utc_to_local_hours
-        dt_diff = abs(dt_event - dt_now)
-        days = dt_diff.days
-        hours = dt_diff.seconds // 3600
-        minutes = (dt_diff.seconds % 3600) // 60
-        seconds = dt_diff.seconds % 60
+        years, months, days, hours, minutes, seconds = self.calendar_diff(dt_event, dt_now)
 
         event_name = {
             Event.CW: 'КВ',
@@ -462,7 +507,15 @@ class OutputFormatter:
             Event.SE: 'Сезон закончится'
         }
 
-        if days != 0:
+        if years != 0:
+            dt_diff_str = self.get_years_in_russian(years)
+            if months != 0:
+                dt_diff_str += ' и ' + self.get_months_in_russian(months)
+        elif months != 0:
+            dt_diff_str = self.get_months_in_russian(months)
+            if days != 0:
+                dt_diff_str += ' и ' + self.get_days_in_russian(days)
+        elif days != 0:
             dt_diff_str = self.get_days_in_russian(days)
             if hours != 0:
                 dt_diff_str += ' и ' + self.get_hours_in_russian(hours)
@@ -527,13 +580,13 @@ class OutputFormatter:
         dt_now = datetime.now(UTC).replace(tzinfo=None) + self.utc_to_local_hours
         dt_event = self.to_datetime(dt_data) + self.utc_to_local_hours
 
-        dt_diff = abs(dt_event - dt_now)
-        days = dt_diff.days
-        hours = dt_diff.seconds // 3600
-        minutes = (dt_diff.seconds % 3600) // 60
-        seconds = dt_diff.seconds % 60
+        years, months, days, hours, minutes, seconds = self.calendar_diff(dt_event, dt_now)
 
-        if days != 0:
+        if years != 0:
+            dt_diff_str = self.get_years_in_russian(years)
+        elif months != 0:
+            dt_diff_str = self.get_months_in_russian(months)
+        elif days != 0:
             dt_diff_str = self.get_days_in_russian(days)
         elif hours != 0:
             dt_diff_str = self.get_hours_in_russian(hours)
@@ -544,12 +597,12 @@ class OutputFormatter:
         else:
             dt_diff_str = ''
 
-        if dt_now < dt_event:
-            return f'через {dt_diff_str}'
-        elif dt_now > dt_event:
-            return f'{dt_diff_str} назад'
-        else:
+        if dt_diff_str == '':
             return 'только что'
+        elif dt_now < dt_event:
+            return f'через {dt_diff_str}'
+        else:
+            return f'{dt_diff_str} назад'
 
     @staticmethod
     def state(event: Optional[dict]) -> Optional[str]:

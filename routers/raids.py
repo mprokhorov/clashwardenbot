@@ -1,4 +1,5 @@
 from contextlib import suppress
+from datetime import datetime, UTC
 from enum import auto, IntEnum
 from typing import Optional
 
@@ -15,20 +16,86 @@ from entities import RaidsMember, RaidsAttack
 
 router = Router()
 
+RAIDS_PAGE_SIZE = 10
+
 
 class OutputView(IntEnum):
     raids_info = auto()
     raids_attacks = auto()
     raids_skips = auto()
     raids_analysis = auto()
+    raids_info_all = auto()
+    raids_attacks_all = auto()
+    raids_skips_all = auto()
+    raids_analysis_all = auto()
 
 
 class RaidsCallbackFactory(CallbackData, prefix='raids'):
     output_view: OutputView
     update: bool = False
+    raid_time: Optional[int] = None
+    page: Optional[int] = None
 
 
-async def raids_info(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+def raid_ts_to_datetime(raid_time: Optional[int]) -> Optional[datetime]:
+    if raid_time is None:
+        return None
+    return datetime.fromtimestamp(raid_time, UTC).replace(tzinfo=None)
+
+
+def datetime_to_ts(dt: datetime) -> int:
+    return int(dt.replace(tzinfo=UTC).timestamp())
+
+
+def raid_range_date(
+        dm: DatabaseManager, start_time: Optional[str], end_time: Optional[str], start_dt: datetime
+) -> str:
+    if start_time and end_time:
+        return dm.of.short_date_range(dm.of.to_datetime(start_time), dm.of.to_datetime(end_time))
+    return dm.of.short_date(start_dt)
+
+
+async def build_raids_nav_row(
+        dm: DatabaseManager,
+        output_view: OutputView,
+        all_output_view: OutputView,
+        raids: dict,
+        selected_raid_time: Optional[int]
+) -> list[InlineKeyboardButton]:
+    start_dt = dm.of.to_datetime(raids['startTime'])
+    older, newer = await dm.load_adjacent_raid_weekends(start_dt)
+    nav_row = []
+    if older is not None:
+        nav_row.append(InlineKeyboardButton(
+            text=f'⬅️ {dm.of.short_date(older["start_time"])}',
+            callback_data=RaidsCallbackFactory(
+                output_view=output_view,
+                raid_time=datetime_to_ts(older['start_time'])
+            ).pack()
+        ))
+    if newer is not None:
+        nav_row.append(InlineKeyboardButton(
+            text=f'➡️ {dm.of.short_date(newer["start_time"])}',
+            callback_data=RaidsCallbackFactory(
+                output_view=output_view,
+                raid_time=datetime_to_ts(newer['start_time'])
+            ).pack()
+        ))
+    nav_row.append(InlineKeyboardButton(
+        text='🧾 Все рейды',
+        callback_data=RaidsCallbackFactory(
+            output_view=all_output_view,
+            raid_time=selected_raid_time,
+            page=0
+        ).pack()
+    ))
+    return nav_row
+
+
+async def raids_info(
+        dm: DatabaseManager, callback_data: Optional[RaidsCallbackFactory]
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    selected_raid_time = callback_data.raid_time if callback_data is not None else None
     text = (
         f'<b>⚔️ Информация о рейдах</b>\n'
         f'\n'
@@ -36,20 +103,30 @@ async def raids_info(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[Inli
     button_row = []
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=RaidsCallbackFactory(output_view=OutputView.raids_info, update=True).pack()
+        callback_data=RaidsCallbackFactory(
+            output_view=OutputView.raids_info, update=True, raid_time=selected_raid_time
+        ).pack()
     )
-    raids = await dm.load_raid_weekend()
+    raids = await dm.load_raid_weekend(raid_ts_to_datetime(selected_raid_time))
     if dm.of.state(raids) in ['ongoing', 'ended']:
         text += dm.of.raids_ongoing_or_ended(raids)
         button_row.append(update_button)
     else:
         text += 'Информация о рейдах отсутствует\n'
         button_row.append(update_button)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[button_row])
+    button_rows = [button_row]
+    if raids is not None:
+        button_rows.append(await build_raids_nav_row(
+            dm, OutputView.raids_info, OutputView.raids_info_all, raids, selected_raid_time
+        ))
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     return text, ParseMode.HTML, keyboard
 
 
-async def raids_attacks(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+async def raids_attacks(
+        dm: DatabaseManager, callback_data: Optional[RaidsCallbackFactory]
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    selected_raid_time = callback_data.raid_time if callback_data is not None else None
     text = (
         f'<b>🗡️ Атаки в рейдах</b>\n'
         f'\n'
@@ -57,12 +134,14 @@ async def raids_attacks(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[I
     button_row = []
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=RaidsCallbackFactory(output_view=OutputView.raids_attacks, update=True).pack()
+        callback_data=RaidsCallbackFactory(
+            output_view=OutputView.raids_attacks, update=True, raid_time=selected_raid_time
+        ).pack()
     )
-    raids = await dm.load_raid_weekend()
+    raids = await dm.load_raid_weekend(raid_ts_to_datetime(selected_raid_time))
     if dm.of.state(raids) in ['ongoing', 'ended']:
         raids_members = []
-        for raids_member in raids['members']:
+        for raids_member in raids.get('members', []):
             raids_members.append(
                 RaidsMember(
                     player_tag=raids_member['tag'],
@@ -107,11 +186,19 @@ async def raids_attacks(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[I
     else:
         text += 'Информация о рейдах отсутствует\n'
         button_row.append(update_button)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[button_row])
+    button_rows = [button_row]
+    if raids is not None:
+        button_rows.append(await build_raids_nav_row(
+            dm, OutputView.raids_attacks, OutputView.raids_attacks_all, raids, selected_raid_time
+        ))
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     return text, ParseMode.HTML, keyboard
 
 
-async def raids_skips(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+async def raids_skips(
+        dm: DatabaseManager, callback_data: Optional[RaidsCallbackFactory], chat_id: int
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    selected_raid_time = callback_data.raid_time if callback_data is not None else None
     text = (
         f'<b>🕒 Не проатаковавшие в рейдах</b>\n'
         f'\n'
@@ -119,12 +206,14 @@ async def raids_skips(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode
     button_row = []
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=RaidsCallbackFactory(output_view=OutputView.raids_skips, update=True).pack()
+        callback_data=RaidsCallbackFactory(
+            output_view=OutputView.raids_skips, update=True, raid_time=selected_raid_time
+        ).pack()
     )
-    raids = await dm.load_raid_weekend()
+    raids = await dm.load_raid_weekend(raid_ts_to_datetime(selected_raid_time))
     if dm.of.state(raids) in ['ongoing', 'ended']:
         raids_members = []
-        for raids_member in raids['members']:
+        for raids_member in raids.get('members', []):
             raids_members.append(
                 RaidsMember(
                     player_tag=raids_member['tag'],
@@ -156,7 +245,12 @@ async def raids_skips(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode
     else:
         text += 'Информация о рейдах отсутствует\n'
         button_row.append(update_button)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[button_row])
+    button_rows = [button_row]
+    if raids is not None:
+        button_rows.append(await build_raids_nav_row(
+            dm, OutputView.raids_skips, OutputView.raids_skips_all, raids, selected_raid_time
+        ))
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     return text, ParseMode.HTML, keyboard
 
 
@@ -168,7 +262,7 @@ async def raids_ping(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode,
     raids = await dm.load_raid_weekend()
     if dm.of.state(raids) in ['ongoing', 'ended']:
         raids_members = []
-        for raids_member in raids['members']:
+        for raids_member in raids.get('members', []):
             raids_members.append(
                 RaidsMember(
                     player_tag=raids_member['tag'],
@@ -201,8 +295,11 @@ async def raids_ping(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode,
     return text, ParseMode.HTML, None
 
 
-async def raids_analysis(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    raids = await dm.load_raid_weekend()
+async def raids_analysis(
+        dm: DatabaseManager, callback_data: Optional[RaidsCallbackFactory]
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    selected_raid_time = callback_data.raid_time if callback_data is not None else None
+    raids = await dm.load_raid_weekend(raid_ts_to_datetime(selected_raid_time))
     text = (
         f'<b>📊 Анализ атак в рейдах</b>\n'
         f'\n'
@@ -210,7 +307,9 @@ async def raids_analysis(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[
     button_row = []
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=RaidsCallbackFactory(output_view=OutputView.raids_analysis, update=True).pack()
+        callback_data=RaidsCallbackFactory(
+            output_view=OutputView.raids_analysis, update=True, raid_time=selected_raid_time
+        ).pack()
     )
     if dm.of.state(raids) in ['ongoing', 'ended']:
         text += (
@@ -218,13 +317,16 @@ async def raids_analysis(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[
             f'\n'
         )
         clan_attacks_by_district = {}
-        for attack_log in raids['attackLog']:
-            for district in attack_log['districts']:
-                if district['destructionPercent'] != 100:
+        for attack_log in raids.get('attackLog', []):
+            for district in attack_log.get('districts', []):
+                if district.get('destructionPercent') != 100:
+                    continue
+                attacks = district.get('attacks', [])
+                if not attacks:
                     continue
                 attack_count = district['attackCount']
-                if attack_count > 1:
-                    average_destruction = district['attacks'][1]['destructionPercent'] / (attack_count - 1)
+                if attack_count > 1 and len(attacks) > 1:
+                    average_destruction = attacks[1]['destructionPercent'] / (attack_count - 1)
                 else:
                     average_destruction = 100.0
                 if district['name'] not in clan_attacks_by_district.keys():
@@ -280,13 +382,109 @@ async def raids_analysis(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[
     else:
         text += 'Информация о рейдах отсутствует\n'
         button_row.append(update_button)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[button_row])
+    button_rows = [button_row]
+    if raids is not None:
+        button_rows.append(await build_raids_nav_row(
+            dm, OutputView.raids_analysis, OutputView.raids_analysis_all, raids, selected_raid_time
+        ))
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
+    return text, ParseMode.HTML, keyboard
+
+
+async def raids_all_list(
+        dm: DatabaseManager, callback_data: RaidsCallbackFactory
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    view_config = {
+        OutputView.raids_info_all: ('⚔️ Информация о рейдах', OutputView.raids_info),
+        OutputView.raids_attacks_all: ('🗡️ Атаки в рейдах', OutputView.raids_attacks),
+        OutputView.raids_skips_all: ('🕒 Не проатаковавшие в рейдах', OutputView.raids_skips),
+        OutputView.raids_analysis_all: ('📊 Анализ атак в рейдах', OutputView.raids_analysis)
+    }
+    title, target_view = view_config[callback_data.output_view]
+    page = callback_data.page or 0
+    raid_weekends, total = await dm.load_raid_weekends_page(page, RAIDS_PAGE_SIZE)
+    total_pages = max(1, (total + RAIDS_PAGE_SIZE - 1) // RAIDS_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    if total == 0:
+        text = (
+            f'<b>{title}</b>\n'
+            f'\n'
+            f'Информация о рейдах отсутствует\n'
+        )
+    elif total_pages > 1:
+        text = (
+            f'<b>{title}</b>\n'
+            f'\n'
+            f'Выберите рейды (стр. {page + 1} / {total_pages}):\n'
+        )
+    else:
+        text = (
+            f'<b>{title}</b>\n'
+            f'\n'
+            f'Выберите рейды:\n'
+        )
+    button_rows = []
+    for rw in raid_weekends:
+        emoji = '🗡' if rw['state'] == 'ongoing' else '⚔️'
+        date_str = raid_range_date(dm, rw['startTime'], rw['endTime'], rw['start_time'])
+        total_attacks = rw['total_attacks'] or 0
+        if rw['state'] == 'ended' and rw['offensive_reward'] is not None and rw['defensive_reward'] is not None:
+            medals = rw['offensive_reward'] * 6 + rw['defensive_reward']
+            summary = f'{medals} ⚪ ({total_attacks} 🗡)'
+        else:
+            summary = f'{total_attacks} 🗡'
+        button_rows.append([InlineKeyboardButton(
+            text=f'{emoji} {date_str} — {summary}',
+            callback_data=RaidsCallbackFactory(
+                output_view=target_view,
+                raid_time=datetime_to_ts(rw['start_time'])
+            ).pack()
+        )])
+    if total_pages > 1:
+        pagination_row = []
+        if page > 0:
+            pagination_row.append(InlineKeyboardButton(
+                text=f'⬅️ Стр. {page}',
+                callback_data=RaidsCallbackFactory(
+                    output_view=callback_data.output_view,
+                    raid_time=callback_data.raid_time,
+                    page=page - 1
+                ).pack()
+            ))
+        if page < total_pages - 1:
+            pagination_row.append(InlineKeyboardButton(
+                text=f'➡️ Стр. {page + 2}',
+                callback_data=RaidsCallbackFactory(
+                    output_view=callback_data.output_view,
+                    raid_time=callback_data.raid_time,
+                    page=page + 1
+                ).pack()
+            ))
+        button_rows.append(pagination_row)
+    back_button = InlineKeyboardButton(
+        text='⬅️ Назад',
+        callback_data=RaidsCallbackFactory(
+            output_view=target_view,
+            raid_time=callback_data.raid_time
+        ).pack()
+    )
+    update_button = InlineKeyboardButton(
+        text='🔄 Обновить',
+        callback_data=RaidsCallbackFactory(
+            output_view=callback_data.output_view,
+            update=True,
+            raid_time=callback_data.raid_time,
+            page=page
+        ).pack()
+    )
+    button_rows.append([back_button, update_button])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     return text, ParseMode.HTML, keyboard
 
 
 @router.message(Command('raids_info'))
 async def command_raids_info(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, reply_markup = await raids_info(dm)
+    text, parse_mode, reply_markup = await raids_info(dm, None)
     reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     await dm.dump_message_owner(reply_from_bot, message.from_user)
 
@@ -299,7 +497,7 @@ async def callback_raids_info(
     if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
-        text, parse_mode, reply_markup = await raids_info(dm)
+        text, parse_mode, reply_markup = await raids_info(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         if callback_data.update:
@@ -310,7 +508,7 @@ async def callback_raids_info(
 
 @router.message(Command('raids_attacks'))
 async def command_raids_attacks(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, reply_markup = await raids_attacks(dm)
+    text, parse_mode, reply_markup = await raids_attacks(dm, None)
     reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     await dm.dump_message_owner(reply_from_bot, message.from_user)
 
@@ -323,7 +521,7 @@ async def callback_raids_attacks(
     if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
-        text, parse_mode, reply_markup = await raids_attacks(dm)
+        text, parse_mode, reply_markup = await raids_attacks(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         if callback_data.update:
@@ -335,7 +533,7 @@ async def callback_raids_attacks(
 @router.message(Command('raids_skips'))
 async def command_raids_skips(message: Message, dm: DatabaseManager) -> None:
     chat_id = await dm.get_group_chat_id(message)
-    text, parse_mode, reply_markup = await raids_skips(dm, chat_id)
+    text, parse_mode, reply_markup = await raids_skips(dm, None, chat_id)
     reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     await dm.dump_message_owner(reply_from_bot, message.from_user)
 
@@ -349,7 +547,7 @@ async def callback_raids_skips(
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         chat_id = await dm.get_group_chat_id(callback_query.message)
-        text, parse_mode, reply_markup = await raids_skips(dm, chat_id)
+        text, parse_mode, reply_markup = await raids_skips(dm, callback_data, chat_id)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         if callback_data.update:
@@ -373,7 +571,7 @@ async def command_raids_ping(message: Message, dm: DatabaseManager) -> None:
 
 @router.message(Command('raids_analysis'))
 async def command_raids_analysis(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, reply_markup = await raids_analysis(dm)
+    text, parse_mode, reply_markup = await raids_analysis(dm, None)
     reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     await dm.dump_message_owner(reply_from_bot, message.from_user)
 
@@ -386,7 +584,27 @@ async def callback_raids_analysis(
     if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
-        text, parse_mode, reply_markup = await raids_analysis(dm)
+        text, parse_mode, reply_markup = await raids_analysis(dm, callback_data)
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        if callback_data.update:
+            await callback_query.answer('Сообщение обновлено')
+        else:
+            await callback_query.answer()
+
+
+@router.callback_query(RaidsCallbackFactory.filter(F.output_view == OutputView.raids_info_all))
+@router.callback_query(RaidsCallbackFactory.filter(F.output_view == OutputView.raids_attacks_all))
+@router.callback_query(RaidsCallbackFactory.filter(F.output_view == OutputView.raids_skips_all))
+@router.callback_query(RaidsCallbackFactory.filter(F.output_view == OutputView.raids_analysis_all))
+async def callback_raids_all_list(
+        callback_query: CallbackQuery, callback_data: RaidsCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    if not user_is_message_owner and not callback_data.update:
+        await callback_query.answer('Эта кнопка не работает для вас')
+    else:
+        text, parse_mode, reply_markup = await raids_all_list(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         if callback_data.update:

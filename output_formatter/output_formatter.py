@@ -91,6 +91,29 @@ class OutputFormatter:
             return f'{month_in_russian[month]} {year}'
 
     @staticmethod
+    def short_season(season_data: str, show_half: bool) -> str:
+        month_in_russian = {
+            '01': 'Январь',
+            '02': 'Февраль',
+            '03': 'Март',
+            '04': 'Апрель',
+            '05': 'Май',
+            '06': 'Июнь',
+            '07': 'Июль',
+            '08': 'Август',
+            '09': 'Сентябрь',
+            '10': 'Октябрь',
+            '11': 'Ноябрь',
+            '12': 'Декабрь'
+        }
+        parts = season_data.split('-')
+        year, month = parts[0], parts[1]
+        if len(parts) == 3 and show_half:
+            half = 1 if int(parts[2]) < 15 else 2
+            return f'{month_in_russian[month]} {year} ({half})'
+        return f'{month_in_russian[month]} {year}'
+
+    @staticmethod
     def league_tier(league_tier: int) -> str:
         # Ranked leagues 1-33 go in groups of three, Legend III, II and I are above them
         legend_league_tiers = {34: 'Легендарная III', 35: 'Легендарная II', 36: 'Легендарная I'}
@@ -130,7 +153,7 @@ class OutputFormatter:
             'Skeleton Park': 'Парк скелетов',
             'Goblin Mines': 'Гоблинские шахты'
         }
-        return district_in_russian[district_data]
+        return district_in_russian.get(district_data, district_data)
 
     @staticmethod
     def get_capital_gold_emoji() -> str:
@@ -291,6 +314,23 @@ class OutputFormatter:
             return f'сегодня в {dt.hour}:{str(dt.minute).zfill(2)}'
         else:
             return f'{dt.day} {month_in_russian_genitive[dt.month]} в {dt.hour}:{str(dt.minute).zfill(2)}'
+
+    def short_date(self, datetime_data: datetime) -> str:
+        dt_now = datetime.now(UTC).replace(tzinfo=None) + self.utc_to_local_hours
+        dt = datetime_data + self.utc_to_local_hours
+        if dt.year == dt_now.year:
+            return dt.strftime('%d.%m')
+        return dt.strftime('%d.%m.%y')
+
+    def short_date_range(self, start_dt: datetime, end_dt: datetime) -> str:
+        dt_now = datetime.now(UTC).replace(tzinfo=None) + self.utc_to_local_hours
+        dt_start = start_dt + self.utc_to_local_hours
+        dt_end = end_dt + self.utc_to_local_hours
+        if dt_start.year == dt_end.year:
+            if dt_end.year == dt_now.year:
+                return f'{dt_start.strftime("%d.%m")}–{dt_end.strftime("%d.%m")}'
+            return f'{dt_start.strftime("%d.%m")}–{dt_end.strftime("%d.%m.%y")}'
+        return f'{dt_start.strftime("%d.%m.%y")}–{dt_end.strftime("%d.%m.%y")}'
 
     @staticmethod
     def get_days_in_russian(days: int) -> str:
@@ -526,6 +566,30 @@ class OutputFormatter:
         else:
             return f'⚖️ Ничья\n'
 
+    @staticmethod
+    def war_state_emoji(
+            state: Optional[str],
+            clan_stars: Optional[int], clan_destruction: Optional[float],
+            opponent_stars: Optional[int], opponent_destruction: Optional[float]
+    ) -> str:
+        if state == 'warEnded':
+            clan_result = (clan_stars or 0, clan_destruction or 0.0)
+            opponent_result = (opponent_stars or 0, opponent_destruction or 0.0)
+            if clan_result > opponent_result:
+                return '✅'
+            elif clan_result < opponent_result:
+                return '❌'
+            else:
+                return '🟰'
+        elif state == 'inWar':
+            return '🗡'
+        elif state == 'preparation':
+            return '⚙️'
+        elif state == 'notInWar':
+            return ''
+        else:
+            return '❓'
+
     def war_log(self, clan_war_log: dict) -> str:
         text = f'Ход войны противника:\n'
         only_clan_war_log = [
@@ -550,12 +614,19 @@ class OutputFormatter:
             text += f'\nСписок пуст\n'
         return text
 
-    def opponent_info(self, war_win_streak: int, clan_war_log: Optional[dict]):
-        text = (
-            f'\n'
-            f'Серия побед противника: {war_win_streak}\n'
-            f'\n'
-        )
+    def opponent_info(self, war_win_streak: Optional[int], clan_war_log: Optional[dict]):
+        if war_win_streak is None:
+            text = (
+                f'\n'
+                f'Серия побед противника недоступна\n'
+                f'\n'
+            )
+        else:
+            text = (
+                f'\n'
+                f'Серия побед противника: {war_win_streak}\n'
+                f'\n'
+            )
         if clan_war_log is None:
             text += f'Ход войны противника недоступен'
         else:
@@ -657,26 +728,31 @@ class OutputFormatter:
         return text
 
     def raids_ongoing_or_ended(self, raids: dict) -> str:
+        attack_log = raids.get('attackLog')
+        if attack_log is not None:
+            completed_raids = len([
+                raid for raid in attack_log
+                if all(district['destructionPercent'] == 100 for district in raid['districts'])
+            ])
+        else:
+            completed_raids = raids.get('raidsCompleted', 0)
         text = (
             f'{self.event_datetime(Event.RW, raids['startTime'], raids['endTime'], True)}\n'
             f'\n'
-            f'Завершено рейдов: {len([
-                raid for raid in raids['attackLog']
-                if all(district['destructionPercent'] == 100 for district in raid['districts'])
-            ])} ⚔️\n'
+            f'Завершено рейдов: {completed_raids} ⚔️\n'
         )
-        if len(raids['attackLog']) > 0:
-            current_raid_districts = raids['attackLog'][-1]['districts']
+        if attack_log and len(attack_log) > 0:
+            current_raid_districts = attack_log[-1]['districts']
             text += (
                 f'Уничтожено районов в текущем рейде: '
                 f'{len([district for district in current_raid_districts if district['destructionPercent'] == 100])} '
                 f'/ {len(current_raid_districts)}\n'
             )
         text += (
-            f'Сделано атак: {raids['totalAttacks']} / {6 * 50} 🗡️\n'
-            f'Получено столичного золота: {raids['capitalTotalLoot']} {self.get_capital_gold_emoji()}\n'
+            f'Сделано атак: {raids.get('totalAttacks', 0)} / {6 * 50} 🗡️\n'
+            f'Получено столичного золота: {raids.get('capitalTotalLoot', 0)} {self.get_capital_gold_emoji()}\n'
         )
-        if self.state(raids) in ['ended']:
+        if self.state(raids) in ['ended'] and 'offensiveReward' in raids and 'defensiveReward' in raids:
             text += (
                 f'Награда за 6 атак: {int(raids['offensiveReward']) * 6 + int(raids['defensiveReward'])} '
                 f'{self.get_raid_medal_emoji()}\n'

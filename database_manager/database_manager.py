@@ -680,7 +680,7 @@ class DatabaseManager:
                 )
 
     async def dump_clan_war(self) -> bool:
-        old_clan_war = await self.load_clan_war_timing() or {'preparationStartTime': None, 'state': None}
+        old_clan_war = await self.load_clan_war_timing() or {'preparationStartTime': None, 'state': None, 'keys_count': 0}
 
         retrieved_clan_war = await self.api_client.get_clan_current_war(clan_tag=self.clan_tag)
         if retrieved_clan_war is None or retrieved_clan_war.get('preparationStartTime') is None:
@@ -689,13 +689,21 @@ class DatabaseManager:
         if (old_clan_war['preparationStartTime'] is not None
                 and retrieved_clan_war['preparationStartTime'] < old_clan_war['preparationStartTime']):
             return False
-        # Unchanged data is not rewritten: every rewrite of a big JSON leaves a dead row and bloats the table
+        # Do not overwrite stored war data with a partial API response that has fewer keys
+        retrieved_keys_count = sum(value is not None for value in retrieved_clan_war.values())
+        if (old_clan_war['preparationStartTime'] == retrieved_clan_war['preparationStartTime']
+                and retrieved_keys_count < old_clan_war.get('keys_count', 0)):
+            return False
+        # Unchanged data is not rewritten: every rewrite of a big JSON leaves a dead row and bloats the table.
+        # Partial API responses with fewer keys never overwrite more complete stored data
         await self.acquired_connection.execute('''
             INSERT INTO clan_war (clan_tag, preparation_start_time, data)
             VALUES ($1, $2, $3)
             ON CONFLICT (clan_tag, preparation_start_time)
             DO UPDATE SET data = $3
             WHERE clan_war.data IS DISTINCT FROM EXCLUDED.data
+                AND (SELECT COUNT(*) FROM jsonb_object_keys(jsonb_strip_nulls(EXCLUDED.data)))
+                    >= (SELECT COUNT(*) FROM jsonb_object_keys(jsonb_strip_nulls(clan_war.data)))
         ''', self.clan_tag, self.of.to_datetime(retrieved_clan_war['preparationStartTime']), json.dumps(retrieved_clan_war))
 
         new_clan_war = retrieved_clan_war
@@ -713,7 +721,8 @@ class DatabaseManager:
         row = await self.acquired_connection.fetchrow('''
             SELECT
                 data->>'preparationStartTime' AS "preparationStartTime", data->>'startTime' AS "startTime",
-                data->>'endTime' AS "endTime", data->>'state' AS state
+                data->>'endTime' AS "endTime", data->>'state' AS state,
+                (SELECT COUNT(*) FROM jsonb_object_keys(jsonb_strip_nulls(data))) AS keys_count
             FROM clan_war
             WHERE clan_tag = $1
             ORDER BY preparation_start_time DESC
@@ -721,16 +730,82 @@ class DatabaseManager:
         ''', self.clan_tag)
         return dict(row) if row is not None else None
 
-    async def load_clan_war(self) -> Optional[dict]:
-        row = await self.acquired_connection.fetchrow('''
-            SELECT data
-            FROM clan_war
-            WHERE clan_tag = $1
-            ORDER BY preparation_start_time DESC
-        ''', self.clan_tag)
+    async def load_clan_war(self, preparation_start_time: Optional[datetime] = None) -> Optional[dict]:
+        if preparation_start_time is None:
+            row = await self.acquired_connection.fetchrow('''
+                SELECT data
+                FROM clan_war
+                WHERE clan_tag = $1
+                ORDER BY preparation_start_time DESC
+                LIMIT 1
+            ''', self.clan_tag)
+        else:
+            row = await self.acquired_connection.fetchrow('''
+                SELECT data
+                FROM clan_war
+                WHERE clan_tag = $1 AND preparation_start_time >= $2 AND preparation_start_time < $3
+                ORDER BY preparation_start_time
+                LIMIT 1
+            ''', self.clan_tag, preparation_start_time, preparation_start_time + timedelta(seconds=1))
         if row is None:
             return None
         return json.loads(row['data'])
+
+    async def load_adjacent_clan_wars(
+            self, preparation_start_time: datetime
+    ) -> tuple[Optional[dict], Optional[dict]]:
+        older_row = await self.acquired_connection.fetchrow('''
+            SELECT
+                preparation_start_time,
+                data->>'startTime' AS "startTime",
+                data->>'endTime' AS "endTime"
+            FROM clan_war
+            WHERE clan_tag = $1 AND preparation_start_time < $2
+            ORDER BY preparation_start_time DESC
+            LIMIT 1
+        ''', self.clan_tag, preparation_start_time)
+        newer_row = await self.acquired_connection.fetchrow('''
+            SELECT
+                preparation_start_time,
+                data->>'startTime' AS "startTime",
+                data->>'endTime' AS "endTime"
+            FROM clan_war
+            WHERE clan_tag = $1 AND preparation_start_time > $2
+            ORDER BY preparation_start_time ASC
+            LIMIT 1
+        ''', self.clan_tag, preparation_start_time)
+        return (
+            dict(older_row) if older_row is not None else None,
+            dict(newer_row) if newer_row is not None else None
+        )
+
+    async def load_clan_wars_page(self, page: int, page_size: int) -> tuple[list[dict], int]:
+        total = await self.acquired_connection.fetchval('''
+            SELECT COUNT(*)
+            FROM clan_war
+            WHERE clan_tag = $1
+        ''', self.clan_tag)
+        if total == 0:
+            return [], 0
+        total_pages = (total + page_size - 1) // page_size
+        page = max(0, min(page, total_pages - 1))
+        rows = await self.acquired_connection.fetch('''
+            SELECT
+                preparation_start_time,
+                data->>'state' AS state,
+                data->>'startTime' AS "startTime",
+                data->>'endTime' AS "endTime",
+                data->'opponent'->>'name' AS opponent_name,
+                (data->'clan'->>'stars')::integer AS clan_stars,
+                (data->'clan'->>'destructionPercentage')::double precision AS clan_destruction,
+                (data->'opponent'->>'stars')::integer AS opponent_stars,
+                (data->'opponent'->>'destructionPercentage')::double precision AS opponent_destruction
+            FROM clan_war
+            WHERE clan_tag = $1
+            ORDER BY preparation_start_time DESC
+            LIMIT $2 OFFSET $3
+        ''', self.clan_tag, page_size, page * page_size)
+        return [dict(row) for row in rows], total
 
     async def dump_opponent_info(self, war: dict) -> bool:
         # Opponent players, war log and win streak are shown only for wars in preparation or in progress and
@@ -765,6 +840,8 @@ class DatabaseManager:
             ON CONFLICT (clan_tag)
             DO UPDATE SET data = $2
             WHERE clan_war_log.data IS DISTINCT FROM EXCLUDED.data
+                AND (SELECT COUNT(*) FROM jsonb_object_keys(jsonb_strip_nulls(EXCLUDED.data)))
+                    >= (SELECT COUNT(*) FROM jsonb_object_keys(jsonb_strip_nulls(clan_war_log.data)))
         ''', clan_tag, json.dumps(retrieved_clan_war_log))
         return True
 
@@ -952,6 +1029,8 @@ class DatabaseManager:
             ON CONFLICT (clan_tag, start_time)
             DO UPDATE SET data = $3
             WHERE raid_weekend.data IS DISTINCT FROM EXCLUDED.data
+                AND (SELECT COUNT(*) FROM jsonb_object_keys(jsonb_strip_nulls(EXCLUDED.data)))
+                    >= (SELECT COUNT(*) FROM jsonb_object_keys(jsonb_strip_nulls(raid_weekend.data)))
         ''', [
             (self.clan_tag, self.of.to_datetime(item['startTime']), json.dumps(item))
             for item in retrieved_raid_weekends['items']
@@ -1031,16 +1110,80 @@ class DatabaseManager:
         ''', self.clan_tag)
         return dict(row) if row is not None else None
 
-    async def load_raid_weekend(self) -> Optional[dict]:
-        row = await self.acquired_connection.fetchrow('''
-            SELECT data
-            FROM raid_weekend
-            WHERE clan_tag = $1
-            ORDER BY start_time DESC
-        ''', self.clan_tag)
+    async def load_raid_weekend(self, start_time: Optional[datetime] = None) -> Optional[dict]:
+        if start_time is None:
+            row = await self.acquired_connection.fetchrow('''
+                SELECT data
+                FROM raid_weekend
+                WHERE clan_tag = $1
+                ORDER BY start_time DESC
+                LIMIT 1
+            ''', self.clan_tag)
+        else:
+            row = await self.acquired_connection.fetchrow('''
+                SELECT data
+                FROM raid_weekend
+                WHERE clan_tag = $1 AND start_time >= $2 AND start_time < $3
+                ORDER BY start_time
+                LIMIT 1
+            ''', self.clan_tag, start_time, start_time + timedelta(seconds=1))
         if row is None:
             return None
         return json.loads(row['data'])
+
+    async def load_adjacent_raid_weekends(
+            self, start_time: datetime
+    ) -> tuple[Optional[dict], Optional[dict]]:
+        older_row = await self.acquired_connection.fetchrow('''
+            SELECT
+                start_time,
+                data->>'startTime' AS "startTime",
+                data->>'endTime' AS "endTime"
+            FROM raid_weekend
+            WHERE clan_tag = $1 AND start_time < $2
+            ORDER BY start_time DESC
+            LIMIT 1
+        ''', self.clan_tag, start_time)
+        newer_row = await self.acquired_connection.fetchrow('''
+            SELECT
+                start_time,
+                data->>'startTime' AS "startTime",
+                data->>'endTime' AS "endTime"
+            FROM raid_weekend
+            WHERE clan_tag = $1 AND start_time > $2
+            ORDER BY start_time ASC
+            LIMIT 1
+        ''', self.clan_tag, start_time)
+        return (
+            dict(older_row) if older_row is not None else None,
+            dict(newer_row) if newer_row is not None else None
+        )
+
+    async def load_raid_weekends_page(self, page: int, page_size: int) -> tuple[list[dict], int]:
+        total = await self.acquired_connection.fetchval('''
+            SELECT COUNT(*)
+            FROM raid_weekend
+            WHERE clan_tag = $1
+        ''', self.clan_tag)
+        if total == 0:
+            return [], 0
+        total_pages = (total + page_size - 1) // page_size
+        page = max(0, min(page, total_pages - 1))
+        rows = await self.acquired_connection.fetch('''
+            SELECT
+                start_time,
+                data->>'state' AS state,
+                data->>'startTime' AS "startTime",
+                data->>'endTime' AS "endTime",
+                (data->>'totalAttacks')::integer AS total_attacks,
+                (data->>'offensiveReward')::integer AS offensive_reward,
+                (data->>'defensiveReward')::integer AS defensive_reward
+            FROM raid_weekend
+            WHERE clan_tag = $1
+            ORDER BY start_time DESC
+            LIMIT $2 OFFSET $3
+        ''', self.clan_tag, page_size, page * page_size)
+        return [dict(row) for row in rows], total
 
     async def raid_weekend_alert(self, old_raids: dict, raids: dict) -> None:
         await self.acquired_connection.execute('''
@@ -1171,6 +1314,8 @@ class DatabaseManager:
             ON CONFLICT (clan_tag, season)
             DO UPDATE SET data = $3
             WHERE clan_war_league.data IS DISTINCT FROM EXCLUDED.data
+                AND (SELECT COUNT(*) FROM jsonb_object_keys(jsonb_strip_nulls(EXCLUDED.data)))
+                    >= (SELECT COUNT(*) FROM jsonb_object_keys(jsonb_strip_nulls(clan_war_league.data)))
         ''', self.clan_tag, retrieved_clan_war_league['season'], json.dumps(retrieved_clan_war_league))
         return True
 
@@ -1179,11 +1324,21 @@ class DatabaseManager:
             SELECT season, data
             FROM clan_war_league
             WHERE clan_tag = $1
-            ORDER BY season DESC 
+            ORDER BY season DESC
+            LIMIT 1
         ''', self.clan_tag)
         if row is None:
             return None, None
         return row['season'], json.loads(row['data'])
+
+    async def load_clan_war_league_seasons(self) -> list[str]:
+        rows = await self.acquired_connection.fetch('''
+            SELECT DISTINCT season
+            FROM clan_war_league_war
+            WHERE clan_tag = $1
+            ORDER BY season
+        ''', self.clan_tag)
+        return [row['season'] for row in rows]
 
     async def get_season_cwl_amount(self, season: str) -> int:
         return await self.acquired_connection.fetchval('''
@@ -1226,6 +1381,8 @@ class DatabaseManager:
             DO UPDATE SET (season, day, data) = ($3, $4, $5)
             WHERE (clan_war_league_war.season, clan_war_league_war.day, clan_war_league_war.data)
                 IS DISTINCT FROM (EXCLUDED.season, EXCLUDED.day, EXCLUDED.data)
+                AND (SELECT COUNT(*) FROM jsonb_object_keys(jsonb_strip_nulls(EXCLUDED.data)))
+                    >= (SELECT COUNT(*) FROM jsonb_object_keys(jsonb_strip_nulls(clan_war_league_war.data)))
         ''', [
             (clan_war_league_war.clan_tag, clan_war_league_war.war_tag, clan_war_league_war.season,
              clan_war_league_war.day, json.dumps(retrieved_clan_war_league_war))
@@ -1252,9 +1409,11 @@ class DatabaseManager:
                 was_maintenance_alert_sent = await self.maintenance_alert(old_cwlw, new_cwlw)
         return True
 
-    async def load_clan_war_league_own_war(self) -> tuple[Optional[int], Optional[dict]]:
-        clan_war_league_wars = await self.load_clan_war_league_own_wars()
-        if clan_war_league_wars is None:
+    async def load_clan_war_league_own_war(
+            self, season: Optional[str] = None
+    ) -> tuple[Optional[int], Optional[dict]]:
+        clan_war_league_wars = await self.load_clan_war_league_own_wars(season)
+        if not clan_war_league_wars:
             return None, None
         for day, clan_war_league_war in (list(enumerate(clan_war_league_wars)))[::-1]:
             if self.of.state(clan_war_league_war) == 'inWar':
@@ -1267,6 +1426,7 @@ class DatabaseManager:
                 return day, clan_war_league_war
         for day, clan_war_league_war in enumerate(clan_war_league_wars):
             return day, clan_war_league_war
+        return None, None
 
     async def load_clan_war_league_own_wars(
             self, season: Optional[str] = None, clan_tag: Optional[str] = None
@@ -1304,8 +1464,9 @@ class DatabaseManager:
         ''', self.clan_tag, season)
         return [dict(row) for row in rows]
 
-    async def load_clan_war_league_last_day_wars(self) -> Optional[list[dict]]:
-        season, _ = await self.load_clan_war_league()
+    async def load_clan_war_league_last_day_wars(self, season: Optional[str] = None) -> Optional[list[dict]]:
+        if season is None:
+            season, _ = await self.load_clan_war_league()
         if season is None:
             return None
         rows = await self.acquired_connection.fetch('''
@@ -1315,6 +1476,8 @@ class DatabaseManager:
                 (clan_tag, season) = ($1, $2)
                 AND day IN (SELECT MAX(day) FROM clan_war_league_war WHERE (clan_tag, season) = ($1, $2))
         ''', self.clan_tag, season)
+        if not rows:
+            return None
         return [json.loads(row['data']) for row in rows]
 
     async def clan_war_league_war_alert(
@@ -1474,7 +1637,8 @@ class DatabaseManager:
                 WHERE (clan_tag, season) = ($1, $2)
             ''', self.clan_tag, cwl_season)
             for row in rows:
-                player_tags[row['player_tag']].bonus_points.append(row['points'])
+                if row['player_tag'] in player_tags:
+                    player_tags[row['player_tag']].bonus_points.append(row['points'])
         for cwlw in cwlws:
             cwlw_rating = await self.get_clan_war_league_rating(cwlw)
             for player_tag, rating in cwlw_rating.items():

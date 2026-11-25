@@ -15,6 +15,8 @@ from entities import WarMember, ClanWarLeagueClan, ClanWarLeagueMember
 
 router = Router()
 
+CWL_PAGE_SIZE = 10
+
 
 class CWLMapSide(IntEnum):
     clan = auto()
@@ -46,6 +48,12 @@ class OutputView(IntEnum):
     cwl_rating_choose = auto()
     cwl_rating_details = auto()
     cwl_rating_rules = auto()
+    cwl_info_all_seasons = auto()
+    cwl_map_all_seasons = auto()
+    cwl_attacks_all_seasons = auto()
+    cwl_skips_all_seasons = auto()
+    cwl_rating_all_seasons = auto()
+    cwl_clans_all_seasons = auto()
 
 
 class CWLCallbackFactory(CallbackData, prefix='cwl'):
@@ -59,15 +67,94 @@ class CWLCallbackFactory(CallbackData, prefix='cwl'):
     cwl_list_order: Optional[CWLListOrder] = None
     show_skips: Optional[bool] = None
     count_bonus_points: Optional[bool] = None
+    cwl_season: Optional[str] = None
+    page: Optional[int] = None
+
+
+def is_double_cwl_month(season: str, seasons: list[str]) -> bool:
+    return sum(1 for s in seasons if s[:7] == season[:7]) >= 2
+
+
+async def resolve_cwl_season(
+        dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory]
+) -> tuple[Optional[str], list[str], Optional[str]]:
+    seasons = await dm.load_clan_war_league_seasons()
+    selected_season = callback_data.cwl_season if callback_data is not None else None
+    if selected_season is not None:
+        return selected_season, seasons, selected_season
+    return (seasons[-1] if seasons else None), seasons, None
+
+
+async def load_cwl_day_and_wars(
+        dm: DatabaseManager, cwl_season: Optional[str], requested_day: Optional[int]
+) -> tuple[Optional[int], Optional[dict], list[dict]]:
+    if cwl_season is None:
+        return None, None, []
+    cwl_wars = await dm.load_clan_war_league_own_wars(cwl_season) or []
+    if not cwl_wars:
+        return None, None, []
+    if requested_day is not None and 0 <= requested_day < len(cwl_wars):
+        return requested_day, cwl_wars[requested_day], cwl_wars
+    for state in ['inWar', 'preparation', 'warEnded']:
+        for day in range(len(cwl_wars) - 1, -1, -1):
+            if dm.of.state(cwl_wars[day]) == state:
+                return day, cwl_wars[day], cwl_wars
+    return 0, cwl_wars[0], cwl_wars
+
+
+def build_cwl_season_nav_row(
+        dm: DatabaseManager,
+        target_view: OutputView,
+        all_seasons_view: OutputView,
+        cwl_season: Optional[str],
+        seasons: list[str],
+        selected_season: Optional[str],
+        back_cwl_day: Optional[int] = None,
+        **cb_kwargs
+) -> list[InlineKeyboardButton]:
+    if not seasons:
+        return []
+    nav_row = []
+    season_index = seasons.index(cwl_season) if cwl_season in seasons else None
+    if season_index is not None and season_index > 0:
+        prev_season = seasons[season_index - 1]
+        nav_row.append(InlineKeyboardButton(
+            text=f'⬅️ {dm.of.short_season(prev_season, is_double_cwl_month(prev_season, seasons))}',
+            callback_data=CWLCallbackFactory(
+                output_view=target_view,
+                cwl_season=prev_season,
+                **cb_kwargs
+            ).pack()
+        ))
+    if season_index is not None and season_index < len(seasons) - 1:
+        next_season = seasons[season_index + 1]
+        nav_row.append(InlineKeyboardButton(
+            text=f'➡️ {dm.of.short_season(next_season, is_double_cwl_month(next_season, seasons))}',
+            callback_data=CWLCallbackFactory(
+                output_view=target_view,
+                cwl_season=next_season,
+                **cb_kwargs
+            ).pack()
+        ))
+    nav_row.append(InlineKeyboardButton(
+        text='🧾 Все сезоны',
+        callback_data=CWLCallbackFactory(
+            output_view=all_seasons_view,
+            cwl_season=selected_season,
+            cwl_day=back_cwl_day,
+            page=0,
+            **cb_kwargs
+        ).pack()
+    ))
+    return nav_row
 
 
 async def cwl_info(
         dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    if callback_data is not None and callback_data.cwl_day is not None:
-        cwl_day, cwlw = callback_data.cwl_day, (await dm.load_clan_war_league_own_wars())[callback_data.cwl_day]
-    else:
-        cwl_day, cwlw = await dm.load_clan_war_league_own_war()
+    cwl_season, seasons, selected_season = await resolve_cwl_season(dm, callback_data)
+    requested_day = callback_data.cwl_day if callback_data is not None else None
+    cwl_day, cwlw, cwl_wars = await load_cwl_day_and_wars(dm, cwl_season, requested_day)
     if callback_data is not None and callback_data.show_opponent_info is not None:
         show_opponent_info = callback_data.show_opponent_info
     else:
@@ -82,33 +169,36 @@ async def cwl_info(
         opponent_info_button = InlineKeyboardButton(
             text='🔼 Свернуть',
             callback_data=CWLCallbackFactory(
-                output_view=OutputView.cwl_info_day, show_opponent_info=False, cwl_day=cwl_day
+                output_view=OutputView.cwl_info_day, show_opponent_info=False,
+                cwl_day=cwl_day, cwl_season=selected_season
             ).pack()
         )
     else:
         opponent_info_button = InlineKeyboardButton(
             text='🔽 Развернуть',
             callback_data=CWLCallbackFactory(
-                output_view=OutputView.cwl_info_day, show_opponent_info=True, cwl_day=cwl_day
+                output_view=OutputView.cwl_info_day, show_opponent_info=True,
+                cwl_day=cwl_day, cwl_season=selected_season
             ).pack()
         )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
         callback_data=CWLCallbackFactory(
-            output_view=OutputView.cwl_info_day, update=True, show_opponent_info=show_opponent_info, cwl_day=cwl_day
+            output_view=OutputView.cwl_info_day, update=True, show_opponent_info=show_opponent_info,
+            cwl_day=cwl_day, cwl_season=selected_season
         ).pack()
     )
-    cwl_season, _ = await dm.load_clan_war_league()
+    show_half = is_double_cwl_month(cwl_season, seasons) if cwl_season is not None else False
     if dm.of.state(cwlw) in ['preparation']:
         war_win_streak = await dm.load_war_win_streak(cwlw['opponent']['tag'])
         cw_log = await dm.load_clan_war_log(cwlw['opponent']['tag'])
-        text += dm.of.cwlw_preparation(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, show_opponent_info, war_win_streak, cw_log)
+        text += dm.of.cwlw_preparation(cwlw, cwl_season, show_half, cwl_day, show_opponent_info, war_win_streak, cw_log)
         button_upper_row.append(opponent_info_button)
         button_upper_row.append(update_button)
     elif dm.of.state(cwlw) in ['inWar', 'warEnded']:
         war_win_streak = await dm.load_war_win_streak(cwlw['opponent']['tag'])
         cw_log = await dm.load_clan_war_log(cwlw['opponent']['tag'])
-        text += dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, show_opponent_info, war_win_streak, cw_log)
+        text += dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, show_half, cwl_day, show_opponent_info, war_win_streak, cw_log)
         button_upper_row.append(opponent_info_button)
         button_upper_row.append(update_button)
     else:
@@ -118,31 +208,41 @@ async def cwl_info(
         previous_cwl_day_button = InlineKeyboardButton(
             text=f'⬅️ День {cwl_day}',
             callback_data=CWLCallbackFactory(
-                output_view=OutputView.cwl_info_day, show_opponent_info=show_opponent_info, cwl_day=cwl_day - 1
+                output_view=OutputView.cwl_info_day, show_opponent_info=show_opponent_info,
+                cwl_day=cwl_day - 1, cwl_season=selected_season
             ).pack()
         )
         next_cwl_day_button = InlineKeyboardButton(
             text=f'➡️ День {cwl_day + 2}',
             callback_data=CWLCallbackFactory(
-                output_view=OutputView.cwl_info_day, show_opponent_info=show_opponent_info, cwl_day=cwl_day + 1
+                output_view=OutputView.cwl_info_day, show_opponent_info=show_opponent_info,
+                cwl_day=cwl_day + 1, cwl_season=selected_season
             ).pack()
         )
         all_cwl_days_button = InlineKeyboardButton(
             text='🧾 Все дни',
             callback_data=CWLCallbackFactory(
-                output_view=OutputView.cwl_info_all_days, show_opponent_info=show_opponent_info
+                output_view=OutputView.cwl_info_all_days, show_opponent_info=show_opponent_info,
+                cwl_season=selected_season
             ).pack()
         )
         if cwl_day > 0:
             button_lower_row.append(previous_cwl_day_button)
-        if cwl_day < len(await dm.load_clan_war_league_own_wars()) - 1:
+        if cwl_day < len(cwl_wars) - 1:
             button_lower_row.append(next_cwl_day_button)
         button_lower_row.append(all_cwl_days_button)
+    season_nav_row = build_cwl_season_nav_row(
+        dm, OutputView.cwl_info_day, OutputView.cwl_info_all_seasons,
+        cwl_season, seasons, selected_season, back_cwl_day=cwl_day,
+        show_opponent_info=show_opponent_info
+    )
     button_rows = []
     if len(button_upper_row) > 0:
         button_rows.append(button_upper_row)
     if len(button_lower_row) > 0:
         button_rows.append(button_lower_row)
+    if len(season_nav_row) > 0:
+        button_rows.append(season_nav_row)
     if len(button_rows) > 0:
         keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     else:
@@ -153,15 +253,13 @@ async def cwl_info(
 async def cwl_map(
         dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory], chat_id: int
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    if callback_data is not None and callback_data.cwl_day is not None:
-        cwl_day, cwlw = callback_data.cwl_day, (await dm.load_clan_war_league_own_wars())[callback_data.cwl_day]
-    else:
-        cwl_day, cwlw = await dm.load_clan_war_league_own_war()
-    cwl_season, _ = await dm.load_clan_war_league()
+    cwl_season, seasons, selected_season = await resolve_cwl_season(dm, callback_data)
+    requested_day = callback_data.cwl_day if callback_data is not None else None
+    cwl_day, cwlw, cwl_wars = await load_cwl_day_and_wars(dm, cwl_season, requested_day)
     if callback_data is not None and callback_data.cwl_map_side is not None:
         cwl_map_side = callback_data.cwl_map_side
     else:
-        cwl_map_side = CWLAttacksSide.opponent
+        cwl_map_side = CWLMapSide.opponent
     if callback_data is not None and callback_data.show_skips is not None:
         show_skips = callback_data.show_skips
     else:
@@ -175,41 +273,47 @@ async def cwl_map(
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
         callback_data=CWLCallbackFactory(
-            output_view=OutputView.cwl_map_day, update=True, cwl_day=cwl_day, cwl_map_side=cwl_map_side, show_skips=show_skips
+            output_view=OutputView.cwl_map_day, update=True, cwl_day=cwl_day,
+            cwl_map_side=cwl_map_side, show_skips=show_skips, cwl_season=selected_season
         ).pack()
     )
     clan_side_button = InlineKeyboardButton(
         text='↔️ Карта клана',
         callback_data=CWLCallbackFactory(
-            output_view=OutputView.cwl_map_day, cwl_day=cwl_day, cwl_map_side=CWLMapSide.clan, show_skips=show_skips
+            output_view=OutputView.cwl_map_day, cwl_day=cwl_day,
+            cwl_map_side=CWLMapSide.clan, show_skips=show_skips, cwl_season=selected_season
         ).pack()
     )
     opponent_side_button = InlineKeyboardButton(
         text='↔️ Карта противника',
         callback_data=CWLCallbackFactory(
-            output_view=OutputView.cwl_map_day, cwl_day=cwl_day, cwl_map_side=CWLMapSide.opponent, show_skips=show_skips
+            output_view=OutputView.cwl_map_day, cwl_day=cwl_day,
+            cwl_map_side=CWLMapSide.opponent, show_skips=show_skips, cwl_season=selected_season
         ).pack()
     )
     hide_skips_button = InlineKeyboardButton(
         text='🔼 Свернуть',
         callback_data=CWLCallbackFactory(
-            output_view=OutputView.cwl_map_day, cwl_day=cwl_day, cwl_map_side=cwl_map_side, show_skips=False
+            output_view=OutputView.cwl_map_day, cwl_day=cwl_day,
+            cwl_map_side=cwl_map_side, show_skips=False, cwl_season=selected_season
         ).pack()
     )
     show_skips_button = InlineKeyboardButton(
         text='🔽 Развернуть',
         callback_data=CWLCallbackFactory(
-            output_view=OutputView.cwl_map_day, cwl_day=cwl_day, cwl_map_side=cwl_map_side, show_skips=True
+            output_view=OutputView.cwl_map_day, cwl_day=cwl_day,
+            cwl_map_side=cwl_map_side, show_skips=True, cwl_season=selected_season
         ).pack()
     )
+    show_half = is_double_cwl_month(cwl_season, seasons) if cwl_season is not None else False
     if dm.of.state(cwlw) in ['preparation']:
-        text += dm.of.cwlw_preparation(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)
+        text += dm.of.cwlw_preparation(cwlw, cwl_season, show_half, cwl_day, False, None, None)
         button_upper_row.append(update_button)
     elif dm.of.state(cwlw) in ['inWar', 'warEnded']:
         clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
         opponent_map_position_by_player = dm.of.calculate_map_positions(cwlw['opponent']['members'])
         text += (
-            f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)}'
+            f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, show_half, cwl_day, False, None, None)}'
             f'\n'
         )
         if cwl_map_side == CWLMapSide.opponent:
@@ -250,31 +354,41 @@ async def cwl_map(
         previous_cwl_day_button = InlineKeyboardButton(
             text=f'⬅️ День {cwl_day}',
             callback_data=CWLCallbackFactory(
-                output_view=OutputView.cwl_map_day, cwl_day=cwl_day - 1, cwl_map_side=cwl_map_side, show_skips=show_skips
+                output_view=OutputView.cwl_map_day, cwl_day=cwl_day - 1,
+                cwl_map_side=cwl_map_side, show_skips=show_skips, cwl_season=selected_season
             ).pack()
         )
         next_cwl_day_button = InlineKeyboardButton(
             text=f'➡️ День {cwl_day + 2}',
             callback_data=CWLCallbackFactory(
-                output_view=OutputView.cwl_map_day, cwl_day=cwl_day + 1, cwl_map_side=cwl_map_side, show_skips=show_skips
+                output_view=OutputView.cwl_map_day, cwl_day=cwl_day + 1,
+                cwl_map_side=cwl_map_side, show_skips=show_skips, cwl_season=selected_season
             ).pack()
         )
         all_cwl_days_button = InlineKeyboardButton(
             text='🧾 Все дни',
             callback_data=CWLCallbackFactory(
-                output_view=OutputView.cwl_map_all_days, cwl_map_side=cwl_map_side, show_skips=show_skips
+                output_view=OutputView.cwl_map_all_days,
+                cwl_map_side=cwl_map_side, show_skips=show_skips, cwl_season=selected_season
             ).pack()
         )
         if cwl_day > 0:
             button_lower_row.append(previous_cwl_day_button)
-        if cwl_day < len(await dm.load_clan_war_league_own_wars()) - 1:
+        if cwl_day < len(cwl_wars) - 1:
             button_lower_row.append(next_cwl_day_button)
         button_lower_row.append(all_cwl_days_button)
+    season_nav_row = build_cwl_season_nav_row(
+        dm, OutputView.cwl_map_day, OutputView.cwl_map_all_seasons,
+        cwl_season, seasons, selected_season, back_cwl_day=cwl_day,
+        cwl_map_side=cwl_map_side, show_skips=show_skips
+    )
     button_rows = []
     if len(button_upper_row) > 0:
         button_rows.append(button_upper_row)
     if len(button_lower_row) > 0:
         button_rows.append(button_lower_row)
+    if len(season_nav_row) > 0:
+        button_rows.append(season_nav_row)
     if len(button_rows) > 0:
         keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     else:
@@ -285,11 +399,9 @@ async def cwl_map(
 async def cwl_attacks(
         dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    if callback_data is not None and callback_data.cwl_day is not None:
-        cwl_day, cwlw = callback_data.cwl_day, (await dm.load_clan_war_league_own_wars())[callback_data.cwl_day]
-    else:
-        cwl_day, cwlw = await dm.load_clan_war_league_own_war()
-    cwl_season, _ = await dm.load_clan_war_league()
+    cwl_season, seasons, selected_season = await resolve_cwl_season(dm, callback_data)
+    requested_day = callback_data.cwl_day if callback_data is not None else None
+    cwl_day, cwlw, cwl_wars = await load_cwl_day_and_wars(dm, cwl_season, requested_day)
     if callback_data is not None and callback_data.cwl_attacks_side is not None:
         cwl_attacks_side = callback_data.cwl_attacks_side
     else:
@@ -303,21 +415,25 @@ async def cwl_attacks(
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
         callback_data=CWLCallbackFactory(
-            output_view=OutputView.cwl_attacks_day, update=True, cwl_day=cwl_day, cwl_attacks_side=cwl_attacks_side
+            output_view=OutputView.cwl_attacks_day, update=True, cwl_day=cwl_day,
+            cwl_attacks_side=cwl_attacks_side, cwl_season=selected_season
         ).pack()
     )
     opponent_attacks_button = InlineKeyboardButton(
         text='↔️ Атаки противника',
         callback_data=CWLCallbackFactory(
-            output_view=OutputView.cwl_attacks_day, cwl_day=cwl_day, cwl_attacks_side=CWLAttacksSide.opponent
+            output_view=OutputView.cwl_attacks_day, cwl_day=cwl_day,
+            cwl_attacks_side=CWLAttacksSide.opponent, cwl_season=selected_season
         ).pack()
     )
     clan_attacks_button = InlineKeyboardButton(
         text='↔️ Атаки клана',
         callback_data=CWLCallbackFactory(
-            output_view=OutputView.cwl_attacks_day, cwl_day=cwl_day, cwl_attacks_side=CWLAttacksSide.clan
+            output_view=OutputView.cwl_attacks_day, cwl_day=cwl_day,
+            cwl_attacks_side=CWLAttacksSide.clan, cwl_season=selected_season
         ).pack()
     )
+    show_half = is_double_cwl_month(cwl_season, seasons) if cwl_season is not None else False
     if dm.of.state(cwlw) in ['preparation']:
         if cwl_attacks_side == CWLAttacksSide.clan:
             rows = await dm.acquired_connection.fetch('''
@@ -329,7 +445,7 @@ async def cwl_attacks(
             ''', dm.clan_tag)
             clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
             text += (
-                f'{dm.of.cwlw_preparation(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)}'
+                f'{dm.of.cwlw_preparation(cwlw, cwl_season, show_half, cwl_day, False, None, None)}'
                 f'\n'
                 f'Список участников дня ЛВК клана:\n'
                 f'{dm.of.war_members(cwlw['clan']['members'], clan_map_position_by_player, rows)}'
@@ -345,7 +461,7 @@ async def cwl_attacks(
             ''', cwlw['opponent']['tag'])
             opponent_map_position_by_player = dm.of.calculate_map_positions(cwlw['opponent']['members'])
             text += (
-                f'{dm.of.cwlw_preparation(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)}'
+                f'{dm.of.cwlw_preparation(cwlw, cwl_season, show_half, cwl_day, False, None, None)}'
                 f'\n'
                 f'Список участников дня ЛВК противника:\n'
                 f'{dm.of.war_members(cwlw['opponent']['members'], opponent_map_position_by_player, rows)}'
@@ -356,7 +472,7 @@ async def cwl_attacks(
         clan_map_position_by_player = dm.of.calculate_map_positions(cwlw['clan']['members'])
         opponent_map_position_by_player = dm.of.calculate_map_positions(cwlw['opponent']['members'])
         text += (
-            f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)}'
+            f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, show_half, cwl_day, False, None, None)}'
             f'\n'
         )
         if cwl_attacks_side == CWLAttacksSide.clan:
@@ -385,31 +501,41 @@ async def cwl_attacks(
         previous_cwl_day_button = InlineKeyboardButton(
             text=f'⬅️ День {cwl_day}',
             callback_data=CWLCallbackFactory(
-                output_view=OutputView.cwl_attacks_day, cwl_day=cwl_day - 1, cwl_attacks_side=cwl_attacks_side
+                output_view=OutputView.cwl_attacks_day, cwl_day=cwl_day - 1,
+                cwl_attacks_side=cwl_attacks_side, cwl_season=selected_season
             ).pack()
         )
         next_cwl_day_button = InlineKeyboardButton(
             text=f'➡️ День {cwl_day + 2}',
             callback_data=CWLCallbackFactory(
-                output_view=OutputView.cwl_attacks_day, cwl_day=cwl_day + 1, cwl_attacks_side=cwl_attacks_side
+                output_view=OutputView.cwl_attacks_day, cwl_day=cwl_day + 1,
+                cwl_attacks_side=cwl_attacks_side, cwl_season=selected_season
             ).pack()
         )
         all_cwl_days_button = InlineKeyboardButton(
             text='🧾 Все дни',
             callback_data=CWLCallbackFactory(
-                output_view=OutputView.cwl_attacks_all_days, cwl_attacks_side=cwl_attacks_side
+                output_view=OutputView.cwl_attacks_all_days,
+                cwl_attacks_side=cwl_attacks_side, cwl_season=selected_season
             ).pack()
         )
         if cwl_day > 0:
             button_lower_row.append(previous_cwl_day_button)
-        if cwl_day < len(await dm.load_clan_war_league_own_wars()) - 1:
+        if cwl_day < len(cwl_wars) - 1:
             button_lower_row.append(next_cwl_day_button)
         button_lower_row.append(all_cwl_days_button)
+    season_nav_row = build_cwl_season_nav_row(
+        dm, OutputView.cwl_attacks_day, OutputView.cwl_attacks_all_seasons,
+        cwl_season, seasons, selected_season, back_cwl_day=cwl_day,
+        cwl_attacks_side=cwl_attacks_side
+    )
     button_rows = []
     if len(button_upper_row) > 0:
         button_rows.append(button_upper_row)
     if len(button_lower_row) > 0:
         button_rows.append(button_lower_row)
+    if len(season_nav_row) > 0:
+        button_rows.append(season_nav_row)
     if len(button_rows) > 0:
         keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     else:
@@ -431,37 +557,59 @@ async def cwl_rating_list(
     if not await dm.load_clan_war_league_rating_config():
         text += f'Рейтинг выключен'
         return text, ParseMode.HTML, None
-    if not await dm.load_clan_war_league_own_wars():
+    cwl_season, seasons, selected_season = await resolve_cwl_season(dm, callback_data)
+    cwlws = await dm.load_clan_war_league_own_wars(cwl_season) if cwl_season is not None else None
+    if not cwlws:
         text += f'Информация об ЛВК отсутствует\n'
-        return text, ParseMode.HTML, None
-    cwlws = await dm.load_clan_war_league_own_wars()
-    cwl_season, _ = await dm.load_clan_war_league()
+        season_nav_row = build_cwl_season_nav_row(
+            dm, OutputView.cwl_rating_list, OutputView.cwl_rating_all_seasons,
+            cwl_season, seasons, selected_season, count_bonus_points=count_bonus_points
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[season_nav_row]) if season_nav_row else None
+        return text, ParseMode.HTML, keyboard
+    show_half = is_double_cwl_month(cwl_season, seasons)
     player_tags = await dm.get_cwl_ratings(cwl_season, cwlws, count_bonus_points)
     text += (
-        f'Сезон ЛВК: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
+        f'Сезон ЛВК: {dm.of.season(cwl_season, show_half)}\n'
         f'\n'
     )
     details_button = InlineKeyboardButton(
         text='📋 Подробнее',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_choose, count_bonus_points=count_bonus_points).pack()
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_rating_choose, count_bonus_points=count_bonus_points, cwl_season=selected_season
+        ).pack()
     )
     count_bonus_points_button = InlineKeyboardButton(
         text='🪙 Без бонусов' if count_bonus_points else '🪙 С бонусами',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_list, count_bonus_points=not count_bonus_points).pack()
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_rating_list, count_bonus_points=not count_bonus_points, cwl_season=selected_season
+        ).pack()
     )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_list, count_bonus_points=count_bonus_points, update=True).pack()
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_rating_list, count_bonus_points=count_bonus_points,
+            cwl_season=selected_season, update=True
+        ).pack()
     )
     rules_button = InlineKeyboardButton(
         text='❓ Правила',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_rules, count_bonus_points=count_bonus_points).pack()
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_rating_rules, count_bonus_points=count_bonus_points, cwl_season=selected_season
+        ).pack()
     )
     for i, (player_tag, r) in enumerate(sorted(player_tags.items(), key=lambda x: x[1].total_points, reverse=True)):
         text += f'{i + 1}. {dm.of.to_html(dm.load_name(player_tag))}: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n'
     if len(player_tags) == 0:
         text += f'Список пуст\n'
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[details_button, count_bonus_points_button, rules_button], [update_button]])
+    button_rows = [[details_button, count_bonus_points_button, rules_button], [update_button]]
+    season_nav_row = build_cwl_season_nav_row(
+        dm, OutputView.cwl_rating_list, OutputView.cwl_rating_all_seasons,
+        cwl_season, seasons, selected_season, count_bonus_points=count_bonus_points
+    )
+    if season_nav_row:
+        button_rows.append(season_nav_row)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     return text, ParseMode.HTML, keyboard
 
 
@@ -479,13 +627,14 @@ async def cwl_rating_choose(
     if not await dm.load_clan_war_league_rating_config():
         text += f'Рейтинг выключен'
         return text, ParseMode.HTML, None
-    if not await dm.load_clan_war_league_own_wars():
+    cwl_season, seasons, selected_season = await resolve_cwl_season(dm, callback_data)
+    cwlws = await dm.load_clan_war_league_own_wars(cwl_season) if cwl_season is not None else None
+    if not cwlws:
         text += f'Информация об ЛВК отсутствует\n'
         return text, ParseMode.HTML, None
-    cwlws = await dm.load_clan_war_league_own_wars()
-    cwl_season, _ = await dm.load_clan_war_league()
+    show_half = is_double_cwl_month(cwl_season, seasons)
     text += (
-        f'Сезон ЛВК: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
+        f'Сезон ЛВК: {dm.of.season(cwl_season, show_half)}\n'
         f'\n'
         f'Выберите участника ЛВК:'
     )
@@ -496,21 +645,29 @@ async def cwl_rating_choose(
             callback_data=CWLCallbackFactory(
                 output_view=OutputView.cwl_rating_details,
                 count_bonus_points=count_bonus_points,
-                player_tag=player_tag
+                player_tag=player_tag,
+                cwl_season=selected_season
             ).pack()
         )] for i, (player_tag, r) in enumerate(sorted(player_tags.items(), key=lambda x: x[1].total_points, reverse=True))
     ]
     back_button = InlineKeyboardButton(
         text='⬅️ Назад',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_list, count_bonus_points=count_bonus_points).pack()
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_rating_list, count_bonus_points=count_bonus_points, cwl_season=selected_season
+        ).pack()
     )
     count_bonus_points_button = InlineKeyboardButton(
         text='🪙 Без бонусов' if count_bonus_points else '🪙 С бонусами',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_choose, count_bonus_points=not count_bonus_points).pack()
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_rating_choose, count_bonus_points=not count_bonus_points, cwl_season=selected_season
+        ).pack()
     )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_choose, count_bonus_points=count_bonus_points, update=True).pack()
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_rating_choose, count_bonus_points=count_bonus_points,
+            cwl_season=selected_season, update=True
+        ).pack()
     )
     button_rows.append([back_button, count_bonus_points_button, update_button])
     keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
@@ -531,16 +688,44 @@ async def cwl_rating_details(
     if not await dm.load_clan_war_league_rating_config():
         text += f'Рейтинг выключен'
         return text, ParseMode.HTML, None
-    if not await dm.load_clan_war_league_own_wars():
+    cwl_season, seasons, selected_season = await resolve_cwl_season(dm, callback_data)
+    cwlws = await dm.load_clan_war_league_own_wars(cwl_season) if cwl_season is not None else None
+    if not cwlws:
         text += f'Информация об ЛВК отсутствует\n'
         return text, ParseMode.HTML, None
-    cwlws = await dm.load_clan_war_league_own_wars()
+    show_half = is_double_cwl_month(cwl_season, seasons)
     wars_ended = sum(dm.of.state(cwlw) == 'warEnded' for cwlw in cwlws)
-    cwl_season, _ = await dm.load_clan_war_league()
     player_tags = await dm.get_cwl_ratings(cwl_season, cwlws, count_bonus_points)
-    r = player_tags[callback_data.player_tag]
+    back_button = InlineKeyboardButton(
+        text='⬅️ Назад',
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_rating_choose, count_bonus_points=count_bonus_points, cwl_season=selected_season
+        ).pack()
+    )
+    count_bonus_points_button = InlineKeyboardButton(
+        text='🪙 Без бонусов' if count_bonus_points else '🪙 С бонусами',
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_rating_details, player_tag=callback_data.player_tag,
+            count_bonus_points=not count_bonus_points, cwl_season=selected_season
+        ).pack()
+    )
+    update_button = InlineKeyboardButton(
+        text='🔄 Обновить',
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_rating_details,
+            player_tag=callback_data.player_tag,
+            count_bonus_points=count_bonus_points,
+            cwl_season=selected_season,
+            update=True
+        ).pack()
+    )
+    keyboard = InlineKeyboardMarkup(inline_keyboard=[[back_button, count_bonus_points_button, update_button]])
+    r = player_tags.get(callback_data.player_tag)
+    if r is None:
+        text += f'Информация об игроке отсутствует\n'
+        return text, ParseMode.HTML, keyboard
     text += (
-        f'Сезон ЛВК: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
+        f'Сезон ЛВК: {dm.of.season(cwl_season, show_half)}\n'
         f'\n'
         f'Итого баллов: {dm.of.format_and_rstrip(r.total_points, 3)} 🪙\n\n'
     )
@@ -576,30 +761,14 @@ async def cwl_rating_details(
         )
     if r.total_bonus_points != 0:
         text += f'Бонусы: {dm.of.format_and_rstrip(r.total_bonus_points, 3)} 🪙'
-    back_button = InlineKeyboardButton(
-        text='⬅️ Назад',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_choose, count_bonus_points=count_bonus_points).pack()
-    )
-    count_bonus_points_button = InlineKeyboardButton(
-        text='🪙 Без бонусов' if count_bonus_points else '🪙 С бонусами',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_details, player_tag=callback_data.player_tag, count_bonus_points=not count_bonus_points).pack()
-    )
-    update_button = InlineKeyboardButton(
-        text='🔄 Обновить',
-        callback_data=CWLCallbackFactory(
-            output_view=OutputView.cwl_rating_details,
-            player_tag=callback_data.player_tag,
-            count_bonus_points=count_bonus_points,
-            update=True
-        ).pack()
-    )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[back_button, count_bonus_points_button, update_button]])
     return text, ParseMode.HTML, keyboard
 
 
 async def cwl_rating_rules(
         dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    selected_season = callback_data.cwl_season if callback_data is not None else None
+    count_bonus_points = callback_data.count_bonus_points if callback_data is not None else None
     text = f'<b>🪙 Правила рейтинга участников ЛВК</b>\n'
     if not await dm.load_clan_war_league_rating_config():
         text += (
@@ -619,11 +788,16 @@ async def cwl_rating_rules(
         ''')
     back_button = InlineKeyboardButton(
         text='⬅️ Назад',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_list).pack()
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_rating_list, count_bonus_points=count_bonus_points, cwl_season=selected_season
+        ).pack()
     )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_rating_rules, update=True).pack()
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_rating_rules, count_bonus_points=count_bonus_points,
+            cwl_season=selected_season, update=True
+        ).pack()
     )
     keyboard = InlineKeyboardMarkup(inline_keyboard=[[back_button, update_button]])
     return text, ParseMode.HTML, keyboard
@@ -632,10 +806,9 @@ async def cwl_rating_rules(
 async def cwl_skips(
         dm: DatabaseManager, chat_id: int, callback_data: Optional[CWLCallbackFactory]
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    if callback_data is not None and callback_data.cwl_day is not None:
-        cwl_day, cwlw = callback_data.cwl_day, (await dm.load_clan_war_league_own_wars())[callback_data.cwl_day]
-    else:
-        cwl_day, cwlw = await dm.load_clan_war_league_own_war()
+    cwl_season, seasons, selected_season = await resolve_cwl_season(dm, callback_data)
+    requested_day = callback_data.cwl_day if callback_data is not None else None
+    cwl_day, cwlw, cwl_wars = await load_cwl_day_and_wars(dm, cwl_season, requested_day)
     text = (
         f'<b>🕒 Не проатаковавшие в ЛВК</b>\n'
         f'\n'
@@ -644,14 +817,15 @@ async def cwl_skips(
     button_lower_row = []
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_skips_day, update=True, cwl_day=cwl_day).pack()
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_skips_day, update=True, cwl_day=cwl_day, cwl_season=selected_season
+        ).pack()
     )
-    cwl_season, _ = await dm.load_clan_war_league()
+    show_half = is_double_cwl_month(cwl_season, seasons) if cwl_season is not None else False
     if dm.of.state(cwlw) in ['preparation']:
-        text += dm.of.cwlw_preparation(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)
+        text += dm.of.cwlw_preparation(cwlw, cwl_season, show_half, cwl_day, False, None, None)
         button_upper_row.append(update_button)
     elif dm.of.state(cwlw) in ['inWar', 'warEnded']:
-        cwl_season, _ = await dm.load_clan_war_league()
         cwlw_members = []
         for cwlw_member in cwlw['clan']['members']:
             cwlw_members.append(
@@ -660,7 +834,7 @@ async def cwl_skips(
                 )
             )
         text += (
-            f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2, cwl_day, False, None, None)}'
+            f'{dm.of.cwlw_in_war_or_war_ended(cwlw, cwl_season, show_half, cwl_day, False, None, None)}'
             f'\n'
             f'{await dm.skips(chat_id=chat_id, players=cwlw_members, ping=False, desired_attacks_spent=1)}'
         )
@@ -671,26 +845,38 @@ async def cwl_skips(
     if cwlw is not None:
         previous_cwl_day_button = InlineKeyboardButton(
             text=f'⬅️ День {cwl_day}',
-            callback_data=CWLCallbackFactory(output_view=OutputView.cwl_skips_day, cwl_day=cwl_day - 1).pack()
+            callback_data=CWLCallbackFactory(
+                output_view=OutputView.cwl_skips_day, cwl_day=cwl_day - 1, cwl_season=selected_season
+            ).pack()
         )
         next_cwl_day_button = InlineKeyboardButton(
             text=f'➡️ День {cwl_day + 2}',
-            callback_data=CWLCallbackFactory(output_view=OutputView.cwl_skips_day, cwl_day=cwl_day + 1).pack()
+            callback_data=CWLCallbackFactory(
+                output_view=OutputView.cwl_skips_day, cwl_day=cwl_day + 1, cwl_season=selected_season
+            ).pack()
         )
         all_cwl_days_button = InlineKeyboardButton(
             text='🧾 Все дни',
-            callback_data=CWLCallbackFactory(output_view=OutputView.cwl_skips_all_days).pack()
+            callback_data=CWLCallbackFactory(
+                output_view=OutputView.cwl_skips_all_days, cwl_season=selected_season
+            ).pack()
         )
         if cwl_day > 0:
             button_lower_row.append(previous_cwl_day_button)
-        if cwl_day < len(await dm.load_clan_war_league_own_wars()) - 1:
+        if cwl_day < len(cwl_wars) - 1:
             button_lower_row.append(next_cwl_day_button)
         button_lower_row.append(all_cwl_days_button)
+    season_nav_row = build_cwl_season_nav_row(
+        dm, OutputView.cwl_skips_day, OutputView.cwl_skips_all_seasons,
+        cwl_season, seasons, selected_season, back_cwl_day=cwl_day
+    )
     button_rows = []
     if len(button_upper_row) > 0:
         button_rows.append(button_upper_row)
     if len(button_lower_row) > 0:
         button_rows.append(button_lower_row)
+    if len(season_nav_row) > 0:
+        button_rows.append(season_nav_row)
     if len(button_rows) > 0:
         keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     else:
@@ -801,24 +987,35 @@ async def cwl_list(
     return text, ParseMode.HTML, keyboard
 
 
-async def cwl_clans(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    cwl_wars = await dm.load_clan_war_league_last_day_wars()
+async def cwl_clans(
+        dm: DatabaseManager, callback_data: Optional[CWLCallbackFactory]
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    cwl_season, seasons, selected_season = await resolve_cwl_season(dm, callback_data)
+    cwl_wars = await dm.load_clan_war_league_last_day_wars(cwl_season) if cwl_season is not None else None
     text = (
         f'<b>📶 Уровни ТХ кланов в ЛВК</b>\n'
         f'\n'
     )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=CWLCallbackFactory(output_view=OutputView.cwl_clans, update=True).pack()
+        callback_data=CWLCallbackFactory(
+            output_view=OutputView.cwl_clans, update=True, cwl_season=selected_season
+        ).pack()
     )
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[[update_button]])
+    button_rows = [[update_button]]
+    season_nav_row = build_cwl_season_nav_row(
+        dm, OutputView.cwl_clans, OutputView.cwl_clans_all_seasons,
+        cwl_season, seasons, selected_season
+    )
+    if season_nav_row:
+        button_rows.append(season_nav_row)
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     if cwl_wars is None:
         text += 'Информация об ЛВК отсутствует'
         return text, ParseMode.HTML, keyboard
-    cwl_season, _ = await dm.load_clan_war_league()
-    cwl_day, _ = await dm.load_clan_war_league_own_war()
+    show_half = is_double_cwl_month(cwl_season, seasons)
     text += (
-        f'Сезон: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
+        f'Сезон: {dm.of.season(cwl_season, show_half)}\n'
         f'\n'
     )
     cwl_clan_list = []
@@ -859,64 +1056,46 @@ async def cwl_clans(dm: DatabaseManager) -> tuple[str, ParseMode, Optional[Inlin
 async def cwl_days_list(
         dm: DatabaseManager, callback_data: CWLCallbackFactory
 ) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
-    cwl_season, _ = await dm.load_clan_war_league()
-    if callback_data.output_view == OutputView.cwl_info_all_days:
+    cwl_season, seasons, selected_season = await resolve_cwl_season(dm, callback_data)
+    view_config = {
+        OutputView.cwl_info_all_days: ('⚔️ Информация об ЛВК', OutputView.cwl_info_day, OutputView.cwl_info_all_seasons),
+        OutputView.cwl_map_all_days: ('🗺️ Карта ЛВК', OutputView.cwl_map_day, OutputView.cwl_map_all_seasons),
+        OutputView.cwl_attacks_all_days: ('🗡️ Атаки в ЛВК', OutputView.cwl_attacks_day, OutputView.cwl_attacks_all_seasons),
+        OutputView.cwl_skips_all_days: ('🕒 Не проатаковавшие в ЛВК', OutputView.cwl_skips_day, OutputView.cwl_skips_all_seasons)
+    }
+    title, button_output_view, all_seasons_view = view_config[callback_data.output_view]
+    show_half = is_double_cwl_month(cwl_season, seasons) if cwl_season is not None else False
+    if cwl_season is None:
         text = (
-            f'<b>⚔️ Информация об ЛВК</b>\n'
+            f'<b>{title}</b>\n'
             f'\n'
-            f'Сезон: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
-            f'\n'
-            f'Выберите день:\n'
+            f'Информация об ЛВК отсутствует\n'
         )
-        button_output_view = OutputView.cwl_info_day
-    elif callback_data.output_view == OutputView.cwl_map_all_days:
-        text = (
-            f'<b>🗺️ Карта ЛВК</b>\n'
-            f'\n'
-            f'Сезон: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
-            f'\n'
-            f'Выберите день:\n'
-        )
-        button_output_view = OutputView.cwl_map_day
-    elif callback_data.output_view == OutputView.cwl_attacks_all_days:
-        text = (
-            f'<b>🗡️ Атаки в ЛВК</b>\n'
-            f'\n'
-            f'Сезон: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
-            f'\n'
-            f'Выберите день:\n'
-        )
-        button_output_view = OutputView.cwl_attacks_day
+        cwl_wars = []
     else:
         text = (
-            f'<b>🕒 Не проатаковавшие в ЛВК</b>\n'
+            f'<b>{title}</b>\n'
             f'\n'
-            f'Сезон: {dm.of.season(cwl_season, await dm.get_season_cwl_amount(cwl_season) == 2)}\n'
+            f'Сезон: {dm.of.season(cwl_season, show_half)}\n'
             f'\n'
             f'Выберите день:\n'
         )
-        button_output_view = OutputView.cwl_skips_day
-    cwl_wars = await dm.load_clan_war_league_own_wars()
+        cwl_wars = await dm.load_clan_war_league_own_wars(cwl_season) or []
+    preserved_kwargs = {
+        'show_opponent_info': callback_data.show_opponent_info,
+        'cwl_map_side': callback_data.cwl_map_side,
+        'cwl_attacks_side': callback_data.cwl_attacks_side,
+        'show_skips': callback_data.show_skips
+    }
     cwl_day_titles = []
     for cwl_day, cwl_war in enumerate(cwl_wars):
         cwl_clan, cwl_opponent = cwl_war['clan'], cwl_war['opponent']
-        if dm.of.state(cwl_war) == 'notInWar':
-            cwl_day_emoji_and_number = ''
-        elif dm.of.state(cwl_war) == 'warEnded':
-            clan_result = (cwl_clan['stars'], cwl_clan['destructionPercentage'])
-            opponent_result = (cwl_opponent['stars'], cwl_opponent['destructionPercentage'])
-            if clan_result > opponent_result:
-                cwl_day_emoji_and_number = f'✅ {cwl_day + 1}. '
-            elif clan_result < opponent_result:
-                cwl_day_emoji_and_number = f'❌ {cwl_day + 1}. '
-            else:
-                cwl_day_emoji_and_number = f'🟰 {cwl_day + 1}. '
-        elif dm.of.state(cwl_war) == 'inWar':
-            cwl_day_emoji_and_number = f'🗡 {cwl_day + 1}. '
-        elif dm.of.state(cwl_war) == 'preparation':
-            cwl_day_emoji_and_number = f'⚙️ {cwl_day + 1}. '
-        else:
-            cwl_day_emoji_and_number = f'❓ {cwl_day + 1}. '
+        emoji = dm.of.war_state_emoji(
+            dm.of.state(cwl_war),
+            cwl_clan.get('stars'), cwl_clan.get('destructionPercentage'),
+            cwl_opponent.get('stars'), cwl_opponent.get('destructionPercentage')
+        )
+        cwl_day_emoji_and_number = f'{emoji} {cwl_day + 1}. ' if emoji else ''
         cwl_day_titles.append(
             f'{cwl_day_emoji_and_number}{dm.of.bidi_isolate(cwl_clan['name'])} vs {dm.of.bidi_isolate(cwl_opponent['name'])}'
         )
@@ -925,10 +1104,8 @@ async def cwl_days_list(
         callback_data=CWLCallbackFactory(
             output_view=callback_data.output_view,
             update=True,
-            show_opponent_info=callback_data.show_opponent_info,
-            cwl_map_side=callback_data.cwl_map_side,
-            cwl_attacks_side=callback_data.cwl_attacks_side,
-            show_skips=callback_data.show_skips
+            cwl_season=selected_season,
+            **preserved_kwargs
         ).pack()
     )
     button_rows = [[InlineKeyboardButton(
@@ -936,13 +1113,119 @@ async def cwl_days_list(
         callback_data=CWLCallbackFactory(
             output_view=button_output_view,
             cwl_day=i,
-            show_opponent_info=callback_data.show_opponent_info,
-            cwl_map_side=callback_data.cwl_map_side,
-            cwl_attacks_side=callback_data.cwl_attacks_side,
-            show_skips=callback_data.show_skips
+            cwl_season=selected_season,
+            **preserved_kwargs
         ).pack()
     )] for i, cwl_day_title in enumerate(cwl_day_titles)]
+    season_nav_row = build_cwl_season_nav_row(
+        dm, callback_data.output_view, all_seasons_view,
+        cwl_season, seasons, selected_season,
+        **preserved_kwargs
+    )
+    if season_nav_row:
+        button_rows.append(season_nav_row)
     button_rows.append([update_button])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
+    return text, ParseMode.HTML, keyboard
+
+
+async def cwl_seasons_list(
+        dm: DatabaseManager, callback_data: CWLCallbackFactory
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    view_config = {
+        OutputView.cwl_info_all_seasons: ('⚔️ Информация об ЛВК', OutputView.cwl_info_day),
+        OutputView.cwl_map_all_seasons: ('🗺️ Карта ЛВК', OutputView.cwl_map_day),
+        OutputView.cwl_attacks_all_seasons: ('🗡️ Атаки в ЛВК', OutputView.cwl_attacks_day),
+        OutputView.cwl_skips_all_seasons: ('🕒 Не проатаковавшие в ЛВК', OutputView.cwl_skips_day),
+        OutputView.cwl_rating_all_seasons: ('🪙 Рейтинг участников ЛВК', OutputView.cwl_rating_list),
+        OutputView.cwl_clans_all_seasons: ('📶 Уровни ТХ кланов в ЛВК', OutputView.cwl_clans)
+    }
+    title, target_view = view_config[callback_data.output_view]
+    seasons = await dm.load_clan_war_league_seasons()
+    seasons_desc = list(reversed(seasons))
+    total = len(seasons_desc)
+    total_pages = max(1, (total + CWL_PAGE_SIZE - 1) // CWL_PAGE_SIZE)
+    page = max(0, min(callback_data.page or 0, total_pages - 1))
+    page_seasons = seasons_desc[page * CWL_PAGE_SIZE:(page + 1) * CWL_PAGE_SIZE]
+    preserved_kwargs = {
+        'show_opponent_info': callback_data.show_opponent_info,
+        'cwl_map_side': callback_data.cwl_map_side,
+        'cwl_attacks_side': callback_data.cwl_attacks_side,
+        'show_skips': callback_data.show_skips,
+        'count_bonus_points': callback_data.count_bonus_points
+    }
+    if total == 0:
+        text = (
+            f'<b>{title}</b>\n'
+            f'\n'
+            f'Информация об ЛВК отсутствует\n'
+        )
+    elif total_pages > 1:
+        text = (
+            f'<b>{title}</b>\n'
+            f'\n'
+            f'Выберите сезон (стр. {page + 1} / {total_pages}):\n'
+        )
+    else:
+        text = (
+            f'<b>{title}</b>\n'
+            f'\n'
+            f'Выберите сезон:\n'
+        )
+    button_rows = [[InlineKeyboardButton(
+        text=dm.of.season(season, is_double_cwl_month(season, seasons)).capitalize(),
+        callback_data=CWLCallbackFactory(
+            output_view=target_view,
+            cwl_season=season,
+            **preserved_kwargs
+        ).pack()
+    )] for season in page_seasons]
+    if total_pages > 1:
+        pagination_row = []
+        if page > 0:
+            pagination_row.append(InlineKeyboardButton(
+                text=f'⬅️ Стр. {page}',
+                callback_data=CWLCallbackFactory(
+                    output_view=callback_data.output_view,
+                    cwl_season=callback_data.cwl_season,
+                    cwl_day=callback_data.cwl_day,
+                    page=page - 1,
+                    **preserved_kwargs
+                ).pack()
+            ))
+        if page < total_pages - 1:
+            pagination_row.append(InlineKeyboardButton(
+                text=f'➡️ Стр. {page + 2}',
+                callback_data=CWLCallbackFactory(
+                    output_view=callback_data.output_view,
+                    cwl_season=callback_data.cwl_season,
+                    cwl_day=callback_data.cwl_day,
+                    page=page + 1,
+                    **preserved_kwargs
+                ).pack()
+            ))
+        button_rows.append(pagination_row)
+    back_button = InlineKeyboardButton(
+        text='⬅️ Назад',
+        callback_data=CWLCallbackFactory(
+            output_view=target_view,
+            cwl_season=callback_data.cwl_season,
+            cwl_day=callback_data.cwl_day,
+            **preserved_kwargs
+        ).pack()
+    )
+    update_button = InlineKeyboardButton(
+        text='🔄 Обновить',
+        callback_data=CWLCallbackFactory(
+            output_view=callback_data.output_view,
+            update=True,
+            cwl_season=callback_data.cwl_season,
+            cwl_day=callback_data.cwl_day,
+            page=page,
+            **preserved_kwargs
+        ).pack()
+    )
+    button_rows.append([back_button, update_button])
     keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     return text, ParseMode.HTML, keyboard
 
@@ -965,10 +1248,10 @@ async def callback_cwl_info(
         text, parse_mode, reply_markup = await cwl_info(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-    if callback_data.update:
-        await callback_query.answer('Сообщение обновлено')
-    else:
-        await callback_query.answer()
+        if callback_data.update:
+            await callback_query.answer('Сообщение обновлено')
+        else:
+            await callback_query.answer()
 
 
 @router.message(Command('cwl_map'))
@@ -991,10 +1274,10 @@ async def callback_cwl_map(
         text, parse_mode, reply_markup = await cwl_map(dm, callback_data, chat_id)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-    if callback_data.update:
-        await callback_query.answer('Сообщение обновлено')
-    else:
-        await callback_query.answer()
+        if callback_data.update:
+            await callback_query.answer('Сообщение обновлено')
+        else:
+            await callback_query.answer()
 
 
 @router.message(Command('cwl_attacks'))
@@ -1015,10 +1298,10 @@ async def callback_cwl_attacks(
         text, parse_mode, reply_markup = await cwl_attacks(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-    if callback_data.update:
-        await callback_query.answer('Сообщение обновлено')
-    else:
-        await callback_query.answer()
+        if callback_data.update:
+            await callback_query.answer('Сообщение обновлено')
+        else:
+            await callback_query.answer()
 
 
 @router.message(Command('cwl_skips'))
@@ -1041,10 +1324,10 @@ async def callback_cwl_skips(
         text, parse_mode, reply_markup = await cwl_skips(dm, chat_id, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-    if callback_data.update:
-        await callback_query.answer('Сообщение обновлено')
-    else:
-        await callback_query.answer()
+        if callback_data.update:
+            await callback_query.answer('Сообщение обновлено')
+        else:
+            await callback_query.answer()
 
 
 @router.callback_query(CWLCallbackFactory.filter(F.output_view == OutputView.cwl_info_all_days))
@@ -1061,10 +1344,32 @@ async def callback_cwl_all_days_list(
         text, parse_mode, reply_markup = await cwl_days_list(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-    if callback_data.update:
-        await callback_query.answer('Сообщение обновлено')
+        if callback_data.update:
+            await callback_query.answer('Сообщение обновлено')
+        else:
+            await callback_query.answer()
+
+
+@router.callback_query(CWLCallbackFactory.filter(F.output_view == OutputView.cwl_info_all_seasons))
+@router.callback_query(CWLCallbackFactory.filter(F.output_view == OutputView.cwl_map_all_seasons))
+@router.callback_query(CWLCallbackFactory.filter(F.output_view == OutputView.cwl_attacks_all_seasons))
+@router.callback_query(CWLCallbackFactory.filter(F.output_view == OutputView.cwl_skips_all_seasons))
+@router.callback_query(CWLCallbackFactory.filter(F.output_view == OutputView.cwl_rating_all_seasons))
+@router.callback_query(CWLCallbackFactory.filter(F.output_view == OutputView.cwl_clans_all_seasons))
+async def callback_cwl_all_seasons_list(
+        callback_query: CallbackQuery, callback_data: CWLCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    if not user_is_message_owner and not callback_data.update:
+        await callback_query.answer('Эта кнопка не работает для вас')
     else:
-        await callback_query.answer()
+        text, parse_mode, reply_markup = await cwl_seasons_list(dm, callback_data)
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        if callback_data.update:
+            await callback_query.answer('Сообщение обновлено')
+        else:
+            await callback_query.answer()
 
 
 @router.message(Command('cwl_rating'))
@@ -1085,10 +1390,10 @@ async def callback_cwl_rating_list(
         text, parse_mode, reply_markup = await cwl_rating_list(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-    if callback_data.update:
-        await callback_query.answer('Сообщение обновлено')
-    else:
-        await callback_query.answer()
+        if callback_data.update:
+            await callback_query.answer('Сообщение обновлено')
+        else:
+            await callback_query.answer()
 
 
 @router.callback_query(CWLCallbackFactory.filter(F.output_view == OutputView.cwl_rating_choose))
@@ -1102,10 +1407,10 @@ async def callback_cwl_rating_choose(
         text, parse_mode, reply_markup = await cwl_rating_choose(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-    if callback_data.update:
-        await callback_query.answer('Сообщение обновлено')
-    else:
-        await callback_query.answer()
+        if callback_data.update:
+            await callback_query.answer('Сообщение обновлено')
+        else:
+            await callback_query.answer()
 
 
 @router.callback_query(CWLCallbackFactory.filter(F.output_view == OutputView.cwl_rating_details))
@@ -1119,10 +1424,10 @@ async def callback_cwl_rating_details(
         text, parse_mode, reply_markup = await cwl_rating_details(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-    if callback_data.update:
-        await callback_query.answer('Сообщение обновлено')
-    else:
-        await callback_query.answer()
+        if callback_data.update:
+            await callback_query.answer('Сообщение обновлено')
+        else:
+            await callback_query.answer()
 
 
 @router.callback_query(CWLCallbackFactory.filter(F.output_view == OutputView.cwl_rating_rules))
@@ -1136,10 +1441,10 @@ async def callback_cwl_rating_rules(
         text, parse_mode, reply_markup = await cwl_rating_rules(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-    if callback_data.update:
-        await callback_query.answer('Сообщение обновлено')
-    else:
-        await callback_query.answer()
+        if callback_data.update:
+            await callback_query.answer('Сообщение обновлено')
+        else:
+            await callback_query.answer()
 
 
 @router.message(Command('cwl_ping'))
@@ -1181,7 +1486,7 @@ async def callback_cwl_list(
 
 @router.message(Command('cwl_clans'))
 async def command_cwl_clans(message: Message, dm: DatabaseManager) -> None:
-    text, parse_mode, reply_markup = await cwl_clans(dm)
+    text, parse_mode, reply_markup = await cwl_clans(dm, None)
     reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     await dm.dump_message_owner(reply_from_bot, message.from_user)
 
@@ -1194,10 +1499,10 @@ async def callback_cwl_clans(
     if not user_is_message_owner and not callback_data.update:
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
-        text, parse_mode, reply_markup = await cwl_clans(dm)
+        text, parse_mode, reply_markup = await cwl_clans(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
-    if callback_data.update:
-        await callback_query.answer('Сообщение обновлено')
-    else:
-        await callback_query.answer()
+        if callback_data.update:
+            await callback_query.answer('Сообщение обновлено')
+        else:
+            await callback_query.answer()

@@ -1,4 +1,5 @@
 from contextlib import suppress
+from datetime import datetime, UTC
 from enum import auto, IntEnum
 from typing import Optional
 
@@ -14,6 +15,8 @@ from database_manager import DatabaseManager
 from entities import WarMember, BotUser
 
 router = Router()
+
+CW_PAGE_SIZE = 10
 
 
 class CWMapSide(IntEnum):
@@ -43,6 +46,10 @@ class OutputView(IntEnum):
     cw_skips = auto()
     cw_status = auto()
     cw_list = auto()
+    cw_info_all = auto()
+    cw_map_all = auto()
+    cw_attacks_all = auto()
+    cw_skips_all = auto()
 
 
 class CWCallbackFactory(CallbackData, prefix='cw'):
@@ -56,7 +63,69 @@ class CWCallbackFactory(CallbackData, prefix='cw'):
     cw_list_order: Optional[CWListOrder] = None
     cw_list_status: Optional[CWListStatus] = None
     show_skips: Optional[bool] = None
+    cw_time: Optional[int] = None
+    page: Optional[int] = None
 
+
+def cw_ts_to_datetime(cw_time: Optional[int]) -> Optional[datetime]:
+    if cw_time is None:
+        return None
+    return datetime.fromtimestamp(cw_time, UTC).replace(tzinfo=None)
+
+
+def datetime_to_ts(dt: datetime) -> int:
+    return int(dt.replace(tzinfo=UTC).timestamp())
+
+
+def cw_display_date(
+        dm: DatabaseManager, start_time: Optional[str], end_time: Optional[str], prep_dt: datetime
+) -> str:
+    if start_time and end_time:
+        dt = dm.of.get_event_datetime(dm.of.to_datetime(start_time), dm.of.to_datetime(end_time))
+    else:
+        dt = prep_dt
+    return dm.of.short_date(dt)
+
+
+async def build_cw_nav_row(
+        dm: DatabaseManager,
+        output_view: OutputView,
+        all_output_view: OutputView,
+        cw: dict,
+        selected_cw_time: Optional[int],
+        **cb_kwargs
+) -> list[InlineKeyboardButton]:
+    prep_dt = dm.of.to_datetime(cw['preparationStartTime'])
+    older, newer = await dm.load_adjacent_clan_wars(prep_dt)
+    nav_row = []
+    if older is not None:
+        nav_row.append(InlineKeyboardButton(
+            text=f'⬅️ {cw_display_date(dm, older["startTime"], older["endTime"], older["preparation_start_time"])}',
+            callback_data=CWCallbackFactory(
+                output_view=output_view,
+                cw_time=datetime_to_ts(older['preparation_start_time']),
+                **cb_kwargs
+            ).pack()
+        ))
+    if newer is not None:
+        nav_row.append(InlineKeyboardButton(
+            text=f'➡️ {cw_display_date(dm, newer["startTime"], newer["endTime"], newer["preparation_start_time"])}',
+            callback_data=CWCallbackFactory(
+                output_view=output_view,
+                cw_time=datetime_to_ts(newer['preparation_start_time']),
+                **cb_kwargs
+            ).pack()
+        ))
+    nav_row.append(InlineKeyboardButton(
+        text='🧾 Все КВ',
+        callback_data=CWCallbackFactory(
+            output_view=all_output_view,
+            cw_time=selected_cw_time,
+            page=0,
+            **cb_kwargs
+        ).pack()
+    ))
+    return nav_row
 
 
 async def cw_info(
@@ -66,6 +135,7 @@ async def cw_info(
         show_opponent_info = callback_data.show_opponent_info
     else:
         show_opponent_info = False
+    selected_cw_time = callback_data.cw_time if callback_data is not None else None
     text = (
         f'<b>⚔️ Информация о КВ</b>\n'
         f'\n'
@@ -74,20 +144,24 @@ async def cw_info(
     if show_opponent_info:
         opponent_info_button = InlineKeyboardButton(
             text='🔼 Свернуть',
-            callback_data=CWCallbackFactory(output_view=OutputView.cw_info, show_opponent_info=False).pack()
+            callback_data=CWCallbackFactory(
+                output_view=OutputView.cw_info, show_opponent_info=False, cw_time=selected_cw_time
+            ).pack()
         )
     else:
         opponent_info_button = InlineKeyboardButton(
             text='🔽 Развернуть',
-            callback_data=CWCallbackFactory(output_view=OutputView.cw_info, show_opponent_info=True).pack()
+            callback_data=CWCallbackFactory(
+                output_view=OutputView.cw_info, show_opponent_info=True, cw_time=selected_cw_time
+            ).pack()
         )
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
         callback_data=CWCallbackFactory(
-            output_view=OutputView.cw_info, update=True, show_opponent_info=show_opponent_info
+            output_view=OutputView.cw_info, update=True, show_opponent_info=show_opponent_info, cw_time=selected_cw_time
         ).pack()
     )
-    cw = await dm.load_clan_war()
+    cw = await dm.load_clan_war(cw_ts_to_datetime(selected_cw_time))
     if dm.of.state(cw) in ['preparation']:
         war_win_streak = await dm.load_war_win_streak(cw['opponent']['tag'])
         cw_log = await dm.load_clan_war_log(cw['opponent']['tag'])
@@ -103,7 +177,13 @@ async def cw_info(
     else:
         text += f'Информация о КВ отсутствует\n'
         button_row.append(update_button)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[button_row])
+    button_rows = [button_row]
+    if cw is not None:
+        button_rows.append(await build_cw_nav_row(
+            dm, OutputView.cw_info, OutputView.cw_info_all, cw, selected_cw_time,
+            show_opponent_info=show_opponent_info
+        ))
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     return text, ParseMode.HTML, keyboard
 
 
@@ -118,6 +198,7 @@ async def cw_map(
         show_skips = callback_data.show_skips
     else:
         show_skips = False
+    selected_cw_time = callback_data.cw_time if callback_data is not None else None
     text = (
         f'<b>🗺️ Карта КВ</b>\n'
         f'\n'
@@ -125,25 +206,40 @@ async def cw_map(
     button_row = []
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=CWCallbackFactory(output_view=OutputView.cw_map, update=True, cw_map_side=cw_map_side, show_skips=show_skips).pack()
+        callback_data=CWCallbackFactory(
+            output_view=OutputView.cw_map, update=True, cw_map_side=cw_map_side, show_skips=show_skips,
+            cw_time=selected_cw_time
+        ).pack()
     )
     clan_side_button = InlineKeyboardButton(
         text='↔️ Карта клана',
-        callback_data=CWCallbackFactory(output_view=OutputView.cw_map, cw_map_side=CWMapSide.clan, show_skips=show_skips).pack()
+        callback_data=CWCallbackFactory(
+            output_view=OutputView.cw_map, cw_map_side=CWMapSide.clan, show_skips=show_skips,
+            cw_time=selected_cw_time
+        ).pack()
     )
     opponent_side_button = InlineKeyboardButton(
         text='↔️ Карта противника',
-        callback_data=CWCallbackFactory(output_view=OutputView.cw_map, cw_map_side=CWMapSide.opponent, show_skips=show_skips).pack()
+        callback_data=CWCallbackFactory(
+            output_view=OutputView.cw_map, cw_map_side=CWMapSide.opponent, show_skips=show_skips,
+            cw_time=selected_cw_time
+        ).pack()
     )
     hide_skips_button = InlineKeyboardButton(
         text='🔼 Свернуть',
-        callback_data=CWCallbackFactory(output_view=OutputView.cw_map, cw_map_side=cw_map_side, show_skips=False).pack()
+        callback_data=CWCallbackFactory(
+            output_view=OutputView.cw_map, cw_map_side=cw_map_side, show_skips=False,
+            cw_time=selected_cw_time
+        ).pack()
     )
     show_skips_button = InlineKeyboardButton(
         text='🔽 Развернуть',
-        callback_data=CWCallbackFactory(output_view=OutputView.cw_map, cw_map_side=cw_map_side, show_skips=True).pack()
+        callback_data=CWCallbackFactory(
+            output_view=OutputView.cw_map, cw_map_side=cw_map_side, show_skips=True,
+            cw_time=selected_cw_time
+        ).pack()
     )
-    cw = await dm.load_clan_war()
+    cw = await dm.load_clan_war(cw_ts_to_datetime(selected_cw_time))
     if dm.of.state(cw) in ['preparation']:
         text += (
             f'{dm.of.cw_preparation(cw, False, None, None)}'
@@ -151,6 +247,7 @@ async def cw_map(
         )
         button_row.append(update_button)
     elif dm.of.state(cw) in ['inWar', 'warEnded']:
+        attacks_per_member = cw.get('attacksPerMember', 2)
         clan_map_position_by_player = {member['tag']: member['mapPosition'] for member in cw['clan']['members']}
         opponent_map_position_by_player = {member['tag']: member['mapPosition'] for member in cw['opponent']['members']}
         text += (
@@ -170,7 +267,7 @@ async def cw_map(
                         WarMember(
                             player_tag=cw_member['tag'],
                             attacks_spent=len(cw_member.get('attacks', [])),
-                            attacks_limit=cw['attacksPerMember']
+                            attacks_limit=attacks_per_member
                         )
                     )
                 text += (
@@ -182,7 +279,7 @@ async def cw_map(
                         chat_id=chat_id,
                         players=cw_members,
                         ping=False,
-                        desired_attacks_spent=cw['attacksPerMember']
+                        desired_attacks_spent=attacks_per_member
                     )}'
                 )
                 button_row.append(hide_skips_button)
@@ -199,7 +296,13 @@ async def cw_map(
     else:
         text += f'Информация о КВ отсутствует\n'
         button_row.append(update_button)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[button_row])
+    button_rows = [button_row]
+    if cw is not None:
+        button_rows.append(await build_cw_nav_row(
+            dm, OutputView.cw_map, OutputView.cw_map_all, cw, selected_cw_time,
+            cw_map_side=cw_map_side, show_skips=show_skips
+        ))
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     return text, ParseMode.HTML, keyboard
 
 
@@ -209,7 +312,8 @@ async def cw_attacks(
     if callback_data is not None and callback_data.cw_attacks_side is not None:
         cw_attacks_side = callback_data.cw_attacks_side
     else:
-        cw_attacks_side = CWMapSide.clan
+        cw_attacks_side = CWAttacksSide.clan
+    selected_cw_time = callback_data.cw_time if callback_data is not None else None
     text = (
         f'<b>🗡️ Атаки в КВ</b>\n'
         f'\n'
@@ -218,22 +322,22 @@ async def cw_attacks(
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
         callback_data=CWCallbackFactory(
-            output_view=OutputView.cw_attacks, update=True, cw_attacks_side=cw_attacks_side
+            output_view=OutputView.cw_attacks, update=True, cw_attacks_side=cw_attacks_side, cw_time=selected_cw_time
         ).pack()
     )
     opponent_attacks_button = InlineKeyboardButton(
         text='↔️ Атаки противника',
         callback_data=CWCallbackFactory(
-            output_view=OutputView.cw_attacks, cw_attacks_side=CWAttacksSide.opponent
+            output_view=OutputView.cw_attacks, cw_attacks_side=CWAttacksSide.opponent, cw_time=selected_cw_time
         ).pack()
     )
     clan_attacks_button = InlineKeyboardButton(
         text='↔️ Атаки клана',
         callback_data=CWCallbackFactory(
-            output_view=OutputView.cw_attacks, cw_attacks_side=CWAttacksSide.clan
+            output_view=OutputView.cw_attacks, cw_attacks_side=CWAttacksSide.clan, cw_time=selected_cw_time
         ).pack()
     )
-    cw = await dm.load_clan_war()
+    cw = await dm.load_clan_war(cw_ts_to_datetime(selected_cw_time))
     if dm.of.state(cw) in ['preparation']:
         if cw_attacks_side == CWAttacksSide.clan:
             rows = await dm.acquired_connection.fetch('''
@@ -271,6 +375,7 @@ async def cw_attacks(
             button_row.append(clan_attacks_button)
         button_row.append(update_button)
     elif dm.of.state(cw) in ['inWar', 'warEnded']:
+        attacks_per_member = cw.get('attacksPerMember', 2)
         clan_map_position_by_player = {member['tag']: member['mapPosition'] for member in cw['clan']['members']}
         opponent_map_position_by_player = {member['tag']: member['mapPosition'] for member in cw['opponent']['members']}
         text += (
@@ -282,7 +387,7 @@ async def cw_attacks(
                 f'Атаки клана:\n'
                 f'\n'
                 f'{dm.of.get_attacks(
-                clan_map_position_by_player, opponent_map_position_by_player, cw['clan'], cw['opponent'], cw['attacksPerMember']
+                clan_map_position_by_player, opponent_map_position_by_player, cw['clan'], cw['opponent'], attacks_per_member
                 )}'
             )
             button_row.append(opponent_attacks_button)
@@ -291,7 +396,7 @@ async def cw_attacks(
                 f'Атаки противника:\n'
                 f'\n'
                 f'{dm.of.get_attacks(
-                opponent_map_position_by_player, clan_map_position_by_player, cw['opponent'], cw['clan'], cw['attacksPerMember']
+                opponent_map_position_by_player, clan_map_position_by_player, cw['opponent'], cw['clan'], attacks_per_member
                 )}'
             )
             button_row.append(clan_attacks_button)
@@ -299,11 +404,20 @@ async def cw_attacks(
     else:
         text += f'Информация о КВ отсутствует\n'
         button_row.append(update_button)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[button_row])
+    button_rows = [button_row]
+    if cw is not None:
+        button_rows.append(await build_cw_nav_row(
+            dm, OutputView.cw_attacks, OutputView.cw_attacks_all, cw, selected_cw_time,
+            cw_attacks_side=cw_attacks_side
+        ))
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     return text, ParseMode.HTML, keyboard
 
 
-async def cw_skips(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+async def cw_skips(
+        dm: DatabaseManager, callback_data: Optional[CWCallbackFactory], chat_id: int
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    selected_cw_time = callback_data.cw_time if callback_data is not None else None
     text = (
         f'<b>🕒 Не проатаковавшие в КВ</b>\n'
         f'\n'
@@ -311,20 +425,23 @@ async def cw_skips(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, O
     button_row = []
     update_button = InlineKeyboardButton(
         text='🔄 Обновить',
-        callback_data=CWCallbackFactory(output_view=OutputView.cw_skips, update=True).pack()
+        callback_data=CWCallbackFactory(
+            output_view=OutputView.cw_skips, update=True, cw_time=selected_cw_time
+        ).pack()
     )
-    cw = await dm.load_clan_war()
+    cw = await dm.load_clan_war(cw_ts_to_datetime(selected_cw_time))
     if dm.of.state(cw) in ['preparation']:
         text += dm.of.cw_preparation(cw, False, None, None)
         button_row.append(update_button)
     elif dm.of.state(cw) in ['inWar', 'warEnded']:
+        attacks_per_member = cw.get('attacksPerMember', 2)
         cw_members = []
         for cw_member in cw['clan']['members']:
             cw_members.append(
                 WarMember(
                     player_tag=cw_member['tag'],
                     attacks_spent=len(cw_member.get('attacks', [])),
-                    attacks_limit=cw['attacksPerMember']
+                    attacks_limit=attacks_per_member
                 )
             )
         text += (
@@ -334,14 +451,123 @@ async def cw_skips(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, O
                 chat_id=chat_id,
                 players=cw_members,
                 ping=False,
-                desired_attacks_spent=cw['attacksPerMember']
+                desired_attacks_spent=attacks_per_member
             )}'
         )
         button_row.append(update_button)
     else:
         text += 'Информация о КВ отсутствует'
         button_row.append(update_button)
-    keyboard = InlineKeyboardMarkup(inline_keyboard=[button_row])
+    button_rows = [button_row]
+    if cw is not None:
+        button_rows.append(await build_cw_nav_row(
+            dm, OutputView.cw_skips, OutputView.cw_skips_all, cw, selected_cw_time
+        ))
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
+    return text, ParseMode.HTML, keyboard
+
+
+async def cw_all_list(
+        dm: DatabaseManager, callback_data: CWCallbackFactory
+) -> tuple[str, ParseMode, Optional[InlineKeyboardMarkup]]:
+    view_config = {
+        OutputView.cw_info_all: ('⚔️ Информация о КВ', OutputView.cw_info),
+        OutputView.cw_map_all: ('🗺️ Карта КВ', OutputView.cw_map),
+        OutputView.cw_attacks_all: ('🗡️ Атаки в КВ', OutputView.cw_attacks),
+        OutputView.cw_skips_all: ('🕒 Не проатаковавшие в КВ', OutputView.cw_skips)
+    }
+    title, target_view = view_config[callback_data.output_view]
+    page = callback_data.page or 0
+    wars, total = await dm.load_clan_wars_page(page, CW_PAGE_SIZE)
+    total_pages = max(1, (total + CW_PAGE_SIZE - 1) // CW_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    preserved_kwargs = {
+        'show_opponent_info': callback_data.show_opponent_info,
+        'cw_map_side': callback_data.cw_map_side,
+        'cw_attacks_side': callback_data.cw_attacks_side,
+        'show_skips': callback_data.show_skips
+    }
+    if total == 0:
+        text = (
+            f'<b>{title}</b>\n'
+            f'\n'
+            f'Информация о КВ отсутствует\n'
+        )
+    elif total_pages > 1:
+        text = (
+            f'<b>{title}</b>\n'
+            f'\n'
+            f'Выберите КВ (стр. {page + 1} / {total_pages}):\n'
+        )
+    else:
+        text = (
+            f'<b>{title}</b>\n'
+            f'\n'
+            f'Выберите КВ:\n'
+        )
+    button_rows = []
+    for war in wars:
+        emoji = dm.of.war_state_emoji(
+            war['state'], war['clan_stars'], war['clan_destruction'],
+            war['opponent_stars'], war['opponent_destruction']
+        )
+        date_str = cw_display_date(dm, war['startTime'], war['endTime'], war['preparation_start_time'])
+        opponent_name = dm.of.bidi_isolate(war['opponent_name'] or '—')
+        if war['state'] in ['inWar', 'warEnded'] and war['clan_stars'] is not None and war['opponent_stars'] is not None:
+            score_str = f' ({war["clan_stars"]}–{war["opponent_stars"]} ⭐)'
+        else:
+            score_str = ''
+        button_rows.append([InlineKeyboardButton(
+            text=f'{emoji} {date_str} — {opponent_name}{score_str}'.strip(),
+            callback_data=CWCallbackFactory(
+                output_view=target_view,
+                cw_time=datetime_to_ts(war['preparation_start_time']),
+                **preserved_kwargs
+            ).pack()
+        )])
+    if total_pages > 1:
+        pagination_row = []
+        if page > 0:
+            pagination_row.append(InlineKeyboardButton(
+                text=f'⬅️ Стр. {page}',
+                callback_data=CWCallbackFactory(
+                    output_view=callback_data.output_view,
+                    cw_time=callback_data.cw_time,
+                    page=page - 1,
+                    **preserved_kwargs
+                ).pack()
+            ))
+        if page < total_pages - 1:
+            pagination_row.append(InlineKeyboardButton(
+                text=f'➡️ Стр. {page + 2}',
+                callback_data=CWCallbackFactory(
+                    output_view=callback_data.output_view,
+                    cw_time=callback_data.cw_time,
+                    page=page + 1,
+                    **preserved_kwargs
+                ).pack()
+            ))
+        button_rows.append(pagination_row)
+    back_button = InlineKeyboardButton(
+        text='⬅️ Назад',
+        callback_data=CWCallbackFactory(
+            output_view=target_view,
+            cw_time=callback_data.cw_time,
+            **preserved_kwargs
+        ).pack()
+    )
+    update_button = InlineKeyboardButton(
+        text='🔄 Обновить',
+        callback_data=CWCallbackFactory(
+            output_view=callback_data.output_view,
+            update=True,
+            cw_time=callback_data.cw_time,
+            page=page,
+            **preserved_kwargs
+        ).pack()
+    )
+    button_rows.append([back_button, update_button])
+    keyboard = InlineKeyboardMarkup(inline_keyboard=button_rows)
     return text, ParseMode.HTML, keyboard
 
 
@@ -354,13 +580,14 @@ async def cw_ping(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, Op
     if dm.of.state(cw) in ['preparation']:
         text += dm.of.cw_preparation(cw, False, None, None)
     elif dm.of.state(cw) in ['inWar', 'warEnded']:
+        attacks_per_member = cw.get('attacksPerMember', 2)
         cw_members = []
         for cw_member in cw['clan']['members']:
             cw_members.append(
                 WarMember(
                     player_tag=cw_member['tag'],
                     attacks_spent=len(cw_member.get('attacks', [])),
-                    attacks_limit=cw['attacksPerMember']
+                    attacks_limit=attacks_per_member
                 )
             )
         text += (
@@ -370,7 +597,7 @@ async def cw_ping(dm: DatabaseManager, chat_id: int) -> tuple[str, ParseMode, Op
                 chat_id=chat_id,
                 players=cw_members,
                 ping=True,
-                desired_attacks_spent=cw['attacksPerMember']
+                desired_attacks_spent=attacks_per_member
             )}'
         )
     else:
@@ -662,7 +889,7 @@ async def callback_cw_attacks(
 @router.message(Command('cw_skips'))
 async def command_cw_skips(message: Message, dm: DatabaseManager) -> None:
     chat_id = await dm.get_group_chat_id(message)
-    text, parse_mode, reply_markup = await cw_skips(dm, chat_id)
+    text, parse_mode, reply_markup = await cw_skips(dm, None, chat_id)
     reply_from_bot = await message.reply(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
     await dm.dump_message_owner(reply_from_bot, message.from_user)
 
@@ -676,7 +903,27 @@ async def callback_cw_skips(
         await callback_query.answer('Эта кнопка не работает для вас')
     else:
         chat_id = await dm.get_group_chat_id(callback_query.message)
-        text, parse_mode, reply_markup = await cw_skips(dm, chat_id)
+        text, parse_mode, reply_markup = await cw_skips(dm, callback_data, chat_id)
+        with suppress(TelegramBadRequest):
+            await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
+        if callback_data.update:
+            await callback_query.answer('Сообщение обновлено')
+        else:
+            await callback_query.answer()
+
+
+@router.callback_query(CWCallbackFactory.filter(F.output_view == OutputView.cw_info_all))
+@router.callback_query(CWCallbackFactory.filter(F.output_view == OutputView.cw_map_all))
+@router.callback_query(CWCallbackFactory.filter(F.output_view == OutputView.cw_attacks_all))
+@router.callback_query(CWCallbackFactory.filter(F.output_view == OutputView.cw_skips_all))
+async def callback_cw_all_list(
+        callback_query: CallbackQuery, callback_data: CWCallbackFactory, dm: DatabaseManager
+) -> None:
+    user_is_message_owner = await dm.is_user_message_owner(callback_query.message, callback_query.from_user)
+    if not user_is_message_owner and not callback_data.update:
+        await callback_query.answer('Эта кнопка не работает для вас')
+    else:
+        text, parse_mode, reply_markup = await cw_all_list(dm, callback_data)
         with suppress(TelegramBadRequest):
             await callback_query.message.edit_text(text=text, parse_mode=parse_mode, reply_markup=reply_markup)
         if callback_data.update:

@@ -45,7 +45,7 @@ class MessageMiddleware(BaseMiddleware):
                 entity for entity in message.entities or []
                 if entity.type == 'bot_command'
             ]
-            if len(bot_commands) == 0:
+            if len(bot_commands) == 0 or bot_commands[0].offset != 0:
                 logging.info(f'Message {{{message_info}}} was not propagated')
                 return None
             else:
@@ -81,8 +81,11 @@ class MessageMiddleware(BaseMiddleware):
                         else:
                             logging.info(f'Message {{{message_info}}} was not propagated')
                             return None
-                    else:
+                    elif self.is_command_addressed_to_bot(first_command, bot_username):
                         await message.reply(text=f'Такой команды нет', parse_mode=ParseMode.HTML)
+                        logging.info(f'Message {{{message_info}}} was not propagated')
+                        return None
+                    else:
                         logging.info(f'Message {{{message_info}}} was not propagated')
                         return None
                 else:
@@ -116,18 +119,20 @@ class MessageMiddleware(BaseMiddleware):
 
     @staticmethod
     def is_command_valid(text: str, valid_commands: list[str]) -> bool:
-        if len(text.split('@')) == 1:
-            return text.lstrip('/') in valid_commands
-        bot_command, _ = text.split('@')
+        bot_command, _, _ = text.partition('@')
         return bot_command.lstrip('/') in valid_commands
 
     @staticmethod
     def is_command_for_bot(text: str, bot_username: str) -> bool:
-        if len(text.split('@')) == 1:
+        _, sep, username = text.partition('@')
+        if not sep:
             return True
-        else:
-            _, username = text.split('@')
-            return username == bot_username
+        return username.lower() == bot_username.lower()
+
+    @staticmethod
+    def is_command_addressed_to_bot(text: str, bot_username: str) -> bool:
+        _, sep, username = text.partition('@')
+        return bool(sep) and username.lower() == bot_username.lower()
 
 
 class CallbackQueryMiddleware(BaseMiddleware):
